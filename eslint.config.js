@@ -10,6 +10,7 @@ export default tseslint.config(
       "coverage/**",
       "apps/admin/dist/**",
       "apps/miniapp/dist/**",
+      "apps/miniapp/babel.config.cjs",
       "uploads/**",
       "apps/api/prisma/dev.db*",
       "docs/design/*.png",

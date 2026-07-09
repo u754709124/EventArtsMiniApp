@@ -10,6 +10,7 @@ apps/api/prisma/dev.db-journal
 apps/api/prisma/test.db
 apps/api/prisma/test.db-journal
 apps/miniapp/dist/
+apps/miniapp/.swc/
 playwright-report/
 test-results/
 uploads/*

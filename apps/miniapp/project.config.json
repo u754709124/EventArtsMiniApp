@@ -1,0 +1,13 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "EventArtsMiniApp",
+  "description": "EventArts phase-one Taro miniapp",
+  "appid": "touristappid",
+  "setting": {
+    "es6": false,
+    "postcss": false,
+    "minified": false,
+    "urlCheck": false
+  },
+  "compileType": "miniprogram"
+}
