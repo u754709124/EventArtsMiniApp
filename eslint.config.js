@@ -8,6 +8,7 @@ export default tseslint.config(
       "dist/**",
       "node_modules/**",
       "coverage/**",
+      "apps/admin/dist/**",
       "apps/miniapp/dist/**",
       "uploads/**",
       "apps/api/prisma/dev.db*",
