@@ -32,7 +32,7 @@
 - 验证通过：`pnpm lint`、`pnpm test`、`pnpm --filter api build`、`pnpm --filter api db:push`、`pnpm --filter api db:seed`。
 
 ## 对应 git commit hash
-待回填。
+c988312
 
 ## 已知问题或设计取舍
 本地 SQLite；生产可迁移到托管数据库和对象存储。当前环境中 `prisma db push` 的 schema engine 对 SQLite 返回 `Schema engine error: undefined`，因此本项目保留 Prisma schema 和 Prisma Client，同时使用 `apps/api/src/sqlite-schema.ts` 作为可重复执行的本地 SQLite bootstrap；`pnpm --filter api db:push` 已包装为 Prisma Client 生成后执行该 bootstrap。
