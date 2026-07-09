@@ -26,7 +26,7 @@ pnpm workspace、TypeScript strict、ESLint、Prettier、Vitest、Playwright、A
 - `pnpm lint`、`pnpm test` 已通过。
 
 ## 对应 git commit hash
-0ae937b
+a34e07e
 
 ## 已知问题或设计取舍
 空仓库初始化，先建立最小可运行骨架。
