@@ -1,0 +1,252 @@
+{
+  "generatedAt": "2026-07-09T15:06:18.560Z",
+  "reference": {
+    "path": "docs/design/reference-home.png",
+    "width": 853,
+    "height": 1844
+  },
+  "outputDir": "apps/miniapp/src/assets/generated",
+  "assets": [
+    {
+      "filename": "banner-default.png",
+      "kind": "photo",
+      "sourceCrop": {
+        "left": 22,
+        "top": 257,
+        "width": 809,
+        "height": 334
+      },
+      "expected": {
+        "width": 1420,
+        "height": 580
+      },
+      "actual": {
+        "width": 1420,
+        "height": 580
+      },
+      "valid": true,
+      "note": "Main hero banner crop from reference screenshot."
+    },
+    {
+      "filename": "placeholder-banner.png",
+      "kind": "placeholder",
+      "sourceCrop": {
+        "left": 22,
+        "top": 257,
+        "width": 809,
+        "height": 334
+      },
+      "expected": {
+        "width": 1420,
+        "height": 580
+      },
+      "actual": {
+        "width": 1420,
+        "height": 580
+      },
+      "valid": true,
+      "note": "Blurred warm banner placeholder based on hero colors."
+    },
+    {
+      "filename": "icon-host.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 67,
+        "top": 632,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Host microphone menu icon."
+    },
+    {
+      "filename": "icon-singer.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 224,
+        "top": 632,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Singer music-note menu icon."
+    },
+    {
+      "filename": "icon-actor.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 381,
+        "top": 632,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Actor/acrobatic menu icon."
+    },
+    {
+      "filename": "icon-case.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 538,
+        "top": 632,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Activity case book icon."
+    },
+    {
+      "filename": "icon-contact.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 694,
+        "top": 790,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Contact service headset icon."
+    },
+    {
+      "filename": "placeholder-icon.png",
+      "kind": "placeholder",
+      "sourceCrop": {
+        "left": 67,
+        "top": 632,
+        "width": 93,
+        "height": 93
+      },
+      "expected": {
+        "width": 176,
+        "height": 176
+      },
+      "actual": {
+        "width": 176,
+        "height": 176
+      },
+      "valid": true,
+      "note": "Generic warm icon placeholder."
+    },
+    {
+      "filename": "case-1.png",
+      "kind": "photo",
+      "sourceCrop": {
+        "left": 24,
+        "top": 1010,
+        "width": 264,
+        "height": 193
+      },
+      "expected": {
+        "width": 460,
+        "height": 320
+      },
+      "actual": {
+        "width": 460,
+        "height": 320
+      },
+      "valid": true,
+      "note": "Wedding hosting case cover."
+    },
+    {
+      "filename": "case-2.png",
+      "kind": "photo",
+      "sourceCrop": {
+        "left": 296,
+        "top": 1010,
+        "width": 264,
+        "height": 193
+      },
+      "expected": {
+        "width": 460,
+        "height": 320
+      },
+      "actual": {
+        "width": 460,
+        "height": 320
+      },
+      "valid": true,
+      "note": "Singer performance case cover."
+    },
+    {
+      "filename": "case-3.png",
+      "kind": "photo",
+      "sourceCrop": {
+        "left": 569,
+        "top": 1010,
+        "width": 264,
+        "height": 193
+      },
+      "expected": {
+        "width": 460,
+        "height": 320
+      },
+      "actual": {
+        "width": 460,
+        "height": 320
+      },
+      "valid": true,
+      "note": "Acrobatic performance case cover."
+    },
+    {
+      "filename": "placeholder-case.png",
+      "kind": "placeholder",
+      "sourceCrop": {
+        "left": 24,
+        "top": 1010,
+        "width": 264,
+        "height": 193
+      },
+      "expected": {
+        "width": 460,
+        "height": 320
+      },
+      "actual": {
+        "width": 460,
+        "height": 320
+      },
+      "valid": true,
+      "note": "Generic warm case placeholder."
+    }
+  ],
+  "valid": true
+}
