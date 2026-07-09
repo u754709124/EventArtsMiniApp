@@ -34,7 +34,7 @@ React + Vite + TypeScript + Ant Design。
 - 验证通过：`pnpm --filter admin build`、`pnpm lint`、`pnpm test`。
 
 ## 对应 git commit hash
-待回填。
+50eced6
 
 ## 已知问题或设计取舍
 一期不做权限细分、忘记密码、趋势图。当前后台为单包 Ant Design 应用，生产构建存在单 chunk 超过 500 kB 的 Vite 警告；一期保留，后续可做路由级 code splitting。
