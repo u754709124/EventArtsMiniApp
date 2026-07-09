@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  status       String   @default("enabled")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+model SiteConfig {
+  id                       Int        @id @default(1)
+  appName                  String
+  subtitle                 String
+  defaultBannerAssetId     Int?
+  placeholderBannerAssetId Int?
+  placeholderIconAssetId   Int?
+  placeholderCaseAssetId   Int?
+  updatedAt                DateTime   @updatedAt
+  defaultBannerAsset       MediaAsset? @relation("defaultBanner", fields: [defaultBannerAssetId], references: [id])
+  placeholderBannerAsset   MediaAsset? @relation("placeholderBanner", fields: [placeholderBannerAssetId], references: [id])
+  placeholderIconAsset     MediaAsset? @relation("placeholderIcon", fields: [placeholderIconAssetId], references: [id])
+  placeholderCaseAsset     MediaAsset? @relation("placeholderCase", fields: [placeholderCaseAssetId], references: [id])
+
+  @@map("site_config")
+}
+
+model MediaAsset {
+  id                       Int            @id @default(autoincrement())
+  originalName             String
+  filename                 String         @unique
+  mimeType                 String
+  mediaType                String
+  usage                    String
+  url                      String
+  width                    Int?
+  height                   Int?
+  size                     Int
+  storageType              String         @default("local")
+  createdBy                Int?
+  createdAt                DateTime       @default(now())
+  banners                  Banner[]
+  menuItems                MenuItem[]
+  artists                  Artist[]
+  activityCases            ActivityCase[]
+  defaultBannerConfigs     SiteConfig[]   @relation("defaultBanner")
+  placeholderBannerConfigs SiteConfig[]   @relation("placeholderBanner")
+  placeholderIconConfigs   SiteConfig[]   @relation("placeholderIcon")
+  placeholderCaseConfigs   SiteConfig[]   @relation("placeholderCase")
+
+  @@map("media_assets")
+}
+
+model Announcement {
+  id                Int      @id @default(autoincrement())
+  summary           String
+  content           String
+  displayDurationMs Int
+  sortOrder         Int      @default(0)
+  status            String   @default("enabled")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+model Banner {
+  id               Int        @id @default(autoincrement())
+  title            String
+  imageAssetId     Int
+  imageAsset       MediaAsset @relation(fields: [imageAssetId], references: [id])
+  linkType         String     @default("none")
+  linkTarget       String?
+  switchDurationMs Int
+  sortOrder        Int        @default(0)
+  status           String     @default("enabled")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@map("banners")
+}
+
+model MenuItem {
+  id          Int        @id @default(autoincrement())
+  text        String
+  iconAssetId Int
+  iconAsset   MediaAsset @relation(fields: [iconAssetId], references: [id])
+  type        String
+  configJson  String
+  sortOrder   Int        @default(0)
+  status      String     @default("enabled")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("menu_items")
+}
+
+model Artist {
+  id            Int         @id @default(autoincrement())
+  name          String
+  type          String
+  avatarAssetId Int?
+  avatarAsset   MediaAsset? @relation(fields: [avatarAssetId], references: [id])
+  summary       String
+  tagsJson      String
+  detail        String
+  sortOrder     Int         @default(0)
+  status        String      @default("enabled")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("artists")
+}
+
+model ActivityCase {
+  id                Int        @id @default(autoincrement())
+  title             String
+  category          String
+  tag               String
+  coverAssetId      Int
+  coverAsset        MediaAsset @relation(fields: [coverAssetId], references: [id])
+  summary           String
+  eventDate         DateTime
+  location          String
+  detail            String
+  mediaJson         String
+  isFeatured        Boolean    @default(false)
+  featuredSortOrder Int        @default(0)
+  sortOrder         Int        @default(0)
+  status            String     @default("enabled")
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@map("activity_cases")
+}
+
+model PageViewEvent {
+  id        Int      @id @default(autoincrement())
+  pagePath  String
+  scene     String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@map("page_view_events")
+}
+
+model OperationLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  detail    String?
+  createdBy Int?
+  createdAt DateTime @default(now())
+
+  @@map("operation_logs")
+}

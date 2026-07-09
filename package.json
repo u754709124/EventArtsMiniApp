@@ -14,7 +14,7 @@
     "build:weapp": "pnpm --filter miniapp build:weapp",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "pnpm -r --if-present test",
     "e2e": "playwright test",
     "db:push": "pnpm --filter api db:push",
     "db:seed": "pnpm --filter api db:seed",
