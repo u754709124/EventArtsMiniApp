@@ -34,7 +34,7 @@
 - 验证通过：`pnpm --filter miniapp build:h5`、`pnpm build:weapp`、`pnpm lint`、`pnpm test`。
 
 ## 对应 git commit hash
-待回填。
+6dd9a7d
 
 ## 已知问题或设计取舍
 参考图下方扩展模块不纳入一期交互范围。Taro 构建需要写入 `~/.taro4.0` 缓存目录，sandbox 内需授权运行。H5/weapp 构建对 `banner-default.png` 和 `placeholder-banner.png` 给出资源体积警告；这些文件按固定尺寸生成用于测试和 seed，后续生产应替换为压缩后的正式素材或 CDN 资源。
