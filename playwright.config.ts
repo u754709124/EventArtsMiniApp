@@ -68,7 +68,8 @@ export default defineConfig({
       use: {
         ...devices["Pixel 7"],
         baseURL: h5Base,
-        viewport: { width: 430, height: 932 },
+        viewport: { width: 427, height: 922 },
+        deviceScaleFactor: 2,
         isMobile: true
       }
     }

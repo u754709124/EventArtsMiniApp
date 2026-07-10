@@ -129,6 +129,8 @@ model Artist {
   type          String
   avatarAssetId Int?
   avatarAsset   MediaAsset? @relation(fields: [avatarAssetId], references: [id])
+  location      String      @default("")
+  badge         String      @default("")
   summary       String
   tagsJson      String
   detail        String

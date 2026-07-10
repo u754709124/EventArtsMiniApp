@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  ArtistCreateRequestSchema,
+  artistListQuerySchema,
+  artistTypeLabels,
   batchDeleteMediaRequestSchema,
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
   menuTypeValues,
+  normalizeArtistTags,
   normalizeResourceName,
   ok,
+  serializeArtistTags,
   updateMediaMetadataSchema,
   type ClientHomeResponse
 } from "../src/index";
@@ -73,5 +78,73 @@ describe("shared contracts", () => {
     };
 
     expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "featuredCases"]);
+  });
+
+  it("normalizes artist tags once and exposes Chinese artist labels", () => {
+    expect(artistTypeLabels).toEqual({ host: "主持人", singer: "歌手", actor: "演员" });
+    expect(normalizeArtistTags(["  婚礼主持 ", "婚礼主持", "", "高端晚宴"])).toEqual(["婚礼主持", "高端晚宴"]);
+    expect(normalizeArtistTags('["婚礼主持", "高端晚宴"]')).toEqual(["婚礼主持", "高端晚宴"]);
+    expect(normalizeArtistTags('"[\\"婚礼主持\\"]"')).toEqual([]);
+    expect(serializeArtistTags('["婚礼主持", "高端晚宴"]')).toBe('["婚礼主持","高端晚宴"]');
+  });
+
+  it("validates the complete artist create payload and strict client list query", () => {
+    expect(
+      ArtistCreateRequestSchema.parse({
+        name: " 林然 ",
+        type: "host",
+        avatarAssetId: 12,
+        location: " 杭州 ",
+        badge: " 金牌主持 ",
+        tags: ["10年经验", "婚礼主持"],
+        summary: " 风格大气沉稳。 ",
+        detail: "详情内容",
+        sortOrder: 1,
+        status: "enabled"
+      })
+    ).toMatchObject({ name: "林然", location: "杭州", badge: "金牌主持", tags: ["10年经验", "婚礼主持"] });
+    expect(
+      ArtistCreateRequestSchema.parse({
+        name: "旧记录",
+        type: "host",
+        avatarAssetId: 13,
+        location: "杭州",
+        badge: "金牌主持",
+        tagsJson: '["婚礼主持", "婚礼主持"]',
+        summary: "简介",
+        detail: "详情",
+        sortOrder: 1,
+        status: "enabled"
+      }).tags
+    ).toEqual(["婚礼主持"]);
+    expect(() => ArtistCreateRequestSchema.parse({
+      name: "林然",
+      type: "host",
+      location: "杭州",
+      badge: "金牌主持",
+      tags: [],
+      summary: "简介",
+      detail: "详情",
+      sortOrder: 1,
+      status: "enabled"
+    })).toThrow();
+    expect(() => ArtistCreateRequestSchema.parse({
+      name: "林然",
+      type: "host",
+      avatarAssetId: 14,
+      location: "杭州",
+      badge: "金牌主持",
+      tags: ["超过十二个字符的标签内容啊"],
+      summary: "简介",
+      detail: "详情",
+      sortOrder: 1,
+      status: "enabled"
+    })).toThrow();
+    expect(artistListQuerySchema.parse({ q: " 林 ", tag: " 婚礼主持 " })).toEqual({
+      type: "host",
+      q: "林",
+      tag: "婚礼主持"
+    });
+    expect(() => artistListQuerySchema.parse({ type: "invalid" })).toThrow();
   });
 });

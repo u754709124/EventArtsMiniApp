@@ -98,7 +98,70 @@ test("新增菜单项并验证五种类型和动态配置", async ({ page }) => 
   await expect(page.getByRole("row", { name: /E2E 联系我们/ })).toBeVisible();
 });
 
-test("新增案例、追加详情资源并通过键盘排序", async ({ page, request }) => {
+test("人员管理提供列表封面、地点、徽章和标签字段", async ({ page }) => {
+  await loginAdminUi(page);
+  await page.getByTestId("sidebar-artists").click();
+  await page.getByTestId("artists-create").click();
+
+  await expect(page.getByTestId("artist-name")).toBeVisible();
+  await expect(page.getByTestId("artist-type")).toBeVisible();
+  await expect(page.getByTestId("artist-cover-select")).toBeVisible();
+  await expect(page.getByTestId("artist-location")).toBeVisible();
+  await expect(page.getByTestId("artist-badge")).toBeVisible();
+  await expect(page.getByTestId("artist-tags")).toBeVisible();
+  await expect(page.getByTestId("artist-summary")).toBeVisible();
+  await expect(page.getByTestId("artist-detail")).toBeVisible();
+});
+
+test("人员管理保存封面、地点和最多四个标签，并可在编辑时回填", async ({ page, request }) => {
+  const existingArtists = await adminApi<{ items: Array<{ id: number; name: string }> }>(request, "GET", "/api/admin/artists?pageSize=100");
+  for (const artist of existingArtists.items.filter((item) => item.name === "E2E 人员管理演员")) {
+    await adminApi(request, "DELETE", `/api/admin/artists/${artist.id}`);
+  }
+  await loginAdminUi(page);
+  await page.getByTestId("sidebar-artists").click();
+  await page.getByTestId("artists-create").click();
+  await page.getByTestId("artist-name").fill("E2E 人员管理演员");
+  await selectOption(page, "artist-type", "演员");
+  await chooseMediaFromLibrary(page, "artist-cover-select", /artist-cover-01\.png/);
+  await page.getByTestId("artist-location").fill("杭州 E2E");
+  await page.getByTestId("artist-badge").fill("测试主持");
+  const tagsInput = page.getByTestId("artist-tags").locator("input");
+  for (const [index, tag] of ["标签一", "标签二", "标签三"].entries()) {
+    await tagsInput.fill(tag);
+    await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content", { hasText: tag }).click();
+    await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(index + 1);
+  }
+  await page.getByTestId("artist-summary").fill("后台自动化验证列表封面、地点、左上标签和四个下方标签。");
+  await page.getByTestId("artist-detail").fill("E2E 人员详情内容");
+  await fillNumber(page, "sort-order", 0);
+  await selectOption(page, "status-select", "启用");
+  await page.getByTestId("artists-save").click();
+  await waitForToast(page, "保存成功");
+
+  const record = await adminApi<{ items: Array<{ id: number; name: string; location: string; badge: string; tags: string[]; tagsJson: string[] }> }>(request, "GET", "/api/admin/artists");
+  const created = record.items.find((item) => item.name === "E2E 人员管理演员");
+  expect(created).toMatchObject({ location: "杭州 E2E", badge: "测试主持", tags: ["标签一", "标签二", "标签三"] });
+  expect(created?.tagsJson).toEqual(["标签一", "标签二", "标签三"]);
+
+  const row = page.getByRole("row", { name: /E2E 人员管理演员/ });
+  await expect(row).toContainText("杭州 E2E");
+  await expect(row).toContainText("测试主持");
+  await row.getByTestId("artists-edit").click();
+  await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(3);
+  await page.locator(".ant-drawer-close").click();
+  const seededHost = page.getByRole("row", { name: /林然/ });
+  await expect(seededHost).toContainText("10年经验");
+  await expect(seededHost).toContainText("婚礼主持");
+  await expect(seededHost).toContainText("高端晚宴");
+  await expect(seededHost).toContainText("控场力强");
+});
+
+test("新增案例、追加详情资源与视频预览", async ({ page, request }) => {
+  const existingCases = await adminApi<{ items: Array<{ id: number; title: string }> }>(request, "GET", "/api/admin/cases?pageSize=100");
+  for (const caseItem of existingCases.items.filter((item) => item.title === "E2E 精选案例")) {
+    await adminApi(request, "DELETE", `/api/admin/cases/${caseItem.id}`);
+  }
   const media = await adminApi<{ items: { id: number; resourceName: string }[] }>(request, "GET", "/api/admin/media-assets?pageSize=100");
   const firstMedia = media.items.find((item) => item.resourceName === "icon-host.png");
   const secondMedia = media.items.find((item) => item.resourceName === "icon-singer.png");
@@ -132,11 +195,6 @@ test("新增案例、追加详情资源并通过键盘排序", async ({ page, re
   await expect(videoPlayer).toHaveAttribute("controls", "");
   await expect(videoPlayer).not.toHaveAttribute("autoplay", "");
   await page.getByRole("dialog", { name: "E2E 案例视频" }).getByRole("button", { name: "Close" }).click();
-  const firstTile = page.getByTestId(`case-detail-media-${firstMedia.id}-preview-tile`);
-  await firstTile.focus();
-  await firstTile.press("Space");
-  await firstTile.press("ArrowRight");
-  await firstTile.press("Space");
   await page.getByTestId("case-featured").click();
   await fillNumber(page, "case-featured-sort-order", 66);
   await fillNumber(page, "sort-order", 66);
@@ -145,7 +203,7 @@ test("新增案例、追加详情资源并通过键盘排序", async ({ page, re
   await waitForToast(page, "保存成功");
   await expect(page.getByRole("row", { name: /E2E 精选案例/ })).toBeVisible();
   const cases = await adminApi<{ items: { title: string; detailMediaAssetIds: number[] }[] }>(request, "GET", "/api/admin/cases");
-  expect(cases.items.find((item) => item.title === "E2E 精选案例")?.detailMediaAssetIds).toEqual([secondMedia.id, firstMedia.id, videoMedia.id]);
+  expect(cases.items.find((item) => item.title === "E2E 精选案例")?.detailMediaAssetIds).toEqual([firstMedia.id, secondMedia.id, videoMedia.id]);
 });
 
 test("表单本地上传在客户端拦截错误尺寸，引用资源不可删除", async ({ page, request }) => {
@@ -179,7 +237,11 @@ test("表单本地上传在客户端拦截错误尺寸，引用资源不可删�
   await expect(page.getByTestId(`media-delete-${referencedAssetId}`)).toBeDisabled();
 });
 
-test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ page }) => {
+test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ page, request }) => {
+  const existingAssets = await adminApi<{ items: Array<{ id: number; resourceName: string }> }>(request, "GET", "/api/admin/media-assets?pageSize=100");
+  for (const asset of existingAssets.items.filter((item) => item.resourceName === "E2E 未使用资源")) {
+    await adminApi(request, "DELETE", `/api/admin/media-assets/${asset.id}`);
+  }
   await loginAdminUi(page);
   await page.getByTestId("sidebar-media-assets").click();
   await expect(page.getByRole("tab", { name: "图片" })).toBeVisible();

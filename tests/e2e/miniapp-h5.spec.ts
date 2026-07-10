@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import sharp from "sharp";
 import { adminApi, apiBase, clientApi } from "./helpers";
 
 type AdminList<T> = { items: T[] };
@@ -77,6 +78,13 @@ async function prepareDesignReviewData(request: APIRequestContext) {
     cases.items
       .filter((item) => item.title.startsWith("E2E"))
       .map((item) => adminApi(request, "PUT", `/api/admin/cases/${item.id}`, { status: "disabled", isFeatured: false }))
+  );
+
+  const artists = await adminApi<AdminList<{ id: number; name: string }>>(request, "GET", "/api/admin/artists?pageSize=100");
+  await Promise.all(
+    artists.items
+      .filter((item) => item.name === "E2E 人员管理演员")
+      .map((item) => adminApi(request, "DELETE", `/api/admin/artists/${item.id}`))
   );
 }
 
@@ -158,20 +166,24 @@ test("无 Banner 时显示默认图且有指示点", async ({ page, request }) =
   await expect(page.getByTestId("home-banner-dots")).toContainText("•");
 });
 
-test("菜单展示五种类型并能跳转", async ({ page }) => {
+test("人员菜单进入统一列表页，并按类型展示固定双列卡片", async ({ page }) => {
   const artistTypes = [
-    ["host", /人员列表 host/],
-    ["singer", /人员列表 singer/],
-    ["actor", /人员列表 actor/]
+    ["host", "主持人"],
+    ["singer", "歌手"],
+    ["actor", "演员"]
   ] as const;
 
-  for (const [type, heading] of artistTypes) {
+  for (const [type, title] of artistTypes) {
     await openHome(page);
     const menu = page.getByTestId(`home-menu-${type}`).first();
     await expect(menu).toBeVisible();
     await tap(page, menu);
-    await expect(page.getByText(heading)).toBeVisible();
-    await expect(page.getByTestId(`artist-list-page-${type}`)).toBeVisible();
+    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
+    await expect(artistPage).toBeVisible();
+    await expect(page.getByTestId("artist-list-title")).toHaveText(title);
+    await expect(page.getByTestId("artist-search-input")).toBeVisible();
+    await expect(page.getByTestId("artist-filter-button")).toBeVisible();
+    await expect(artistPage.getByTestId("artist-bottom-nav")).toHaveCount(0);
   }
 
   await openHome(page);
@@ -185,6 +197,106 @@ test("菜单展示五种类型并能跳转", async ({ page }) => {
   await expect(contactMenu).toBeVisible();
   await tap(page, contactMenu);
   await expect(page.getByTestId("contact-page")).toBeVisible();
+});
+
+test("分类页三个人员入口复用对应的列表路由", async ({ page }) => {
+  const artistTypes = [
+    ["host", "主持人"],
+    ["singer", "歌手"],
+    ["actor", "演员"]
+  ] as const;
+
+  for (const [type, title] of artistTypes) {
+    await openHome(page);
+    await tap(page, page.getByText("分类").last());
+    await expect(page.getByTestId("category-page")).toBeVisible();
+    await tap(page, page.getByTestId(`category-artist-${type}`));
+    await expect(page.getByTestId(`artist-list-page-${type}`)).toBeVisible();
+    await expect(page.getByTestId("artist-list-title")).toHaveText(title);
+  }
+});
+
+test("人员页作为子页面不渲染底部菜单", async ({ page }) => {
+  for (const type of ["host", "singer", "actor"] as const) {
+    await openHome(page);
+    await tap(page, page.getByTestId(`home-menu-${type}`).first());
+    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
+    await expect(artistPage).toBeVisible();
+    await expect(artistPage.getByTestId("artist-bottom-nav")).toHaveCount(0);
+  }
+});
+
+test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) => {
+  await openHome(page);
+  await tap(page, page.getByTestId("home-menu-host").first());
+
+  const cards = page.getByTestId("artist-card");
+  await expect(cards.first()).toBeVisible();
+  await expect(cards).toHaveCount(6);
+  const dimensions = await cards.evaluateAll((nodes) =>
+    nodes.slice(0, 2).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    })
+  );
+  expect(dimensions[0].width).toBeCloseTo(dimensions[1].width, 1);
+  expect(dimensions[0].height).toBeCloseTo(dimensions[1].height, 1);
+
+  const searchInput = page.getByTestId("artist-search-input").locator("input");
+  await searchInput.fill("林然");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("林然");
+
+  await searchInput.fill("");
+  await expect(cards).toHaveCount(6);
+  await tap(page, page.getByTestId("artist-filter-button"));
+  await expect(page.getByTestId("artist-filter-panel")).toBeVisible();
+  await tap(page, page.getByTestId("artist-filter-location-杭州"));
+  await tap(page, page.getByTestId("artist-filter-confirm"));
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("杭州");
+
+  await tap(page, cards.first());
+  await expect(page.getByTestId("artist-detail-page")).toBeVisible();
+});
+
+test("分类页的人员入口复用同一类型化列表", async ({ page }) => {
+  await openHome(page);
+  await tap(page, page.getByText("分类").last());
+  await expect(page.getByTestId("category-page")).toBeVisible();
+  await tap(page, page.getByTestId("category-artist-singer"));
+  await expect(page.getByTestId("artist-list-page-singer")).toBeVisible();
+  await expect(page.getByTestId("artist-list-title")).toHaveText("歌手");
+});
+
+test("人员列表设计复核截图与参考差异图", async ({ page, request }) => {
+  await prepareDesignReviewData(request);
+  async function capture(type: "host" | "singer" | "actor", filename: string) {
+    await openHome(page);
+    await tap(page, page.getByTestId(`home-menu-${type}`).first());
+    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
+    await expect(artistPage).toBeVisible();
+    await expect(page.getByTestId("artist-card").first()).toBeVisible();
+    await expect(artistPage.locator("img").last()).toBeVisible();
+    await page.waitForTimeout(400);
+    await artistPage.screenshot({ path: `docs/design/${filename}` });
+  }
+
+  await capture("host", "actual-artists-host.png");
+  await capture("singer", "actual-artists-singer.png");
+  await capture("actor", "actual-artists-actor.png");
+
+  const hostPath = "docs/design/actual-artists-host.png";
+  const host = await sharp(hostPath).metadata();
+  if (!host.width || !host.height) throw new Error("人员列表 host 截图尺寸无效");
+  const reference = await sharp("docs/design/reference-artists.png")
+    .resize(host.width, host.height, { fit: "fill" })
+    .png()
+    .toBuffer();
+  await sharp(reference)
+    .composite([{ input: hostPath, blend: "difference" }])
+    .png()
+    .toFile("docs/design/diff-artists-host.png");
 });
 
 test("精选案例展示并可进入详情页", async ({ page }) => {

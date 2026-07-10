@@ -249,6 +249,127 @@ describe("client home aggregation", () => {
   });
 });
 
+describe("artist client and admin contracts", () => {
+  it("defaults the client artist list to host, serializes cards, and filters only enabled matching types", async () => {
+    await prisma.artist.updateMany({ where: { type: "singer" }, data: { status: "disabled" } });
+    const response = await app.inject({ method: "GET", url: "/api/client/artists" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "host",
+        coverUrl: expect.any(String),
+        avatarUrl: expect.any(String),
+        location: expect.any(String),
+        badge: expect.any(String),
+        tags: expect.any(Array)
+      })
+    ]));
+    expect(response.json().data.every((artist: { type: string; status: string }) => artist.type === "host" && artist.status === "enabled")).toBe(true);
+  });
+
+  it("strictly rejects an invalid client artist type", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/client/artists?type=unknown" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns six enabled records for each artist type and preserves the required host seed copy", async () => {
+    const [host, singer, actor] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/client/artists?type=host" }),
+      app.inject({ method: "GET", url: "/api/client/artists?type=singer" }),
+      app.inject({ method: "GET", url: "/api/client/artists?type=actor" })
+    ]);
+
+    expect(host.json().data).toHaveLength(6);
+    expect(singer.json().data).toHaveLength(6);
+    expect(actor.json().data).toHaveLength(6);
+    expect(host.json().data.map((artist: { name: string }) => artist.name)).toEqual(["林然", "Jessica", "陆安", "沈悦", "Kevin", "余薇"]);
+    expect(host.json().data[0]).toMatchObject({
+      location: "杭州",
+      badge: "金牌主持",
+      tags: ["10年经验", "婚礼主持", "高端晚宴", "控场力强"],
+      summary: "风格大气沉稳，擅长情感共鸣，深受新人喜爱，让每一场仪式都温暖动人。"
+    });
+    expect(singer.json().data.every((artist: { type: string }) => artist.type === "singer")).toBe(true);
+    expect(actor.json().data.every((artist: { type: string }) => artist.type === "actor")).toBe(true);
+  });
+
+  it("filters artists by keyword, location and tag while keeping sort order stable", async () => {
+    const hostArtists = await prisma.artist.findMany({ where: { type: "host" }, orderBy: { sortOrder: "asc" } });
+    await prisma.artist.update({ where: { id: hostArtists[0].id }, data: { sortOrder: 5, location: "绍兴", summary: "独特风格描述" } });
+    await prisma.artist.update({ where: { id: hostArtists[1].id }, data: { sortOrder: 5, location: "杭州", tagsJson: '["独特标签"]' } });
+
+    const bySummary = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E9%A3%8E%E6%A0%BC" });
+    const byName = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9E%97%E7%84%B6" });
+    const byLocationKeyword = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9D%AD%E5%B7%9E" });
+    const byTagKeyword = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const byLocationAndTag = await app.inject({ method: "GET", url: "/api/client/artists?type=host&location=%E6%9D%AD%E5%B7%9E&tag=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const ordered = await app.inject({ method: "GET", url: "/api/client/artists?type=host" });
+
+    expect(bySummary.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
+    expect(byName.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
+    expect(byLocationKeyword.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[1].id]);
+    expect(byTagKeyword.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[1].id]);
+    expect(byLocationAndTag.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[1].id]);
+    const tied = ordered.json().data.filter((artist: { sortOrder: number }) => artist.sortOrder === 5).map((artist: { id: number }) => artist.id);
+    expect(tied).toEqual([...tied].sort((left, right) => left - right));
+  });
+
+  it("safely falls back from damaged tags JSON and never exposes it to client cards", async () => {
+    const artist = await prisma.artist.findFirstOrThrow({ where: { type: "host" } });
+    await prisma.artist.update({ where: { id: artist.id }, data: { tagsJson: "not-json" } });
+
+    const response = await app.inject({ method: "GET", url: `/api/client/artists/${artist.id}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.tags).toEqual([]);
+    expect(response.json().data).not.toHaveProperty("tagsJson");
+  });
+
+  it("requires all new artist fields on creation and serializes tags without double JSON encoding", async () => {
+    const token = await login();
+    const cover = await prisma.mediaAsset.findFirstOrThrow();
+    const incomplete = await app.inject({
+      method: "POST",
+      url: "/api/admin/artists",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "缺字段人员", type: "host" }
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/artists",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: "新建主持人",
+        type: "host",
+        avatarAssetId: cover.id,
+        location: "杭州",
+        badge: "金牌主持",
+        tags: ["婚礼主持", "婚礼主持", "高端晚宴"],
+        summary: "专业稳重的主持人。",
+        detail: "详情内容",
+        sortOrder: 99,
+        status: "enabled"
+      }
+    });
+
+    expect(incomplete.statusCode).toBe(400);
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.tags).toEqual(["婚礼主持", "高端晚宴"]);
+    expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["婚礼主持","高端晚宴"]');
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${created.json().data.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tags: ["论坛主持", "论坛主持"] }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data.tags).toEqual(["论坛主持"]);
+    expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["论坛主持"]');
+  });
+});
+
 describe("media upload and references", () => {
   it("rejects nested relation writes and only accepts whitelisted business fields", async () => {
     const token = await login();

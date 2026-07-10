@@ -64,6 +64,16 @@ pnpm build:weapp
 
 微信小程序端构建完成后，将 `apps/miniapp/dist` 导入微信开发者工具。
 
+## 人员列表参考资源
+
+人员列表参考图及其六张可复现的示例封面资源位于 `docs/design` 和 `apps/miniapp/src/assets/generated`。重新生成资源请运行：
+
+```bash
+pnpm assets:slice:artists
+```
+
+脚本会验证参考图尺寸，并输出固定 `690 × 480` 的人员封面资源及资源清单；种子数据会按媒体库方式注册这些资源。
+
 ## 测试
 ```bash
 pnpm lint

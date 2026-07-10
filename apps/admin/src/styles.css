@@ -148,6 +148,15 @@ body {
   font-size: 12px;
 }
 
+.artist-cover-thumb {
+  display: block;
+  width: 64px;
+  height: 44px;
+  border-radius: 6px;
+  background: #fff7ed;
+  object-fit: cover;
+}
+
 .media-library-filters {
   margin-bottom: 16px;
 }

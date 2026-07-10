@@ -1,0 +1,91 @@
+# 07 演职人员统一列表页执行记录
+
+## 执行目标
+
+完成一个由 `type` 参数驱动的统一演职人员列表页，覆盖主持人、歌手和演员三个入口。交付必须同时包含：安全兼容的 SQLite 数据升级、媒体库注册的示例封面、18 条可重复 seed 数据、后台维护字段、Taro H5/微信端页面、API/后台/小程序自动化测试、H5 实际截图及差异图、接口与设计文档。
+
+最终路由固定为：
+
+- `/pages/artists/list?type=host`：主持人
+- `/pages/artists/list?type=singer`：歌手
+- `/pages/artists/list?type=actor`：演员
+
+小程序页面接收到缺失或非法 `type` 时回退到 `host`；API 对显式非法 `type` 返回统一的 `400 VALIDATION_ERROR`。
+
+三种人员列表均为子页面，不渲染页面级底部菜单；返回入口仍通过顶部返回按钮安全回到分类或上一页。
+
+## 范围与拆分
+
+| 分项 | 责任文件/目录 | 交付条件 | 当前状态 |
+| --- | --- | --- | --- |
+| 共享契约 | `packages/shared/src/index.ts` | 中文类型映射、DTO、请求查询校验、标签解析/一次序列化 | 已实施并通过单测/构建 |
+| 数据库与 API | `apps/api/prisma`、`apps/api/src`、`apps/api/test` | `location`/`badge` 迁移、序列化、筛选、18 条 seed、API 覆盖 | 已实施并通过 API 单测/构建 |
+| 后台 CMS | `apps/admin/src`、`tests/e2e/admin.spec.ts` | 封面、地点、徽章、标签、描述字段及即时列表刷新 | 已实施，已通过 E2E |
+| 小程序 | `apps/miniapp/src`、`tests/e2e/miniapp-h5.spec.ts` | 统一列表、搜索、筛选、卡片、子页面返回和入口 | 已实施，已通过 H5/微信构建和 E2E |
+| 资源与设计 | `scripts`、`docs/design`、`assets/generated` | 可重复切图、资源清单、设计令牌、截图/diff | 已完成并已实际重生成/复核 |
+| 集成验证 | 根脚本与本文件 | lint/test/e2e/build/release 证据和风险说明 | 已完成，见以下记录 |
+
+## 实现约束
+
+- 数据表保留 `avatarAssetId`；业务名称为“列表封面图”。新增 `location TEXT NOT NULL DEFAULT ''`、`badge TEXT NOT NULL DEFAULT ''`。
+- 每次启动以 `PRAGMA table_info(artists)` 检查列；缺失时才执行 `ALTER TABLE ... ADD COLUMN`。不得丢失旧行或媒体关联。
+- 客户端人员项只消费 `coverUrl`、`avatarUrl`、`location`、`badge`、`tags` 等序列化字段；`tags` 始终是 `string[]`。
+- 标签在边界统一 trim、去空、去重、限 1–4 个；存库只通过一次标签序列化函数写入 `tagsJson`。
+- 单个标签最长 12 个字符；共享层和后台 API 同时拒绝超长标签。
+- 列表固定按 `sortOrder ASC, id ASC`；仅返回 `enabled`，并严格以 `type` 过滤。`q` 搜索姓名、地点、徽章、标签和描述；`location` 与 `tag` 是精确实际值筛选。
+- 设计宽度为 `750rpx`。双列卡片 `345rpx` 宽、`20rpx` 列间距、封面 `345rpx × 240rpx`、固定卡片总高 `436rpx`、行距 `18rpx`。描述固定两行，采用 `-webkit-line-clamp: 2` 加固定高度。
+- 所有文字都是实时 UI；封面资源仅包含照片。不得以整页或整卡片截图代替组件。
+
+## 资源执行清单
+
+参考图路径：`docs/design/reference-artists.png`（`853 × 1844`）。
+
+运行：
+
+```bash
+pnpm assets:slice:artists
+```
+
+应稳定产出：
+
+- `apps/miniapp/src/assets/generated/artist-cover-01.png` 至 `artist-cover-06.png`（均 `690 × 480`）
+- `docs/design/artist-assets-manifest.json`
+
+切图需要实查并去除参考图已有的左上角标签；页面再用不透明的动态标签渲染。
+
+## 验证矩阵
+
+| 验证 | 证明内容 | 命令或产物 |
+| --- | --- | --- |
+| 标签/契约单测 | 类型映射、标签恢复、非法输入 | `pnpm --filter @event-arts/shared test` |
+| API 单测 | 创建、字段校验、筛选、排序、损坏 JSON、历史 SQLite 升级与幂等 | `pnpm --filter api test` |
+| 后台 E2E | 新字段、必填、标签上限、保存/列表/编辑回填 | `pnpm e2e --grep '人员管理'` |
+| 小程序 E2E | 三类型入口、双列稳定、搜索、筛选、详情、无页面级底栏 | `pnpm e2e --grep '人员'` |
+| 资源 | 参考尺寸、裁切边界、输出尺寸 | `pnpm assets:slice:artists` |
+| 构建 | 类型/打包/微信端 | `pnpm lint && pnpm test && pnpm e2e && pnpm build:api && pnpm build:admin && pnpm build:h5 && pnpm build:weapp` |
+| 发布集合 | 全部真实命令串联 | `pnpm release:check` |
+
+## 视觉复核步骤
+
+1. 使用 Playwright 的移动视口打开 host、singer、actor 深链。
+2. 保存 `docs/design/actual-artists-host.png`、`actual-artists-singer.png`、`actual-artists-actor.png`。
+3. 以 `reference-artists.png` 与 host 截图生成 `docs/design/diff-artists-host.png`；只可遮罩状态栏与平台胶囊，不能遮罩搜索或卡片。
+4. 人工复核双列左右边界、封面高度、姓名基线、标签高度、两行描述和子页面安全区留白；至少完成一次调整与二次截图。
+
+## 已记录执行证据
+
+- `pnpm assets:slice:artists`：退出码 `0`，实际重生成 6 张 `690 × 480` 封面和资源清单。
+- `pnpm db:push`、`pnpm db:seed`：退出码均为 `0`；seed 重新执行不新增重复人员记录。
+- `pnpm lint`：退出码 `0`。
+- `pnpm test`：退出码 `0`；Shared `8`、API `41`、Admin `3` 个 Vitest 用例全部通过，Miniapp package 没有本地 Vitest 文件。
+- `pnpm e2e`：退出码 `0`，28 项 Playwright 用例全部通过；其中覆盖后台人员新增/编辑回填、三类入口、搜索、筛选、详情、无页面级底栏和截图/diff。
+- `pnpm --filter api build`、`pnpm --filter admin build`：退出码均为 `0`。Admin 仍有既有 bundle size 警告。
+- `pnpm --filter miniapp build:h5`、`pnpm build:weapp`：退出码均为 `0`。两端仅报告资源体积及异步分包建议警告。
+- `pnpm release:check`：退出码 `0`，依次执行 lint、unit、E2E、API/Admin/H5/微信构建。
+- 为兼容首次切出的旧截图资源，动态徽标已改为完整覆盖该资源中旧徽标的投影范围，且背景不透明；不会把旧标签文字透到实时徽标下方。
+- 微信构建曾因页面运行时导入共享 TypeScript 源码而报 `ModuleParseError`；根因确认后将小程序改为仅导入共享类型、在页面定义等价的只读文案映射，随后微信构建退出码为 `0`。
+- H5 视觉复核命令 `pnpm e2e --grep '人员列表设计复核截图与参考差异图'`：退出码 `0`；已产生 host、singer、actor 截图和 host diff。初始全页截图会包含 Taro H5 保留路由，随后改为截取当前人员页根节点；在移除人员页底栏后，最终输出为 `854 × 1844` px 的 2× 截图。
+
+## 完成门槛
+
+只有所有分项均改为“完成”、上述验证命令有新鲜的退出码 `0` 证据、三种页面截图和 host diff 文件真实存在，并且没有未解决的视觉或平台兼容风险时，才可将本阶段标记完成。

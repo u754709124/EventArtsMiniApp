@@ -7,10 +7,12 @@ import type { Prisma } from "@prisma/client";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
-  ArtistTypeSchema,
+  ArtistCreateRequestSchema,
+  ArtistUpdateRequestSchema,
   BannerLinkTypeSchema,
   MediaFieldKeySchema,
   MenuTypeSchema,
+  artistListQuerySchema,
   batchDeleteMediaRequestSchema,
   caseDetailMediaIdsSchema,
   checkMediaNameRequestSchema,
@@ -18,10 +20,14 @@ import {
   lookupMediaRequestSchema,
   mediaFieldRules,
   mediaListQuerySchema,
+  normalizeArtistTags,
   normalizeResourceName,
   ok,
   pageViewRequestSchema,
+  serializeArtistTags,
   updateMediaMetadataSchema,
+  type ArtistDto,
+  type ArtistType,
   type CaseMediaDto,
   type MediaFieldKey
 } from "@event-arts/shared";
@@ -116,18 +122,6 @@ const caseCreateSchema = z.object({
   status: statusInputSchema
 }).strict();
 const caseUpdateSchema = caseCreateSchema.partial().strict();
-const artistCreateSchema = z.object({
-  name: z.string().min(1),
-  type: ArtistTypeSchema,
-  avatarAssetId: positiveIdSchema.nullable().optional(),
-  summary: z.string().min(1),
-  tagsJson: z.array(z.string()).optional(),
-  detail: z.string().min(1),
-  sortOrder: sortOrderSchema,
-  status: statusInputSchema
-}).strict();
-const artistUpdateSchema = artistCreateSchema.partial().strict();
-
 function sendError(reply: FastifyReply, statusCode: number, code: string, message: string) {
   return reply.code(statusCode).headers(jsonHeaders).send(fail(code, message));
 }
@@ -157,6 +151,31 @@ function serializeCaseMedia(item: {
     height: item.mediaAsset.height ?? 0,
     sortOrder: item.sortOrder
   };
+}
+
+type ArtistWithCover = Prisma.ArtistGetPayload<{ include: { avatarAsset: true } }>;
+
+export function serializeArtist(item: ArtistWithCover): ArtistDto {
+  const coverUrl = item.avatarAsset?.url ?? null;
+  return {
+    id: item.id,
+    name: item.name,
+    type: item.type as ArtistType,
+    coverUrl,
+    avatarUrl: coverUrl,
+    location: item.location ?? "",
+    badge: item.badge ?? "",
+    tags: normalizeArtistTags(item.tagsJson),
+    summary: item.summary,
+    detail: item.detail,
+    sortOrder: item.sortOrder,
+    status: item.status as "enabled" | "disabled"
+  };
+}
+
+function serializeAdminArtist(item: ArtistWithCover) {
+  const artist = serializeArtist(item);
+  return { ...item, ...artist, tagsJson: artist.tags };
 }
 
 function startOfDay(date: Date) {
@@ -465,20 +484,31 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   app.get("/api/client/artists", async (request, reply) => {
-    const type = (request.query as { type?: string }).type;
+    const parsed = artistListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员列表查询参数错误");
+    const { type, q, location, tag } = parsed.data;
     const items = await prisma.artist.findMany({
-      where: { status: "enabled", ...(type ? { type } : {}) },
+      where: { status: "enabled", type },
       include: { avatarAsset: true },
-      orderBy: { sortOrder: "asc" }
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
     });
-    return reply.send(ok(items.map((item) => ({ ...item, avatarUrl: item.avatarAsset?.url ?? null }))));
+    const normalizedQuery = q?.toLocaleLowerCase("zh-CN");
+    const filtered = items.filter((item) => {
+      const tags = normalizeArtistTags(item.tagsJson);
+      if (location && item.location !== location) return false;
+      if (tag && !tags.includes(tag)) return false;
+      if (!normalizedQuery) return true;
+      return [item.name, item.location, item.badge, item.summary, ...tags]
+        .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
+    });
+    return reply.send(ok(filtered.map(serializeArtist)));
   });
 
   app.get("/api/client/artists/:id", async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const item = await prisma.artist.findFirst({ where: { id, status: "enabled" }, include: { avatarAsset: true } });
     return item
-      ? reply.send(ok({ ...item, avatarUrl: item.avatarAsset?.url ?? null }))
+      ? reply.send(ok(serializeArtist(item)))
       : sendError(reply, 404, "NOT_FOUND", "人员不存在");
   });
 
@@ -960,22 +990,27 @@ function registerCrud(
   });
 
   app.get("/api/admin/artists", { preHandler: requireAdmin }, async (_request, reply) => {
-    const items = await prisma.artist.findMany({ include: { avatarAsset: true }, orderBy: { sortOrder: "asc" } });
-    return reply.send(ok({ items, total: items.length }));
+    const items = await prisma.artist.findMany({
+      include: { avatarAsset: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+    });
+    return reply.send(ok({ items: items.map(serializeAdminArtist), total: items.length }));
   });
   app.post("/api/admin/artists", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = artistCreateSchema.safeParse(request.body);
+    const parsed = ArtistCreateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员参数错误");
     const body = parsed.data;
-    if (body.avatarAssetId !== null && body.avatarAssetId !== undefined) {
-      const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
-      if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
-    }
-    const item = await prisma.artist.create({ data: { ...body, tagsJson: JSON.stringify(body.tagsJson ?? []) } });
-    return reply.send(ok(item));
+    const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
+    if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
+    const { tags, ...artistData } = body;
+    const item = await prisma.artist.create({
+      data: { ...artistData, tagsJson: serializeArtistTags(tags) },
+      include: { avatarAsset: true }
+    });
+    return reply.send(ok(serializeAdminArtist(item)));
   });
   app.put("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = artistUpdateSchema.safeParse(request.body);
+    const parsed = ArtistUpdateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员参数错误");
     const body = parsed.data;
     const id = Number((request.params as { id: string }).id);
@@ -985,10 +1020,13 @@ function registerCrud(
       const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
       if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     }
-    const data: Record<string, unknown> = { ...body };
-    if (Object.hasOwn(body, "tagsJson")) data.tagsJson = JSON.stringify(body.tagsJson ?? []);
-    const item = await prisma.artist.update({ where: { id }, data: data as never });
-    return reply.send(ok(item));
+    const { tags, ...artistData } = body;
+    const item = await prisma.artist.update({
+      where: { id },
+      data: { ...artistData, ...(tags !== undefined ? { tagsJson: serializeArtistTags(tags) } : {}) },
+      include: { avatarAsset: true }
+    });
+    return reply.send(ok(serializeAdminArtist(item)));
   });
   app.delete("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     await prisma.artist.delete({ where: { id: Number((request.params as { id: string }).id) } });

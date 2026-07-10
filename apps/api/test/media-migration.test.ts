@@ -105,4 +105,39 @@ describe("legacy media migration", () => {
     expect(rows).toEqual([{ width: 16, height: 8, size: video.length }]);
     await prisma.$disconnect();
   });
+
+  it("adds artist location and badge to an existing SQLite table without losing rows and remains idempotent", async () => {
+    const runtime = path.join(root, "artist-columns");
+    await mkdir(runtime, { recursive: true });
+    const prisma = createPrismaClient(`file:${path.join(runtime, "legacy.db")}`);
+    await prisma.$executeRawUnsafe("CREATE TABLE media_assets (id INTEGER PRIMARY KEY, resourceName TEXT)");
+    await prisma.$executeRawUnsafe("INSERT INTO media_assets (id, resourceName) VALUES (7, 'old-cover.png')");
+    await prisma.$executeRawUnsafe(`CREATE TABLE artists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      avatarAssetId INTEGER,
+      summary TEXT NOT NULL,
+      tagsJson TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'enabled',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await prisma.$executeRawUnsafe(
+      "INSERT INTO artists (name, type, avatarAssetId, summary, tagsJson, detail, sortOrder, status) VALUES ('旧主持人', 'host', 7, '旧简介', '[]', '旧详情', 4, 'enabled')"
+    );
+
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(runtime, "uploads") });
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(runtime, "uploads") });
+
+    const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(artists)");
+    const rows = await prisma.$queryRawUnsafe<Array<{ name: string; avatarAssetId: number; location: string; badge: string; sortOrder: number }>>(
+      "SELECT name, avatarAssetId, location, badge, sortOrder FROM artists"
+    );
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["location", "badge"]));
+    expect(rows).toEqual([{ name: "旧主持人", avatarAssetId: 7, location: "", badge: "", sortOrder: 4 }]);
+    await prisma.$disconnect();
+  });
 });

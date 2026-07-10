@@ -38,6 +38,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import dayjs from "dayjs";
 import {
   artistTypeValues,
+  artistTypeLabels,
   bannerLinkTypeValues,
   statusValues,
   type DashboardOverviewResponse,
@@ -49,6 +50,32 @@ import { MediaPage } from "./media/MediaPage";
 import "./styles.css";
 
 type AnyRecord = Record<string, unknown>;
+
+function normalizeArtistFormTags(value: unknown) {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  const seen = new Set<string>();
+  return raw
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLocaleLowerCase("zh-CN");
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
+}
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -263,7 +290,8 @@ function CrudPage({ config }: { config: CrudConfig }) {
     form.setFieldsValue({
       ...record,
       eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
-      configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson
+      configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson,
+      tags: normalizeArtistFormTags(record.tags ?? record.tagsJson)
     });
     setDrawerOpen(true);
   }
@@ -579,29 +607,62 @@ const configs: Record<string, CrudConfig> = {
     path: "/api/admin/artists",
     testid: "artists",
     columns: [
+      {
+        title: "封面",
+        dataIndex: "avatarAsset",
+        width: 94,
+        render: (asset) => asset && typeof asset === "object" && "url" in asset ? <img className="artist-cover-thumb" src={String(asset.url)} alt="列表封面图" /> : "—"
+      },
       { title: "姓名/艺名", dataIndex: "name" },
-      { title: "类型", dataIndex: "type" },
+      { title: "人员类型", dataIndex: "type", render: (value) => artistTypeLabels[value as keyof typeof artistTypeLabels] ?? String(value) },
+      { title: "演绎地点", dataIndex: "location", ellipsis: true },
+      { title: "左上角标签", dataIndex: "badge", ellipsis: true },
+      {
+        title: "下方标签",
+        dataIndex: "tags",
+        render: (value, record) => normalizeArtistFormTags(value ?? record.tagsJson).map((tag) => <Tag key={tag}>{tag}</Tag>)
+      },
       { title: "排序", dataIndex: "sortOrder" }
     ],
+    normalize: (values) => ({ ...values, tags: normalizeArtistFormTags(values.tags) }),
     fields: () => (
       <>
         <Form.Item label="姓名/艺名" name="name" rules={[{ required: true }]}>
           <Input data-testid="artist-name" />
         </Form.Item>
         <Form.Item label="类型" name="type" rules={[{ required: true }]}>
-          <Select options={artistTypeValues.map((value) => ({ value, label: value }))} />
+          <Select data-testid="artist-type" options={artistTypeValues.map((value) => ({ value, label: artistTypeLabels[value] }))} />
         </Form.Item>
-        <Form.Item label="头像" name="avatarAssetId">
-          <MediaField testid="artist-avatar-select" fieldKey="artist.avatar" />
+        <Form.Item label="列表封面图" name="avatarAssetId" rules={[{ required: true, message: "请选择列表封面图" }]} extra="推荐尺寸 690×480，前台将以 aspectFill 裁切显示">
+          <MediaField testid="artist-cover-select" fieldKey="artist.avatar" />
         </Form.Item>
-        <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
-          <Input.TextArea />
+        <Form.Item label="演绎地点" name="location" rules={[{ required: true, message: "请输入演绎地点" }, { max: 30 }]}>
+          <Input data-testid="artist-location" maxLength={30} showCount />
         </Form.Item>
-        <Form.Item label="标签" name="tagsJson">
-          <Select mode="tags" />
+        <Form.Item label="左上角标签" name="badge" rules={[{ required: true, message: "请输入左上角标签" }, { max: 12 }]}>
+          <Input data-testid="artist-badge" maxLength={12} showCount />
+        </Form.Item>
+        <Form.Item
+          label="下方多个标签"
+          name="tags"
+          getValueFromEvent={(value) => normalizeArtistFormTags(value).slice(0, 4)}
+          rules={[
+            { required: true, message: "请至少填写一个标签" },
+            {
+              validator: (_, value) => {
+                const tags = normalizeArtistFormTags(value);
+                return tags.length >= 1 && tags.length <= 4 ? Promise.resolve() : Promise.reject(new Error("请填写 1 至 4 个标签"));
+              }
+            }
+          ]}
+        >
+          <Select data-testid="artist-tags" mode="tags" tokenSeparators={[",", "，"]} />
+        </Form.Item>
+        <Form.Item label="演职人员描述" name="summary" rules={[{ required: true, message: "请输入演职人员描述" }, { max: 120 }]}>
+          <Input.TextArea data-testid="artist-summary" maxLength={120} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
         </Form.Item>
         <Form.Item label="详情内容" name="detail" rules={[{ required: true }]}>
-          <Input.TextArea />
+          <Input.TextArea data-testid="artist-detail" autoSize={{ minRows: 4, maxRows: 8 }} />
         </Form.Item>
         <SortField />
         <StatusField />

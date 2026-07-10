@@ -1,0 +1,43 @@
+.category-artist-list {
+  display: flex;
+  margin-top: 28rpx;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.category-artist-entry {
+  display: flex;
+  width: 710rpx;
+  min-height: 116rpx;
+  padding: 24rpx;
+  align-items: center;
+  justify-content: space-between;
+  border: 1rpx solid #f0ebe5;
+  border-radius: 16rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(92, 64, 35, 0.06);
+  box-sizing: border-box;
+}
+
+.category-artist-entry__title,
+.category-artist-entry__summary {
+  display: block;
+}
+
+.category-artist-entry__title {
+  color: #30261d;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.category-artist-entry__summary {
+  margin-top: 8rpx;
+  color: #8a7f73;
+  font-size: 23rpx;
+}
+
+.category-artist-entry__arrow {
+  color: #c77b38;
+  font-size: 42rpx;
+  line-height: 1;
+}

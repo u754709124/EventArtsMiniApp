@@ -31,6 +31,12 @@ export const BannerLinkTypeSchema = z.enum(bannerLinkTypeValues);
 export const MediaTypeSchema = z.enum(mediaTypeValues);
 export const MediaFieldKeySchema = z.enum(mediaFieldKeyValues);
 
+export const artistTypeLabels: Record<ArtistType, string> = {
+  host: "主持人",
+  singer: "歌手",
+  actor: "演员"
+};
+
 export type MediaFieldRule = {
   label: string;
   allowedTypes: MediaType[];
@@ -46,7 +52,7 @@ export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
   "banner.image": { label: "Banner 图片", allowedTypes: ["image"], width: 1420, height: 580 },
   "menu.icon": { label: "菜单图标", allowedTypes: ["image"], width: 176, height: 176 },
   "case.cover": { label: "案例封面", allowedTypes: ["image"], width: 460, height: 320 },
-  "artist.avatar": { label: "人员头像", allowedTypes: ["image"], width: null, height: null },
+  "artist.avatar": { label: "列表封面图", allowedTypes: ["image"], width: null, height: null },
   "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null }
 };
 
@@ -64,7 +70,105 @@ export function normalizeMediaTags(values: string[]) {
   return [...tags.values()];
 }
 
+export function normalizeArtistTags(input: unknown): string[] {
+  let value = input;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+
+  const tags = new Map<string, string>();
+  for (const rawTag of value) {
+    if (typeof rawTag !== "string") continue;
+    const tag = rawTag.trim();
+    const key = tag.toLocaleLowerCase("zh-CN");
+    if (tag && !tags.has(key)) tags.set(key, tag);
+  }
+  return [...tags.values()];
+}
+
+export function serializeArtistTags(input: unknown): string {
+  return JSON.stringify(normalizeArtistTags(input));
+}
+
 const positiveIntFromInput = z.coerce.number().int().positive();
+
+const artistNameSchema = z.string().trim().min(1).max(60);
+const artistLocationSchema = z.string().trim().min(1).max(30);
+const artistBadgeSchema = z.string().trim().min(1).max(12);
+const artistSummarySchema = z.string().trim().min(1).max(120);
+const artistDetailSchema = z.string().trim().min(1);
+const artistTagsSchema = z
+  .array(z.string())
+  .transform((values) => normalizeArtistTags(values))
+  .refine((values) => values.every((value) => value.length <= 12), "单个标签不能超过 12 个字符")
+  .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
+const legacyArtistTagsSchema = z
+  .union([z.array(z.string()), z.string()])
+  .transform((values) => normalizeArtistTags(values))
+  .refine((values) => values.every((value) => value.length <= 12), "单个标签不能超过 12 个字符")
+  .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
+const artistQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
+
+const artistTagInput = {
+  tags: artistTagsSchema.optional(),
+  tagsJson: legacyArtistTagsSchema.optional()
+};
+
+function normalizeArtistRequestTags<T extends { tags?: string[]; tagsJson?: string[] }>(input: T) {
+  const { tags, tagsJson, ...artist } = input;
+  return { ...artist, ...(tags !== undefined || tagsJson !== undefined ? { tags: tags ?? tagsJson ?? [] } : {}) };
+}
+
+function requireArtistTags(value: { tags?: string[]; tagsJson?: string[] }, context: z.RefinementCtx) {
+  if (value.tags === undefined && value.tagsJson === undefined) {
+    context.addIssue({ code: "custom", path: ["tags"], message: "请至少填写一个标签" });
+  }
+}
+
+export const ArtistCreateRequestSchema = z
+  .object({
+    name: artistNameSchema,
+    type: ArtistTypeSchema,
+    avatarAssetId: positiveIntFromInput,
+    location: artistLocationSchema,
+    badge: artistBadgeSchema,
+    ...artistTagInput,
+    summary: artistSummarySchema,
+    detail: artistDetailSchema,
+    sortOrder: z.coerce.number().int().min(0),
+    status: StatusSchema
+  })
+  .strict()
+  .superRefine(requireArtistTags)
+  .transform(normalizeArtistRequestTags);
+
+export const ArtistUpdateRequestSchema = z
+  .object({
+    name: artistNameSchema.optional(),
+    type: ArtistTypeSchema.optional(),
+    avatarAssetId: positiveIntFromInput.nullable().optional(),
+    location: artistLocationSchema.optional(),
+    badge: artistBadgeSchema.optional(),
+    ...artistTagInput,
+    summary: artistSummarySchema.optional(),
+    detail: artistDetailSchema.optional(),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+    status: StatusSchema.optional()
+  })
+  .strict()
+  .transform(normalizeArtistRequestTags);
+
+export const artistListQuerySchema = z.object({
+  type: ArtistTypeSchema.default("host"),
+  q: artistQueryTextSchema,
+  location: artistQueryTextSchema,
+  tag: artistQueryTextSchema
+});
 
 export const mediaListQuerySchema = z.object({
   mediaType: MediaTypeSchema.optional(),
@@ -233,9 +337,12 @@ export type ArtistDto = {
   id: number;
   name: string;
   type: ArtistType;
+  coverUrl: string | null;
   avatarUrl: string | null;
+  location: string;
+  badge: string;
+  tags: string[];
   summary: string;
-  tagsJson: unknown;
   detail: string;
   sortOrder: number;
   status: Status;

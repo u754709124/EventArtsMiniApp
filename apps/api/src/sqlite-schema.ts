@@ -101,6 +101,8 @@ const statements = [
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     avatarAssetId INTEGER,
+    location TEXT NOT NULL DEFAULT '',
+    badge TEXT NOT NULL DEFAULT '',
     summary TEXT NOT NULL,
     tagsJson TEXT NOT NULL,
     detail TEXT NOT NULL,
@@ -181,6 +183,18 @@ async function tableExists(prisma: AppPrismaClient, table: string) {
     table
   );
   return rows.length > 0;
+}
+
+async function ensureArtistColumns(prisma: AppPrismaClient) {
+  if (!(await tableExists(prisma, "artists"))) return;
+  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(artists)");
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("location")) {
+    await prisma.$executeRawUnsafe("ALTER TABLE artists ADD COLUMN location TEXT NOT NULL DEFAULT ''");
+  }
+  if (!names.has("badge")) {
+    await prisma.$executeRawUnsafe("ALTER TABLE artists ADD COLUMN badge TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 function storagePath(uploadDir: string, row: LegacyMediaRow) {
@@ -358,4 +372,5 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
   for (const statement of statements) {
     await prisma.$executeRawUnsafe(statement);
   }
+  await ensureArtistColumns(prisma);
 }

@@ -1,0 +1,184 @@
+{
+  "reference": {
+    "path": "docs/design/reference-artists.png",
+    "width": 853,
+    "height": 1844,
+    "sha256": "e63d9cd61cfa16660a967207f54571e5237929f7cccbebdcb9161c1df0bbfe1f"
+  },
+  "outputDir": "apps/miniapp/src/assets/generated",
+  "outputSize": {
+    "width": 690,
+    "height": 480
+  },
+  "covers": [
+    {
+      "filename": "artist-cover-01.png",
+      "sourceCrop": {
+        "left": 24,
+        "top": 251,
+        "width": 392,
+        "height": 273
+      },
+      "legacyBadge": {
+        "left": 30,
+        "top": 263,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 30,
+        "top": 303,
+        "width": 120,
+        "height": 38
+      },
+      "note": "林然 reference photo; original 金牌主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "ac670b95e161e4db00c7312356b04e09e91fe82827411dc04d2707c06c86c7b8",
+      "legacyBadgeExcluded": true
+    },
+    {
+      "filename": "artist-cover-02.png",
+      "sourceCrop": {
+        "left": 430,
+        "top": 251,
+        "width": 398,
+        "height": 273
+      },
+      "legacyBadge": {
+        "left": 436,
+        "top": 263,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 436,
+        "top": 303,
+        "width": 120,
+        "height": 38
+      },
+      "note": "Jessica reference photo; original 人气主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "214f1cf08a7fb450b6b8407a6325138d31202ae1b981f1a7de9ff41f70c404c8",
+      "legacyBadgeExcluded": true
+    },
+    {
+      "filename": "artist-cover-03.png",
+      "sourceCrop": {
+        "left": 24,
+        "top": 776,
+        "width": 392,
+        "height": 273
+      },
+      "legacyBadge": {
+        "left": 30,
+        "top": 788,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 30,
+        "top": 828,
+        "width": 120,
+        "height": 38
+      },
+      "note": "陆安 reference photo; original 实力主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "b80690c0c0538145b681c825c95a9ec90272c77c5e4a0c82eea1dd8bf19c8c46",
+      "legacyBadgeExcluded": true
+    },
+    {
+      "filename": "artist-cover-04.png",
+      "sourceCrop": {
+        "left": 430,
+        "top": 776,
+        "width": 398,
+        "height": 273
+      },
+      "legacyBadge": {
+        "left": 436,
+        "top": 788,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 436,
+        "top": 828,
+        "width": 120,
+        "height": 38
+      },
+      "note": "沈悦 reference photo; original 高端主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "de7ef49af118461b29f0ffece99a4b35700226cd9922dbbb7af2904298176868",
+      "legacyBadgeExcluded": true
+    },
+    {
+      "filename": "artist-cover-05.png",
+      "sourceCrop": {
+        "left": 24,
+        "top": 1280,
+        "width": 354,
+        "height": 246
+      },
+      "legacyBadge": {
+        "left": 30,
+        "top": 1292,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 30,
+        "top": 1332,
+        "width": 120,
+        "height": 38
+      },
+      "note": "Kevin reference photo; original 双语主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "9e883556dbbaa0d9546e92022c121932c935bd202aae2744af28b8781dee3ea9",
+      "legacyBadgeExcluded": true
+    },
+    {
+      "filename": "artist-cover-06.png",
+      "sourceCrop": {
+        "left": 430,
+        "top": 1280,
+        "width": 354,
+        "height": 246
+      },
+      "legacyBadge": {
+        "left": 436,
+        "top": 1292,
+        "width": 120,
+        "height": 38
+      },
+      "repairSource": {
+        "left": 436,
+        "top": 1332,
+        "width": 120,
+        "height": 38
+      },
+      "note": "余薇 reference photo; original 资深主持 badge is locally repaired.",
+      "output": {
+        "width": 690,
+        "height": 480
+      },
+      "sha256": "ce54d7ba431f92e25f53493ac72210982413bdb0c6c387c482b0cb4253460a12",
+      "legacyBadgeExcluded": true
+    }
+  ],
+  "valid": true
+}
