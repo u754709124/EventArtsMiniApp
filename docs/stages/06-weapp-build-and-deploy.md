@@ -96,7 +96,7 @@ apps/miniapp/dist
 - 运行 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm build:weapp`。
 
 ## 对应 git commit hash
-待回填。
+bc22e21
 
 ## 已知问题或设计取舍
 - Codex sandbox 不能写 Prisma 默认用户缓存目录，涉及 `prisma generate` 的命令在本环境使用提升权限运行；普通本机开发环境通常不需要。
