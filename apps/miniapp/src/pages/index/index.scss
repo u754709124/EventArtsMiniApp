@@ -62,17 +62,44 @@
   font-size: 40rpx;
 }
 
+.banner-wrap {
+  position: relative;
+  width: 710rpx;
+  height: 290rpx;
+  margin-bottom: 18rpx;
+}
+
 .banner {
   width: 710rpx;
   height: 290rpx;
   border-radius: 18rpx;
   overflow: hidden;
-  margin-bottom: 18rpx;
 }
 
 .banner__image {
   width: 710rpx;
   height: 290rpx;
+}
+
+.banner-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12rpx;
+  display: flex;
+  justify-content: center;
+  gap: 8rpx;
+  pointer-events: none;
+}
+
+.banner-dot {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 30rpx;
+  line-height: 1;
+}
+
+.banner-dot--active {
+  color: #ffffff;
 }
 
 .menu-card {

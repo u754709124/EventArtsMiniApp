@@ -12,9 +12,9 @@ export default function CaseDetail() {
     void request<ActivityCaseDto>(`/api/client/cases/${query.id}`).then(setItem);
   });
   return (
-    <View className="page">
+    <View className="page" data-testid="case-detail-page">
       <Text className="home-title">{item?.title || "案例详情"}</Text>
-      {item && <AppImage className="banner__image" src={item.coverUrl} fallback={generatedAssets.placeholderCase} />}
+      {item && <AppImage className="banner__image" testid="case-detail-image" src={item.coverUrl} fallback={generatedAssets.placeholderCase} />}
       <Text>{item?.summary || "暂无案例内容"}</Text>
       <Text>{item?.detail}</Text>
     </View>

@@ -11,8 +11,9 @@ type Crop = {
 
 type AssetSpec = {
   filename: string;
-  kind: "photo" | "icon" | "placeholder";
+  kind: "photo" | "icon" | "placeholder" | "tab_icon";
   crop?: Crop;
+  svg?: string;
   width: number;
   height: number;
   note: string;
@@ -32,6 +33,42 @@ const root = process.cwd();
 const referencePath = path.join(root, "docs/design/reference-home.png");
 const outputDir = path.join(root, "apps/miniapp/src/assets/generated");
 const manifestPath = path.join(root, "docs/design/assets-manifest.json");
+
+function tabIcon(kind: "home" | "category" | "case" | "mine", color: string) {
+  const common = `fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"`;
+  const shapes = {
+    home: `<path ${common} d="M14 31 32 16l18 15v19H39V37H25v13H14z"/>`,
+    category: `<rect ${common} x="14" y="14" width="14" height="14" rx="3"/><rect ${common} x="36" y="14" width="14" height="14" rx="3"/><rect ${common} x="14" y="36" width="14" height="14" rx="3"/><rect ${common} x="36" y="36" width="14" height="14" rx="3"/>`,
+    case: `<path ${common} d="M20 12h17l11 11v29H20z"/><path ${common} d="M37 12v12h11"/><path ${common} d="M26 34h16M26 43h12"/>`,
+    mine: `<circle ${common} cx="32" cy="23" r="9"/><path ${common} d="M15 52c3-11 12-17 17-17s14 6 17 17"/>`
+  };
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">${shapes[kind]}</svg>`;
+}
+
+const tabIconSpecs: AssetSpec[] = [
+  ["home", "首页"],
+  ["category", "分类"],
+  ["case", "案例"],
+  ["mine", "我的"]
+].flatMap(([kind, label]) => [
+  {
+    filename: `tab-${kind}.png`,
+    kind: "tab_icon",
+    svg: tabIcon(kind as "home" | "category" | "case" | "mine", "#8a8a8a"),
+    width: 64,
+    height: 64,
+    note: `${label} TabBar normal icon.`
+  },
+  {
+    filename: `tab-${kind}-active.png`,
+    kind: "tab_icon",
+    svg: tabIcon(kind as "home" | "category" | "case" | "mine", "#d94332"),
+    width: 64,
+    height: 64,
+    note: `${label} TabBar selected icon.`
+  }
+]);
 
 const specs: AssetSpec[] = [
   {
@@ -129,19 +166,25 @@ const specs: AssetSpec[] = [
     width: 460,
     height: 320,
     note: "Generic warm case placeholder."
-  }
+  },
+  ...tabIconSpecs
 ];
 
 const warmBackground = { r: 255, g: 248, b: 241, alpha: 1 };
 
 async function renderAsset(spec: AssetSpec): Promise<ManifestEntry> {
-  let image = sharp(referencePath);
+  let image = spec.svg ? sharp(Buffer.from(spec.svg)) : sharp(referencePath);
 
-  if (spec.crop) {
+  if (!spec.svg && spec.crop) {
     image = image.extract(spec.crop);
   }
 
-  if (spec.kind === "icon") {
+  if (spec.kind === "tab_icon") {
+    image = image.resize(spec.width, spec.height, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 0 }
+    });
+  } else if (spec.kind === "icon") {
     const iconPadding = 18;
     image = image.resize(spec.width - iconPadding * 2, spec.height - iconPadding * 2, {
       fit: "contain",

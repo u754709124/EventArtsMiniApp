@@ -6,9 +6,19 @@ type Props = {
   fallback: string;
   className?: string;
   mode?: "aspectFill" | "aspectFit" | "widthFix";
+  testid?: string;
 };
 
-export function AppImage({ src, fallback, className, mode = "aspectFill" }: Props) {
+export function AppImage({ src, fallback, className, mode = "aspectFill", testid }: Props) {
   const [current, setCurrent] = useState(src || fallback);
-  return <Image className={className} mode={mode} src={current || fallback} onError={() => setCurrent(fallback)} />;
+  return (
+    <Image
+      className={className}
+      data-current-src={current || fallback}
+      data-testid={testid}
+      mode={mode}
+      src={current || fallback}
+      onError={() => setCurrent(fallback)}
+    />
+  );
 }

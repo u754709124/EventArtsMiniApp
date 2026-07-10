@@ -22,6 +22,8 @@ import {
   Upload,
   message
 } from "antd";
+import { ConfigProvider } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import type { ColumnsType } from "antd/es/table";
 import {
   DashboardOutlined,
@@ -56,7 +58,7 @@ type UploadRequestOption = {
   onError?: (error: Error) => void;
 };
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:3001";
+const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const tokenKey = "eventarts.admin.token";
 
 function getToken() {
@@ -65,7 +67,7 @@ function getToken() {
 
 async function request<T>(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  if (!(init.body instanceof FormData)) headers.set("content-type", "application/json");
+  if (init.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
   const token = getToken();
   if (token) headers.set("authorization", `Bearer ${token}`);
   const response = await fetch(`${apiBase}${path}`, { ...init, headers });
@@ -194,14 +196,24 @@ function DashboardPage() {
   );
 }
 
-function MediaSelect({ value, onChange, usage }: { value?: number; onChange?: (value: number) => void; usage?: string[] }) {
+function MediaSelect({
+  value,
+  onChange,
+  usage,
+  testid = "media-select"
+}: {
+  value?: number;
+  onChange?: (value: number) => void;
+  usage?: string[];
+  testid?: string;
+}) {
   const [assets, setAssets] = useState<MediaAssetDto[]>([]);
   useEffect(() => {
     request<{ items: MediaAssetDto[] }>("/api/admin/media-assets").then((data) => setAssets(data.items));
   }, []);
   return (
     <Select
-      data-testid="media-select"
+      data-testid={testid}
       value={value}
       onChange={onChange}
       optionFilterProp="label"
@@ -239,16 +251,16 @@ function SiteConfigPage() {
             <Input data-testid="site-subtitle" />
           </Form.Item>
           <Form.Item label="默认 Banner 图" name="defaultBannerAssetId">
-            <MediaSelect usage={["banner", "default_banner"]} />
+            <MediaSelect testid="site-default-banner-select" usage={["banner", "default_banner"]} />
           </Form.Item>
           <Form.Item label="Banner 占位图" name="placeholderBannerAssetId">
-            <MediaSelect usage={["placeholder_banner", "default_banner"]} />
+            <MediaSelect testid="site-placeholder-banner-select" usage={["placeholder_banner", "default_banner"]} />
           </Form.Item>
           <Form.Item label="菜单图标占位图" name="placeholderIconAssetId">
-            <MediaSelect usage={["placeholder_icon", "menu_icon"]} />
+            <MediaSelect testid="site-placeholder-icon-select" usage={["placeholder_icon", "menu_icon"]} />
           </Form.Item>
           <Form.Item label="案例封面占位图" name="placeholderCaseAssetId">
-            <MediaSelect usage={["placeholder_case", "case_cover"]} />
+            <MediaSelect testid="site-placeholder-case-select" usage={["placeholder_case", "case_cover"]} />
           </Form.Item>
           <Button data-testid="site-save" type="primary" htmlType="submit">
             保存
@@ -323,6 +335,7 @@ function CrudPage({ config }: { config: CrudConfig }) {
       title: "确认删除？",
       content: "删除后不可恢复",
       okText: "删除",
+      cancelText: "取消",
       okButtonProps: { danger: true },
       async onOk() {
         await request(`${config.path}/${record.id}`, { method: "DELETE" });
@@ -374,12 +387,13 @@ function CrudPage({ config }: { config: CrudConfig }) {
         pagination={{ pageSize: 10 }}
       />
       <Drawer
+        data-testid={`${config.testid}-drawer`}
         title={editing ? `编辑${config.title}` : `新增${config.title}`}
         open={drawerOpen}
         width={560}
         onClose={() => setDrawerOpen(false)}
       >
-        <Form form={form} layout="vertical" onFinish={save} initialValues={{ status: "enabled", sortOrder: 1 }}>
+        <Form data-testid={`${config.testid}-form`} form={form} layout="vertical" onFinish={save} initialValues={{ status: "enabled", sortOrder: 1 }}>
           {config.fields(form)}
           <Button data-testid={`${config.testid}-save`} type="primary" htmlType="submit">
             保存
@@ -395,7 +409,7 @@ const statusOptions = statusValues.map((value) => ({ value, label: value === "en
 function StatusField() {
   return (
     <Form.Item label="状态" name="status" rules={[{ required: true }]}>
-      <Select options={statusOptions} />
+      <Select data-testid="status-select" options={statusOptions} />
     </Form.Item>
   );
 }
@@ -403,7 +417,7 @@ function StatusField() {
 function SortField() {
   return (
     <Form.Item label="排序" name="sortOrder" rules={[{ required: true }]}>
-      <InputNumber min={0} />
+      <InputNumber data-testid="sort-order" min={0} />
     </Form.Item>
   );
 }
@@ -482,7 +496,7 @@ const configs: Record<string, CrudConfig> = {
           <Input.TextArea data-testid="announcement-content" />
         </Form.Item>
         <Form.Item label="单条显示时间" name="displayDurationMs" initialValue={3000} rules={[{ required: true }]}>
-          <InputNumber min={1000} />
+          <InputNumber data-testid="announcement-display-duration" min={1000} />
         </Form.Item>
         <SortField />
         <StatusField />
@@ -505,16 +519,16 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="banner-title" />
         </Form.Item>
         <Form.Item label="图片" name="imageAssetId" rules={[{ required: true }]}>
-          <MediaSelect usage={["banner", "default_banner"]} />
+          <MediaSelect testid="banner-image-select" usage={["banner", "default_banner"]} />
         </Form.Item>
         <Form.Item label="跳转类型" name="linkType" initialValue="none">
-          <Select options={bannerLinkTypeValues.map((value) => ({ value, label: value }))} />
+          <Select data-testid="banner-link-type" options={bannerLinkTypeValues.map((value) => ({ value, label: value }))} />
         </Form.Item>
         <Form.Item label="跳转目标" name="linkTarget">
           <Input />
         </Form.Item>
         <Form.Item label="切换时间" name="switchDurationMs" initialValue={3500}>
-          <InputNumber min={1000} />
+          <InputNumber data-testid="banner-switch-duration" min={1000} />
         </Form.Item>
         <SortField />
         <StatusField />
@@ -536,7 +550,7 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="menu-text" />
         </Form.Item>
         <Form.Item label="菜单图标" name="iconAssetId" rules={[{ required: true }]}>
-          <MediaSelect usage={["menu_icon"]} />
+          <MediaSelect testid="menu-icon-select" usage={["menu_icon"]} />
         </Form.Item>
         <Form.Item label="菜单类型" name="type" rules={[{ required: true }]}>
           <Select
@@ -573,31 +587,31 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="case-title" />
         </Form.Item>
         <Form.Item label="分类" name="category" rules={[{ required: true }]}>
-          <Input />
+          <Input data-testid="case-category" />
         </Form.Item>
         <Form.Item label="标签" name="tag" rules={[{ required: true }]}>
-          <Input />
+          <Input data-testid="case-tag" />
         </Form.Item>
         <Form.Item label="封面图" name="coverAssetId" rules={[{ required: true }]}>
-          <MediaSelect usage={["case_cover"]} />
+          <MediaSelect testid="case-cover-select" usage={["case_cover"]} />
         </Form.Item>
         <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
-          <Input.TextArea />
+          <Input.TextArea data-testid="case-summary" />
         </Form.Item>
         <Form.Item label="活动日期" name="eventDate" rules={[{ required: true }]}>
-          <DatePicker />
+          <DatePicker data-testid="case-event-date" />
         </Form.Item>
         <Form.Item label="地点" name="location" rules={[{ required: true }]}>
-          <Input />
+          <Input data-testid="case-location" />
         </Form.Item>
         <Form.Item label="详情内容" name="detail" rules={[{ required: true }]}>
-          <Input.TextArea />
+          <Input.TextArea data-testid="case-detail" />
         </Form.Item>
         <Form.Item label="是否精选" name="isFeatured" valuePropName="checked" initialValue={false}>
           <Switch data-testid="case-featured" />
         </Form.Item>
         <Form.Item label="首页排序" name="featuredSortOrder" initialValue={1}>
-          <InputNumber min={0} />
+          <InputNumber data-testid="case-featured-sort-order" min={0} />
         </Form.Item>
         <SortField />
         <StatusField />
@@ -622,7 +636,7 @@ const configs: Record<string, CrudConfig> = {
           <Select options={artistTypeValues.map((value) => ({ value, label: value }))} />
         </Form.Item>
         <Form.Item label="头像" name="avatarAssetId">
-          <MediaSelect usage={["person_avatar", "other"]} />
+          <MediaSelect testid="artist-avatar-select" usage={["person_avatar", "other"]} />
         </Form.Item>
         <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
           <Input.TextArea />
@@ -678,6 +692,8 @@ function MediaPage() {
   async function remove(asset: MediaAssetDto) {
     Modal.confirm({
       title: "确认删除资源？",
+      okText: "确定",
+      cancelText: "取消",
       async onOk() {
         try {
           await request(`/api/admin/media-assets/${asset.id}`, { method: "DELETE" });
@@ -716,7 +732,7 @@ function MediaPage() {
           { title: "宽高", render: (_, asset) => `${asset.width ?? "-"} x ${asset.height ?? "-"}` },
           { title: "大小", dataIndex: "size" },
           { title: "上传时间", dataIndex: "createdAt" },
-          { title: "操作", render: (_, asset) => <Button danger data-testid="media-delete" onClick={() => remove(asset)}>删除</Button> }
+          { title: "操作", render: (_, asset) => <Button danger data-testid={`media-delete-${asset.id}`} onClick={() => remove(asset)}>删除</Button> }
         ]}
         pagination={{ pageSize: 10 }}
         locale={{ emptyText: <Empty description="暂无资源" /> }}
@@ -754,10 +770,12 @@ function AppRoutes() {
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AntApp>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AntApp>
+    <ConfigProvider locale={zhCN}>
+      <AntApp>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AntApp>
+    </ConfigProvider>
   </React.StrictMode>
 );

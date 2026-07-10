@@ -23,10 +23,30 @@ export default defineAppConfig({
     backgroundColor: "#ffffff",
     borderStyle: "black",
     list: [
-      { pagePath: "pages/index/index", text: "首页" },
-      { pagePath: "pages/category/index", text: "分类" },
-      { pagePath: "pages/cases/list", text: "案例" },
-      { pagePath: "pages/mine/index", text: "我的" }
+      {
+        pagePath: "pages/index/index",
+        text: "首页",
+        iconPath: "assets/generated/tab-home.png",
+        selectedIconPath: "assets/generated/tab-home-active.png"
+      },
+      {
+        pagePath: "pages/category/index",
+        text: "分类",
+        iconPath: "assets/generated/tab-category.png",
+        selectedIconPath: "assets/generated/tab-category-active.png"
+      },
+      {
+        pagePath: "pages/cases/list",
+        text: "案例",
+        iconPath: "assets/generated/tab-case.png",
+        selectedIconPath: "assets/generated/tab-case-active.png"
+      },
+      {
+        pagePath: "pages/mine/index",
+        text: "我的",
+        iconPath: "assets/generated/tab-mine.png",
+        selectedIconPath: "assets/generated/tab-mine-active.png"
+      }
     ]
   }
 });

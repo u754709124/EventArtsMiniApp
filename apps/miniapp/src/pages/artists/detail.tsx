@@ -10,7 +10,7 @@ export default function ArtistDetail() {
     void request<ArtistDto>(`/api/client/artists/${query.id}`).then(setItem);
   });
   return (
-    <View className="page">
+    <View className="page" data-testid="artist-detail-page">
       <Text className="home-title">{item?.name || "人员详情"}</Text>
       <Text>{item?.summary || "暂无人员内容"}</Text>
       <Text>{item?.detail}</Text>

@@ -20,6 +20,9 @@ export default defineConfig({
     }
   },
   plugins: ["@tarojs/plugin-framework-react"],
+  defineConstants: {
+    __TARO_API_BASE_URL__: JSON.stringify(process.env.TARO_APP_API_BASE_URL || "http://127.0.0.1:3001")
+  },
   alias: {
     "@event-arts/shared": fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url))
   },

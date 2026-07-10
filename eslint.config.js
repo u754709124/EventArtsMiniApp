@@ -11,6 +11,8 @@ export default tseslint.config(
       "apps/admin/dist/**",
       "apps/miniapp/dist/**",
       "apps/miniapp/babel.config.cjs",
+      "playwright-report/**",
+      "test-results/**",
       "uploads/**",
       "apps/api/prisma/dev.db*",
       "docs/design/*.png",
@@ -20,6 +22,16 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,
+  {
+    files: ["**/*.mjs", "**/*.cjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        URL: "readonly"
+      }
+    }
+  },
   {
     files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {

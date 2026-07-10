@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-09T15:06:18.560Z",
+  "generatedAt": "2026-07-09T16:44:55.538Z",
   "reference": {
     "path": "docs/design/reference-home.png",
     "width": 853,
@@ -246,6 +246,126 @@
       },
       "valid": true,
       "note": "Generic warm case placeholder."
+    },
+    {
+      "filename": "tab-home.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "首页 TabBar normal icon."
+    },
+    {
+      "filename": "tab-home-active.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "首页 TabBar selected icon."
+    },
+    {
+      "filename": "tab-category.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "分类 TabBar normal icon."
+    },
+    {
+      "filename": "tab-category-active.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "分类 TabBar selected icon."
+    },
+    {
+      "filename": "tab-case.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "案例 TabBar normal icon."
+    },
+    {
+      "filename": "tab-case-active.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "案例 TabBar selected icon."
+    },
+    {
+      "filename": "tab-mine.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "我的 TabBar normal icon."
+    },
+    {
+      "filename": "tab-mine-active.png",
+      "kind": "tab_icon",
+      "sourceCrop": null,
+      "expected": {
+        "width": 64,
+        "height": 64
+      },
+      "actual": {
+        "width": 64,
+        "height": 64
+      },
+      "valid": true,
+      "note": "我的 TabBar selected icon."
     }
   ],
   "valid": true

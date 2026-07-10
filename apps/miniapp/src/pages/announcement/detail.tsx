@@ -10,7 +10,7 @@ export default function AnnouncementDetail() {
     void request<AnnouncementDto>(`/api/client/announcements/${query.id}`).then(setItem);
   });
   return (
-    <View className="page">
+    <View className="page" data-testid="announcement-detail-page">
       <Text className="home-title">{item?.summary || "公告详情"}</Text>
       <Text>{item?.content || "暂无公告内容"}</Text>
       <Text className="primary-button" onClick={() => Taro.navigateBack()}>

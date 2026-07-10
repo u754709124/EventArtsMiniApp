@@ -2,7 +2,7 @@ import { Text, View } from "@tarojs/components";
 
 export default function ContactPage() {
   return (
-    <View className="page">
+    <View className="page" data-testid="contact-page">
       <Text className="home-title">联系我们</Text>
       <Text>电话：13800000000</Text>
       <Text>地址：杭州</Text>

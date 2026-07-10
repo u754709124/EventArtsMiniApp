@@ -16,14 +16,20 @@ const menuRoutes: Record<string, string> = {
   contact: "/pages/contact/index"
 };
 
+function ignoreNavigationError(result: Promise<unknown> | void) {
+  if (result && typeof result.catch === "function") {
+    result.catch(() => undefined);
+  }
+}
+
 function openMenu(type: string) {
   const url = menuRoutes[type];
   if (!url) return;
   if (type === "activity_case") {
-    void Taro.switchTab({ url });
+    ignoreNavigationError(Taro.switchTab({ url }));
     return;
   }
-  void Taro.navigateTo({ url });
+  ignoreNavigationError(Taro.navigateTo({ url }));
 }
 
 function useSafeTop() {
@@ -54,7 +60,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
     <View
       className={`notice card ${announcements.length > 1 ? "notice--flip" : ""}`}
       data-testid="home-announcement"
-      onClick={() => Taro.navigateTo({ url: `/pages/announcement/detail?id=${current.id}` })}
+      onClick={() => ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${current.id}` }))}
     >
       <Text className="notice__icon">▶</Text>
       <Text className="notice__summary">{current.summary}</Text>
@@ -65,6 +71,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
 }
 
 function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHomeResponse["site"] }) {
+  const [current, setCurrent] = useState(0);
   const list = banners.length
     ? banners
     : [
@@ -81,30 +88,47 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
       ];
 
   function open(banner: BannerDto) {
-    if (banner.linkType === "announcement" && banner.linkTarget) Taro.navigateTo({ url: `/pages/announcement/detail?id=${banner.linkTarget}` });
-    if (banner.linkType === "case" && banner.linkTarget) Taro.navigateTo({ url: `/pages/cases/detail?id=${banner.linkTarget}` });
-    if (banner.linkType === "internal" && banner.linkTarget) Taro.navigateTo({ url: banner.linkTarget });
+    if (banner.linkType === "announcement" && banner.linkTarget) {
+      ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${banner.linkTarget}` }));
+    }
+    if (banner.linkType === "case" && banner.linkTarget) {
+      ignoreNavigationError(Taro.navigateTo({ url: `/pages/cases/detail?id=${banner.linkTarget}` }));
+    }
+    if (banner.linkType === "internal" && banner.linkTarget) {
+      ignoreNavigationError(Taro.navigateTo({ url: banner.linkTarget }));
+    }
   }
 
   return (
-    <Swiper
-      className="banner"
-      indicatorDots
-      autoplay={list.length > 1}
-      interval={list[0]?.switchDurationMs || 3500}
-      circular
-      data-testid="home-banner"
-    >
-      {list.map((banner) => (
-        <SwiperItem key={banner.id} onClick={() => open(banner)}>
-          <AppImage
-            className="banner__image"
-            src={banner.imageUrl}
-            fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
-          />
-        </SwiperItem>
-      ))}
-    </Swiper>
+    <View className="banner-wrap">
+      <Swiper
+        className="banner"
+        indicatorDots
+        autoplay={list.length > 1}
+        interval={list[0]?.switchDurationMs || 3500}
+        circular
+        data-testid="home-banner"
+        onChange={(event) => setCurrent(Number(event.detail.current || 0))}
+      >
+        {list.map((banner) => (
+          <SwiperItem key={banner.id} onClick={() => open(banner)}>
+            <AppImage
+              className="banner__image"
+              testid="home-banner-image"
+              src={banner.imageUrl}
+              fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
+            />
+          </SwiperItem>
+        ))}
+      </Swiper>
+      <View className="banner-dots" data-testid="home-banner-dots">
+        {list.map((banner, index) => (
+          <Text key={banner.id} className={`banner-dot ${index === current ? "banner-dot--active" : ""}`}>
+            •
+          </Text>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -142,7 +166,7 @@ export default function HomePage() {
     try {
       const home = await getHome();
       setData(home);
-      void trackPageView("/pages/index/index", "home");
+      trackPageView("/pages/index/index", "home").catch(() => undefined);
     } catch {
       setFailed(true);
     } finally {
@@ -172,7 +196,7 @@ export default function HomePage() {
       <MenuSection menus={data.menus} site={data.site} />
       <View className="section-heading">
         <Text className="section-heading__title">精选案例</Text>
-        <Text className="section-heading__more" onClick={() => Taro.switchTab({ url: "/pages/cases/list" })}>
+        <Text className="section-heading__more" onClick={() => ignoreNavigationError(Taro.switchTab({ url: "/pages/cases/list" }))}>
           更多案例 ›
         </Text>
       </View>
@@ -181,9 +205,19 @@ export default function HomePage() {
       ) : (
         <View className="case-list" data-testid="home-featured-cases">
           {data.featuredCases.map((item) => (
-            <View key={item.id} className="case-card" onClick={() => Taro.navigateTo({ url: `/pages/cases/detail?id=${item.id}` })}>
+            <View
+              key={item.id}
+              className="case-card"
+              data-testid="home-case-card"
+              onClick={() => ignoreNavigationError(Taro.navigateTo({ url: `/pages/cases/detail?id=${item.id}` }))}
+            >
               <View className="case-card__image-wrap">
-                <AppImage className="case-card__image" src={item.coverUrl} fallback={data.site.placeholderCaseUrl || generatedAssets.placeholderCase} />
+                <AppImage
+                  className="case-card__image"
+                  testid="home-case-image"
+                  src={item.coverUrl}
+                  fallback={data.site.placeholderCaseUrl || generatedAssets.placeholderCase}
+                />
                 <Text className="case-card__tag">{item.tag}</Text>
               </View>
               <View className="case-card__body">
