@@ -40,6 +40,7 @@ pnpm build:weapp
 - [x] 最终命令矩阵已运行并记录
 
 ## 已完成事项
+- 2026-07-10 最终复核：`pnpm install`、`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 全部完成。安装输出为 `Already up to date`；测试包含 shared 4 项、api 11 项，Playwright 18 项且运行记录为 `passed`。
 - `pnpm install`：当前 Codex 无 TTY 环境下直接运行会触发 pnpm module purge 确认并中断；按 pnpm 提示使用 `CI=true pnpm install` 后通过。
 - `pnpm lint`：通过。
 - `pnpm test`：通过；sandbox 内 Prisma engine cache 写入 `~/.cache/prisma` 被拒，使用提升权限运行后通过，shared 4 个测试、api 11 个测试全部通过。
@@ -100,6 +101,7 @@ bc22e21
 
 ## 已知问题或设计取舍
 - Codex sandbox 不能写 Prisma 默认用户缓存目录，涉及 `prisma generate` 的命令在本环境使用提升权限运行；普通本机开发环境通常不需要。
+- 本轮在受限 sandbox 内直接执行 Taro H5 构建时，macOS `SystemConfiguration` 服务访问被拒，依赖运行时输出 `Attempted to create a NULL object` 后不再推进。以提升权限重跑同一构建及 `pnpm e2e` 后均通过；这是当前自动化宿主限制，不影响项目代码或本机开发命令。
 - Taro H5/weapp 构建提示 `banner-default.png` 和 `placeholder-banner.png` 超过推荐体积；这些图片来自参考图切图，适合一期测试和视觉还原，生产建议替换为压缩后的正式素材或 CDN 资源。
 - Admin 构建提示首包 chunk 超过 Vite 默认建议值；一期后台页面集中在单入口，后续可按路由拆分 dynamic import。
 - 微信端已完成构建产物生成，仍需在微信开发者工具中进行真实设备预览和合法域名校验。

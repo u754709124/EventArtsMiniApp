@@ -22,6 +22,7 @@ Playwright 后台和 H5 流程、接口夹具、首页截图、模块对照、�
 - `pnpm lint`：通过。
 - `pnpm test`：通过，包含 shared 与 api Vitest。
 - `pnpm e2e`：通过，Admin 与 Miniapp H5 共 18 个 Playwright 场景。
+- 2026-07-10 复核：`pnpm e2e` 再次通过；Playwright 运行记录为 `passed`、无失败用例，并重新生成 `docs/design/actual-home-h5.png`。
 
 ## 验收清单
 - [x] Admin E2E 覆盖核心 CMS 流程
@@ -58,3 +59,4 @@ a8e8931
 - Playwright H5 测试会隐藏 Taro dev overlay，避免开发态非业务 promise rejection 遮挡页面。
 - Admin E2E 通过 Vite proxy 调用 API，保持后台前端同源请求路径与生产部署形态一致。
 - 截图复核不做像素级比较，以模块布局和视觉接近为准。
+- 2026-07-10 的截图复核继续确认：H5 未模拟微信状态栏与胶囊按钮；五项菜单是一期范围，参考图中其余营销区块不纳入交付。
