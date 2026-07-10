@@ -16,9 +16,9 @@ pnpm workspace、TypeScript strict、ESLint、Prettier、Vitest、Playwright、A
 `pnpm lint`、`pnpm test`。
 
 ## 验收清单
-- [ ] workspace 可安装依赖
-- [ ] 共享类型测试通过
-- [ ] 项目规范和 README 完成
+- [x] workspace 可安装依赖
+- [x] 共享类型测试通过
+- [x] 项目规范和 README 完成
 
 ## 已完成事项
 - 初始化 pnpm workspace、共享类型、根脚本、ESLint、Prettier、Vitest。
