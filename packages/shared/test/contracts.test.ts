@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  batchDeleteMediaRequestSchema,
   fail,
-  mediaDimensionRules,
-  mediaUsageValues,
+  mediaFieldRules,
+  mediaListQuerySchema,
   menuTypeValues,
+  normalizeResourceName,
   ok,
+  updateMediaMetadataSchema,
   type ClientHomeResponse
 } from "../src/index";
 
@@ -13,12 +16,36 @@ describe("shared contracts", () => {
     expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "contact"]);
   });
 
-  it("keeps upload usage enum and fixed dimension rules aligned", () => {
-    expect(mediaUsageValues).toContain("person_avatar");
-    expect(mediaDimensionRules.banner).toEqual({ width: 1420, height: 580 });
-    expect(mediaDimensionRules.menu_icon).toEqual({ width: 176, height: 176 });
-    expect(mediaDimensionRules.case_cover).toEqual({ width: 460, height: 320 });
-    expect(mediaDimensionRules.person_avatar).toBeUndefined();
+  it("normalizes resource names for global case-insensitive uniqueness", () => {
+    expect(normalizeResourceName("  Ｄｅｍｏ资源  ")).toEqual({
+      displayName: "Demo资源",
+      key: "demo资源"
+    });
+  });
+
+  it("defines media requirements per form field instead of upload usage", () => {
+    expect(mediaFieldRules["banner.image"]).toMatchObject({
+      allowedTypes: ["image"],
+      width: 1420,
+      height: 580
+    });
+    expect(mediaFieldRules["menu.icon"]).toMatchObject({ width: 176, height: 176 });
+    expect(mediaFieldRules["case.cover"]).toMatchObject({ width: 460, height: 320 });
+    expect(mediaFieldRules["artist.avatar"]).toMatchObject({ width: null, height: null });
+    expect(mediaFieldRules["case.detail"]).toMatchObject({ allowedTypes: ["image", "video"] });
+  });
+
+  it("validates media list, metadata edit and batch delete inputs", () => {
+    expect(mediaListQuerySchema.parse({ page: "2", pageSize: "20", mediaType: "image" })).toMatchObject({
+      page: 2,
+      pageSize: 20,
+      mediaType: "image"
+    });
+    expect(updateMediaMetadataSchema.parse({ resourceName: " 舞台图 ", tags: [" 婚礼 ", "婚礼", ""] })).toEqual({
+      resourceName: "舞台图",
+      tags: ["婚礼"]
+    });
+    expect(batchDeleteMediaRequestSchema.parse({ ids: [3, 3, 4] })).toEqual({ ids: [3, 4] });
   });
 
   it("wraps success and failure responses in the required envelope", () => {

@@ -21,7 +21,7 @@ Playwright 后台和 H5 流程、接口夹具、首页截图、模块对照、�
 ## 测试方式
 - `pnpm lint`：通过。
 - `pnpm test`：通过，包含 shared 与 api Vitest。
-- `pnpm e2e`：通过，Admin 与 Miniapp H5 共 20 个 Playwright 场景。
+- `pnpm e2e`：通过，Admin 与 Miniapp H5 共 21 个 Playwright 场景。
 - 2026-07-10 复核：`pnpm e2e` 再次通过；Playwright 运行记录为 `passed`、无失败用例，并重新生成 `docs/design/actual-home-h5.png`。
 
 ## 验收清单
@@ -31,10 +31,12 @@ Playwright 后台和 H5 流程、接口夹具、首页截图、模块对照、�
 - [x] 模块复核记录完成
 - [x] 资源上传错误尺寸提示和引用资源删除失败完成验证
 - [x] 首页接口失败、重新加载、图片占位完成验证
+- [x] 媒体空态、资源库导入、客户端尺寸拦截、hover 名称和解除关联
+- [x] MD5 复用、资源筛选、批量清理、视频预览和案例媒体键盘排序
 
 ## 已完成事项
 - 已配置 Playwright `admin` 与 `miniapp-h5` 两个项目，统一启动 API、Admin、Taro H5。
-- 后台 E2E 覆盖登录页、未登录跳转、登录进入看板、PV 数据、首页配置保存、公告、Banner、菜单动态配置、案例精选、资源错误上传、引用资源删除保护。
+- 后台 E2E 覆盖登录与看板、首页配置、公告、Banner、动态菜单、案例媒体追加/键盘排序/保存回显、视频导入预览、客户端错误尺寸拦截、MD5 复用、资源筛选、引用删除保护和批量清理。
 - H5 E2E 覆盖首页加载、站点文案、公告隐藏/展示/切换、默认 Banner、指示点、五类菜单跳转、精选案例详情、首页异常重试、图片失败占位。
 - H5 E2E 新增视觉几何覆盖：标题顶端不超过 44px、Banner 顶端不超过 138px 且维持 710:290 比例、首张精选案例卡片高度不超过 220px。
 - 已生成设计复核截图 `docs/design/actual-home-h5.png`。

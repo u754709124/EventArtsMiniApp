@@ -37,7 +37,7 @@ Implement the Taro miniapp/H5 frontend with the phase-one homepage, fixed TabBar
 - Load `GET /api/client/home`.
 - After successful mount, call `POST /api/client/track/page-view`.
 - Interface failure shows “页面加载失败 / 请稍后重试 / 重新加载”.
-- Image error swaps to usage-specific placeholder.
+- Image error swaps to the placeholder configured for that form field.
 - Menu routes:
   - `host` -> `/pages/artists/list?type=host`
   - `singer` -> `/pages/artists/list?type=singer`

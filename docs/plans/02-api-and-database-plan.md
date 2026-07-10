@@ -31,7 +31,7 @@ Implement exactly:
 2. Admin login returns JWT for `Authorization: Bearer`.
 3. Admin routes reject missing/invalid tokens.
 4. Client home returns enabled announcements/banners/menus and featured enabled cases sorted by requested sort fields.
-5. Media upload requires `usage`; image usages with fixed dimensions are rejected if dimensions mismatch.
+5. Media library upload is purpose-neutral; form-local uploads pass an optional `fieldKey`, and every final business association is validated against the shared field rule.
 6. `person_avatar`, `video`, and `other` record file metadata without fixed dimension rejection.
 7. Referenced media assets cannot be deleted.
 8. Page view tracking inserts a row; dashboard overview counts today/week/month PV.

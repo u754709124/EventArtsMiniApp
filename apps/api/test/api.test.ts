@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
@@ -40,6 +40,85 @@ async function pngBuffer(width: number, height: number) {
   })
     .png()
     .toBuffer();
+}
+
+async function uploadMedia(
+  token: string,
+  file: Buffer,
+  options: {
+    resourceName: string;
+    filename?: string;
+    mimeType?: string;
+    fieldKey?: string;
+    tags?: string[];
+    md5?: string;
+  }
+) {
+  const boundary = `----test-${randomUUID()}`;
+  const fields = [
+    ["resourceName", options.resourceName],
+    ["md5", options.md5 ?? createHash("md5").update(file).digest("hex")],
+    ["tags", JSON.stringify(options.tags ?? [])],
+    ...(options.fieldKey ? [["fieldKey", options.fieldKey]] : [])
+  ];
+  const chunks: Uint8Array[] = fields.flatMap(([name, value]) => [
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
+  ]);
+  chunks.push(
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${options.filename ?? "asset.png"}"\r\nContent-Type: ${options.mimeType ?? "image/png"}\r\n\r\n`
+    ),
+    file,
+    Buffer.from(`\r\n--${boundary}--\r\n`)
+  );
+  return app.inject({
+    method: "POST",
+    url: "/api/admin/media-assets/upload",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": `multipart/form-data; boundary=${boundary}`
+    },
+    payload: Buffer.concat(chunks)
+  });
+}
+
+async function uploadTwoFiles(token: string, first: Buffer, second: Buffer) {
+  const boundary = `----test-${randomUUID()}`;
+  const md5 = createHash("md5").update(first).digest("hex");
+  const field = (name: string, value: string) =>
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
+  const file = (name: string, value: Buffer) => [
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: image/png\r\n\r\n`),
+    value,
+    Buffer.from("\r\n")
+  ];
+  return app.inject({
+    method: "POST",
+    url: "/api/admin/media-assets/upload",
+    headers: { authorization: `Bearer ${token}`, "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([
+      field("resourceName", "双文件非法上传"),
+      field("md5", md5),
+      field("tags", "[]"),
+      ...file("one.png", first),
+      ...file("two.png", second),
+      Buffer.from(`--${boundary}--\r\n`)
+    ])
+  });
+}
+
+async function uploadUnexpectedFileField(token: string, value: Buffer) {
+  const boundary = `----test-${randomUUID()}`;
+  return app.inject({
+    method: "POST",
+    url: "/api/admin/media-assets/upload",
+    headers: { authorization: `Bearer ${token}`, "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="attachment"; filename="wrong.png"\r\nContent-Type: image/png\r\n\r\n`),
+      value,
+      Buffer.from(`\r\n--${boundary}--\r\n`)
+    ])
+  });
 }
 
 beforeAll(async () => {
@@ -171,68 +250,401 @@ describe("client home aggregation", () => {
 });
 
 describe("media upload and references", () => {
-  it("rejects image uploads with incorrect fixed dimensions", async () => {
+  it("rejects nested relation writes and only accepts whitelisted business fields", async () => {
     const token = await login();
-    const boundary = `----test-${randomUUID()}`;
-    const file = await pngBuffer(100, 100);
-    const payload = Buffer.concat([
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="usage"\r\n\r\nbanner\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="bad.png"\r\nContent-Type: image/png\r\n\r\n`
-      ),
-      file,
-      Buffer.from(`\r\n--${boundary}--\r\n`)
-    ]);
-
+    const banner = await prisma.banner.findFirstOrThrow();
+    const wrongAsset = await uploadMedia(token, await pngBuffer(90, 90), { resourceName: "嵌套写入资源" });
     const response = await app.inject({
-      method: "POST",
-      url: "/api/admin/media-assets/upload",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": `multipart/form-data; boundary=${boundary}`
-      },
-      payload
+      method: "PUT",
+      url: `/api/admin/banners/${banner.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { imageAsset: { connect: { id: wrongAsset.json().data.asset.id } } }
     });
 
     expect(response.statusCode).toBe(400);
+    expect((await prisma.banner.findUniqueOrThrow({ where: { id: banner.id } })).imageAssetId).toBe(banner.imageAssetId);
+  });
+
+  it("persists null when an optional single media association is removed", async () => {
+    const token = await login();
+    const artist = await prisma.artist.findFirstOrThrow();
+    const avatar = await uploadMedia(token, await pngBuffer(91, 91), { resourceName: "待解除头像" });
+    await prisma.artist.update({ where: { id: artist.id }, data: { avatarAssetId: avatar.json().data.asset.id } });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${artist.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { avatarAssetId: null }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((await prisma.artist.findUniqueOrThrow({ where: { id: artist.id } })).avatarAssetId).toBeNull();
+  });
+
+  it("rejects multiple file parts and removes all temporary files", async () => {
+    const token = await login();
+    const response = await uploadTwoFiles(token, await pngBuffer(92, 92), await pngBuffer(93, 93));
+    const tempDir = path.join(uploadDir, ".tmp");
+
+    expect(response.statusCode).toBe(400);
+    expect(await readdir(tempDir).catch(() => [])).toEqual([]);
+  });
+
+  it("consumes and rejects file parts with an unexpected field name", async () => {
+    const token = await login();
+    const response = await uploadUnexpectedFileField(token, await pngBuffer(92, 92));
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("VALIDATION_ERROR");
+    expect(await readdir(path.join(uploadDir, ".tmp")).catch(() => [])).toEqual([]);
+  });
+
+  it("uses stable seed identities after seeded display text is edited", async () => {
+    const seeded = await prisma.announcement.findFirstOrThrow({ where: { summary: "最新档期更新" } });
+    await prisma.announcement.update({ where: { id: seeded.id }, data: { summary: "后台已编辑的种子公告" } });
+    const userRecord = await prisma.announcement.create({
+      data: {
+        summary: "最新档期更新",
+        content: "用户创建的同名公告",
+        displayDurationMs: 5000,
+        sortOrder: 99,
+        status: "enabled"
+      }
+    });
+    const before = await Promise.all([
+      prisma.announcement.count(),
+      prisma.banner.count(),
+      prisma.menuItem.count(),
+      prisma.activityCase.count(),
+      prisma.artist.count()
+    ]);
+    await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001" });
+    const after = await Promise.all([
+      prisma.announcement.count(),
+      prisma.banner.count(),
+      prisma.menuItem.count(),
+      prisma.activityCase.count(),
+      prisma.artist.count()
+    ]);
+
+    expect(after).toEqual(before);
+    expect((await prisma.announcement.findUniqueOrThrow({ where: { id: seeded.id } })).content).toBe("婚礼主持、商演主持、歌手演出可预约");
+    expect((await prisma.announcement.findUniqueOrThrow({ where: { id: userRecord.id } })).content).toBe("用户创建的同名公告");
+  });
+  it("preserves media associations and structured fields on partial business updates", async () => {
+    const token = await login();
+    const banner = await prisma.banner.findFirstOrThrow();
+    const menu = await prisma.menuItem.findFirstOrThrow();
+    const activityCase = await prisma.activityCase.findFirstOrThrow();
+
+    const [bannerResponse, menuResponse, caseResponse] = await Promise.all([
+      app.inject({
+        method: "PUT",
+        url: `/api/admin/banners/${banner.id}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: "disabled" }
+      }),
+      app.inject({
+        method: "PUT",
+        url: `/api/admin/menu-items/${menu.id}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: "disabled" }
+      }),
+      app.inject({
+        method: "PUT",
+        url: `/api/admin/cases/${activityCase.id}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { status: "disabled", isFeatured: false }
+      })
+    ]);
+
+    expect([bannerResponse.statusCode, menuResponse.statusCode, caseResponse.statusCode]).toEqual([200, 200, 200]);
+    expect(await prisma.banner.findUniqueOrThrow({ where: { id: banner.id } })).toMatchObject({ imageAssetId: banner.imageAssetId, status: "disabled" });
+    expect(await prisma.menuItem.findUniqueOrThrow({ where: { id: menu.id } })).toMatchObject({
+      iconAssetId: menu.iconAssetId,
+      configJson: menu.configJson,
+      status: "disabled"
+    });
+    expect(await prisma.activityCase.findUniqueOrThrow({ where: { id: activityCase.id } })).toMatchObject({
+      coverAssetId: activityCase.coverAssetId,
+      eventDate: activityCase.eventDate,
+      status: "disabled",
+      isFeatured: false
+    });
+  });
+
+  it("extracts dimensions from MP4 video uploads", async () => {
+    const token = await login();
+    const video = Buffer.from(
+      "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAANebW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAHgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAoh0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAHgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAIAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAB4AAAEAAABAAAAAAIAbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAACABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABq21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAWtzdGJsAAAAv3N0c2QAAAAAAAAAAQAAAK9hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAACABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANWF2Y0MBZAAK/+EAGGdkAAqs2V/lwEQAAAMABAAAAwDIPEiWWAEABmjr48siwP34+AAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAC+4gAAAAAAAAAYc3R0cwAAAAAAAAABAAAAAwAAAgAAAAAUc3RzcwAAAAAAAAABAAAAAQAAAChjdHRzAAAAAAAAAAMAAAABAAAEAAAAAAEAAAYAAAAAAQAAAgAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAMAAAABAAAAIHN0c3oAAAAAAAAAAAAAAAMAAALFAAAADAAAAAwAAAAUc3RjbwAAAAAAAAABAAADjgAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNjIuMTIuMTAxAAAACGZyZWUAAALlbWRhdAAAAq4GBf//qtxF6b3m2Ui3lizYINkj7u94MjY0IC0gY29yZSAxNjUgcjMyMjIgYjM1NjA1YSAtIEguMjY0L01QRUctNCBBVkMgY29kZWMgLSBDb3B5bGVmdCAyMDAzLTIwMjUgLSBodHRwOi8vd3d3LnZpZGVvbGFuLm9yZy94MjY0Lmh0bWwgLSBvcHRpb25zOiBjYWJhYz0xIHJlZj0zIGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDM6MHgxMTMgbWU9aGV4IHN1Ym1lPTcgcHN5PTEgcHN5X3JkPTEuMDA6MC4wMiBtaXhlZF9yZWY9MSBtZV9yYW5nZT0xNiBjaHJvbWFfbWU9MSB0cmVsbGlzPTEgOHg4ZGN0PTEgY3FtPTAgZGVhZHpvbmU9MjEsMTEgZmFzdF9wc2tpcD0xIGNocm9tYV9xcF9vZmZzZXQ9LTIgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MyBiX3B5cmFtaWQ9MiBiX2FkYXB0PTEgYl9iaWFzPTAgZGlyZWN0PTEgd2VpZ2h0Yj0xIG9wZW5fZ29wPTAgd2VpZ2h0cD0yIGtleWludD0yNTAga2V5aW50X21pbj0yNSBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAAA9liIQAM//+9uy+BTYUyMEAAAAIQZoibEK//sAAAAAIAZ5BeQr/xIE=",
+      "base64"
+    );
+    const response = await uploadMedia(token, video, {
+      resourceName: "测试视频",
+      filename: "sample.mp4",
+      mimeType: "video/mp4"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.asset).toMatchObject({ mediaType: "video", width: 16, height: 8 });
+  });
+
+  it("rejects form uploads with incorrect field dimensions", async () => {
+    const token = await login();
+    const file = await pngBuffer(100, 100);
+    const response = await uploadMedia(token, file, {
+      resourceName: "错误尺寸 Banner",
+      filename: "bad.png",
+      fieldKey: "banner.image"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_MEDIA_DIMENSION");
     expect(response.json().error.message).toContain("1420x580");
   });
 
-  it("accepts image uploads with correct fixed dimensions", async () => {
+  it("accepts neutral resource uploads with names and tags", async () => {
     const token = await login();
-    const boundary = `----test-${randomUUID()}`;
-    const file = await pngBuffer(1420, 580);
-    const payload = Buffer.concat([
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="usage"\r\n\r\nbanner\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="ok.png"\r\nContent-Type: image/png\r\n\r\n`
-      ),
-      file,
-      Buffer.from(`\r\n--${boundary}--\r\n`)
-    ]);
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/admin/media-assets/upload",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": `multipart/form-data; boundary=${boundary}`
-      },
-      payload
+    const file = await pngBuffer(100, 100);
+    const response = await uploadMedia(token, file, {
+      resourceName: "活动现场图",
+      filename: "original.png",
+      tags: ["婚礼", " 现场 ", "婚礼"]
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
-      usage: "banner",
-      width: 1420,
-      height: 580,
-      mediaType: "image"
+      reused: false,
+      asset: {
+        resourceName: "活动现场图",
+        originalName: "original.png",
+        width: 100,
+        height: 100,
+        mediaType: "image",
+        tags: ["婚礼", "现场"],
+        createdByName: "admin",
+        inUse: false,
+        referenceCount: 0
+      }
     });
+  });
+
+  it("recomputes MD5 and rejects a mismatched client hash", async () => {
+    const token = await login();
+    const response = await uploadMedia(token, await pngBuffer(80, 80), {
+      resourceName: "错误哈希资源",
+      md5: "00000000000000000000000000000000"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("MD5_MISMATCH");
+  });
+
+  it("uses the verified image format for MIME and storage extension", async () => {
+    const token = await login();
+    const response = await uploadMedia(token, await pngBuffer(81, 81), {
+      resourceName: "真实格式资源",
+      filename: "claimed.jpg",
+      mimeType: "image/jpeg"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.asset.mimeType).toBe("image/png");
+    expect(response.json().data.asset.url).toMatch(/\.png$/);
+  });
+
+  it("deduplicates concurrent uploads using the database unique index", async () => {
+    const token = await login();
+    const file = await pngBuffer(82, 82);
+    const [first, second] = await Promise.all([
+      uploadMedia(token, file, { resourceName: "并发资源一" }),
+      uploadMedia(token, file, { resourceName: "并发资源二" })
+    ]);
+
+    expect([first.statusCode, second.statusCode]).toEqual([200, 200]);
+    expect([first.json().data.reused, second.json().data.reused].sort()).toEqual([false, true]);
+    expect(first.json().data.asset.id).toBe(second.json().data.asset.id);
+  });
+
+  it("reuses an existing MD5 without changing its metadata", async () => {
+    const token = await login();
+    const file = await pngBuffer(120, 120);
+    const first = await uploadMedia(token, file, { resourceName: "首次资源", tags: ["原标签"] });
+    const second = await uploadMedia(token, file, { resourceName: "不会写入", tags: ["新标签"] });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().data).toMatchObject({
+      reused: true,
+      asset: { id: first.json().data.asset.id, resourceName: "首次资源", tags: ["原标签"] }
+    });
+  });
+
+  it("enforces globally normalized resource names", async () => {
+    const token = await login();
+    const first = await uploadMedia(token, await pngBuffer(130, 130), { resourceName: "Demo资源" });
+    const second = await uploadMedia(token, await pngBuffer(140, 140), { resourceName: "  ＤＥＭＯ资源  " });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.code).toBe("DUPLICATE_RESOURCE_NAME");
+  });
+
+  it("looks up duplicates and checks globally unique names", async () => {
+    const token = await login();
+    const file = await pngBuffer(150, 150);
+    const upload = await uploadMedia(token, file, { resourceName: "查询资源" });
+    const asset = upload.json().data.asset;
+
+    const lookup = await app.inject({
+      method: "POST",
+      url: "/api/admin/media-assets/lookup",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { md5: asset.md5, size: asset.size }
+    });
+    const unavailable = await app.inject({
+      method: "POST",
+      url: "/api/admin/media-assets/check-name",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { resourceName: "  查询资源 " }
+    });
+    const ownName = await app.inject({
+      method: "POST",
+      url: "/api/admin/media-assets/check-name",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { resourceName: "查询资源", excludeId: asset.id }
+    });
+
+    expect(lookup.statusCode).toBe(200);
+    expect(lookup.json().data.asset.id).toBe(asset.id);
+    expect(unavailable.json().data.available).toBe(false);
+    expect(ownName.json().data.available).toBe(true);
+  });
+
+  it("filters media and edits resource metadata", async () => {
+    const token = await login();
+    const upload = await uploadMedia(token, await pngBuffer(160, 160), {
+      resourceName: "筛选现场图",
+      tags: ["待筛选"]
+    });
+    const asset = upload.json().data.asset;
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/admin/media-assets?mediaType=image&q=现场&tag=待筛选&referenceStatus=unused&page=1&pageSize=20",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/media-assets/${asset.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { resourceName: "筛选现场图-更新", tags: ["更新", " 更新 "] }
+    });
+    const tags = await app.inject({
+      method: "GET",
+      url: "/api/admin/media-assets/tags",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().data.items.map((item: { id: number }) => item.id)).toContain(asset.id);
+    expect(updated.json().data).toMatchObject({ resourceName: "筛选现场图-更新", tags: ["更新"] });
+    expect(tags.json().data.items).toEqual(expect.arrayContaining([expect.objectContaining({ label: "更新", count: 1 })]));
+  });
+
+  it("scans and batch deletes only unused media", async () => {
+    const token = await login();
+    const unusedUpload = await uploadMedia(token, await pngBuffer(170, 170), { resourceName: "待清理资源" });
+    const unusedId = unusedUpload.json().data.asset.id;
+    const storedPath = path.join(uploadDir, new URL(unusedUpload.json().data.asset.url).pathname.split("/uploads/")[1]);
+    const usedAsset = await prisma.mediaAsset.findFirstOrThrow({ where: { banners: { some: {} } } });
+    const scan = await app.inject({
+      method: "POST",
+      url: "/api/admin/media-assets/scan-unused",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const deleted = await app.inject({
+      method: "POST",
+      url: "/api/admin/media-assets/batch-delete",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [unusedId, usedAsset.id] }
+    });
+
+    expect(scan.json().data.items.map((item: { id: number }) => item.id)).toContain(unusedId);
+    expect(scan.json().data.items.map((item: { id: number }) => item.id)).not.toContain(usedAsset.id);
+    expect(deleted.json().data.deletedIds).toEqual([unusedId]);
+    expect(deleted.json().data.skipped).toEqual([{ id: usedAsset.id, reason: "MEDIA_IN_USE" }]);
+    expect(await prisma.mediaAsset.findUnique({ where: { id: unusedId } })).toBeNull();
+    await expect(stat(storedPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("saves ordered case detail media and protects the references", async () => {
+    const token = await login();
+    const first = await uploadMedia(token, await pngBuffer(180, 180), { resourceName: "案例详情一" });
+    const second = await uploadMedia(token, await pngBuffer(190, 190), { resourceName: "案例详情二" });
+    const cover = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "case-1.png" } });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/cases",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "含详情媒体案例",
+        category: "测试",
+        tag: "测试",
+        coverAssetId: cover.id,
+        summary: "简介",
+        eventDate: "2026-07-10T00:00:00.000Z",
+        location: "杭州",
+        detail: "详情",
+        detailMediaAssetIds: [second.json().data.asset.id, first.json().data.asset.id],
+        isFeatured: false,
+        featuredSortOrder: 0,
+        sortOrder: 999,
+        status: "enabled"
+      }
+    });
+    const cases = await app.inject({
+      method: "GET",
+      url: "/api/admin/cases",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const item = cases.json().data.items.find((candidate: { id: number }) => candidate.id === created.json().data.id);
+    const blocked = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/media-assets/${first.json().data.asset.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(item.detailMediaAssetIds).toEqual([second.json().data.asset.id, first.json().data.asset.id]);
+    expect(item.media.map((media: { id: number }) => media.id)).toEqual([second.json().data.asset.id, first.json().data.asset.id]);
+    expect(blocked.statusCode).toBe(409);
+  });
+
+  it("rejects business associations that do not satisfy field dimensions", async () => {
+    const token = await login();
+    const upload = await uploadMedia(token, await pngBuffer(200, 200), { resourceName: "不能用于Banner" });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/banners",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "非法 Banner",
+        imageAssetId: upload.json().data.asset.id,
+        linkType: "none",
+        switchDurationMs: 3000,
+        sortOrder: 100,
+        status: "enabled"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_MEDIA_DIMENSION");
   });
 
   it("prevents deleting media used by CMS content", async () => {
     const token = await login();
-    const usedAsset = await prisma.mediaAsset.findFirstOrThrow({
-      where: { usage: "banner" }
-    });
+    const usedAsset = await prisma.mediaAsset.findFirstOrThrow({ where: { banners: { some: {} } } });
 
     const response = await app.inject({
       method: "DELETE",

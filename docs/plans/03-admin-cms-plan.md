@@ -35,7 +35,7 @@ Implement the React + Vite + Ant Design admin system for phase-one CMS operation
    - host/singer/actor: `defaultSort`, `pageSize`
    - activity_case: `category`, `onlyFeatured`, `pageSize`
    - contact: `phone`, `address`, `wechat`, `description`
-9. Implement media library upload with usage select, client-side image dimension pre-check, preview, and delete error display.
+9. Implement purpose-neutral media library upload with client-side image/video dimension pre-check, MD5 reuse, tags, previews, and delete protection.
 
 ## E2E Hooks
 Use stable `data-testid` attributes for login, dashboard PV cards, CRUD create/edit/delete buttons, menu type select, dynamic config fields, media upload, and save buttons.

@@ -40,11 +40,11 @@ pnpm build:weapp
 - [x] 最终命令矩阵已运行并记录
 
 ## 已完成事项
-- 2026-07-10 最终复核：`pnpm install`、`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 全部完成。安装输出为 `Already up to date`；测试包含 shared 4 项、api 11 项，Playwright 20 项且运行记录为 `passed`。
+- 2026-07-10 最终复核：`pnpm install`、`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 全部完成。测试包含 shared 6 项、admin 3 项、api 34 项，Playwright 21 项且运行记录为 `passed`。
 - `pnpm install`：当前 Codex 无 TTY 环境下直接运行会触发 pnpm module purge 确认并中断；按 pnpm 提示使用 `CI=true pnpm install` 后通过。
 - `pnpm lint`：通过。
-- `pnpm test`：通过；sandbox 内 Prisma engine cache 写入 `~/.cache/prisma` 被拒，使用提升权限运行后通过，shared 4 个测试、api 11 个测试全部通过。
-- `pnpm e2e`：通过；Admin 与 Miniapp H5 共 20 个 Playwright 场景全部通过，包含首页顶部/Banner 几何与精选案例卡片高度回归。
+- `pnpm test`：通过；sandbox 内 Prisma engine cache 写入 `~/.cache/prisma` 被拒，使用提升权限运行后通过，shared 6 个测试、admin 3 个测试、api 34 个测试全部通过。
+- `pnpm e2e`：通过；Admin 与 Miniapp H5 共 21 个 Playwright 场景全部通过，包含统一资源库、MD5 复用、内容寻址 seed、首页顶部/Banner 几何与精选案例卡片高度回归。
 - `pnpm --filter api build`：通过；包含 Prisma Client 生成和 TypeScript noEmit。
 - `pnpm --filter admin build`：通过；Vite 构建成功，有 Ant Design 后台首包大 chunk 警告。
 - `pnpm --filter miniapp build:h5`：通过；Taro H5 构建成功，有参考图生成大图资源体积警告。
@@ -84,7 +84,7 @@ apps/miniapp/dist
 - 后台本地开发可通过 Vite proxy 访问 `/api`；生产部署建议使用同源反向代理，或构建时设置 `VITE_API_BASE_URL=https://api.example.com`。
 
 ## 图片/视频资源存储
-一期使用本地 `uploads` 目录和 `media_assets.storageType=local`。上传资源统一记录原文件名、文件名、类型、用途、URL、宽高、大小和上传时间。生产迁移对象存储时保留 `media_assets.url` 返回语义，并将 `PUBLIC_BASE_URL` 指向 CDN 或对象存储公开域名。
+一期使用本地 `uploads` 目录和 `media_assets.storageType=local`。上传资源统一记录唯一资源名、原文件名、随机存储名、MD5、真实类型、URL、宽高、大小、标签、上传人和时间；资源库不区分业务用途。生产迁移对象存储时保留 `media_assets.url` 返回语义，并将 `PUBLIC_BASE_URL` 指向 CDN 或对象存储公开域名。
 
 ## 上线前检查清单
 - 修改默认管理员密码 `admin/admin123456`。
@@ -101,6 +101,7 @@ apps/miniapp/dist
 bc22e21
 
 ## 已知问题或设计取舍
+- 生产构建脚本使用 Taro 官方 `--no-check`，避免原生 doctor 依赖远程配置 schema；项目配置继续由 TypeScript、lint、自动化测试及实际 H5/weapp 编译验证。
 - Codex sandbox 不能写 Prisma 默认用户缓存目录，涉及 `prisma generate` 的命令在本环境使用提升权限运行；普通本机开发环境通常不需要。
 - 本轮在受限 sandbox 内直接执行 Taro H5 构建时，macOS `SystemConfiguration` 服务访问被拒，依赖运行时输出 `Attempted to create a NULL object` 后不再推进。以提升权限重跑同一构建及 `pnpm e2e` 后均通过；这是当前自动化宿主限制，不影响项目代码或本机开发命令。
 - Taro H5/weapp 构建提示 `banner-default.png` 和 `placeholder-banner.png` 超过推荐体积；这些图片来自参考图切图，适合一期测试和视觉还原，生产建议替换为压缩后的正式素材或 CDN 资源。

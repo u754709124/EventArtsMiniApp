@@ -4,30 +4,115 @@ export const statusValues = ["enabled", "disabled"] as const;
 export const menuTypeValues = ["host", "singer", "actor", "activity_case", "contact"] as const;
 export const artistTypeValues = ["host", "singer", "actor"] as const;
 export const bannerLinkTypeValues = ["none", "announcement", "case", "internal"] as const;
-export const mediaUsageValues = [
-  "banner",
-  "default_banner",
-  "menu_icon",
-  "case_cover",
-  "placeholder_banner",
-  "placeholder_icon",
-  "placeholder_case",
-  "person_avatar",
-  "video",
-  "other"
+export const mediaTypeValues = ["image", "video"] as const;
+export const mediaFieldKeyValues = [
+  "site.defaultBanner",
+  "site.placeholderBanner",
+  "site.placeholderIcon",
+  "site.placeholderCase",
+  "banner.image",
+  "menu.icon",
+  "case.cover",
+  "artist.avatar",
+  "case.detail"
 ] as const;
 
 export type Status = (typeof statusValues)[number];
 export type MenuType = (typeof menuTypeValues)[number];
 export type ArtistType = (typeof artistTypeValues)[number];
 export type BannerLinkType = (typeof bannerLinkTypeValues)[number];
-export type MediaUsage = (typeof mediaUsageValues)[number];
+export type MediaType = (typeof mediaTypeValues)[number];
+export type MediaFieldKey = (typeof mediaFieldKeyValues)[number];
 
 export const StatusSchema = z.enum(statusValues);
 export const MenuTypeSchema = z.enum(menuTypeValues);
 export const ArtistTypeSchema = z.enum(artistTypeValues);
 export const BannerLinkTypeSchema = z.enum(bannerLinkTypeValues);
-export const MediaUsageSchema = z.enum(mediaUsageValues);
+export const MediaTypeSchema = z.enum(mediaTypeValues);
+export const MediaFieldKeySchema = z.enum(mediaFieldKeyValues);
+
+export type MediaFieldRule = {
+  label: string;
+  allowedTypes: MediaType[];
+  width: number | null;
+  height: number | null;
+};
+
+export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
+  "site.defaultBanner": { label: "默认 Banner 图", allowedTypes: ["image"], width: 1420, height: 580 },
+  "site.placeholderBanner": { label: "Banner 占位图", allowedTypes: ["image"], width: 1420, height: 580 },
+  "site.placeholderIcon": { label: "菜单图标占位图", allowedTypes: ["image"], width: 176, height: 176 },
+  "site.placeholderCase": { label: "案例封面占位图", allowedTypes: ["image"], width: 460, height: 320 },
+  "banner.image": { label: "Banner 图片", allowedTypes: ["image"], width: 1420, height: 580 },
+  "menu.icon": { label: "菜单图标", allowedTypes: ["image"], width: 176, height: 176 },
+  "case.cover": { label: "案例封面", allowedTypes: ["image"], width: 460, height: 320 },
+  "artist.avatar": { label: "人员头像", allowedTypes: ["image"], width: null, height: null },
+  "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null }
+};
+
+export function normalizeResourceName(value: string) {
+  const displayName = value.normalize("NFKC").trim();
+  return { displayName, key: displayName.toLocaleLowerCase("en-US") };
+}
+
+export function normalizeMediaTags(values: string[]) {
+  const tags = new Map<string, string>();
+  for (const value of values) {
+    const normalized = normalizeResourceName(value);
+    if (normalized.displayName && !tags.has(normalized.key)) tags.set(normalized.key, normalized.displayName);
+  }
+  return [...tags.values()];
+}
+
+const positiveIntFromInput = z.coerce.number().int().positive();
+
+export const mediaListQuerySchema = z.object({
+  mediaType: MediaTypeSchema.optional(),
+  q: z.string().trim().optional(),
+  tag: z.string().trim().optional(),
+  referenceStatus: z.enum(["used", "unused"]).optional(),
+  width: positiveIntFromInput.optional(),
+  height: positiveIntFromInput.optional(),
+  page: positiveIntFromInput.default(1),
+  pageSize: positiveIntFromInput.max(100).default(20)
+});
+
+export const lookupMediaRequestSchema = z.object({
+  md5: z.string().regex(/^[a-f\d]{32}$/i),
+  size: positiveIntFromInput
+});
+
+export const checkMediaNameRequestSchema = z.object({
+  resourceName: z.string().transform((value, context) => {
+    const normalized = normalizeResourceName(value);
+    if (!normalized.displayName) {
+      context.addIssue({ code: "custom", message: "资源名称不能为空" });
+      return z.NEVER;
+    }
+    return normalized.displayName;
+  }),
+  excludeId: positiveIntFromInput.optional()
+});
+
+export const updateMediaMetadataSchema = z
+  .object({
+    resourceName: z.string(),
+    tags: z.array(z.string()).default([])
+  })
+  .transform((value, context) => {
+    const normalized = normalizeResourceName(value.resourceName);
+    if (!normalized.displayName) {
+      context.addIssue({ code: "custom", message: "资源名称不能为空" });
+      return z.NEVER;
+    }
+    return { resourceName: normalized.displayName, tags: normalizeMediaTags(value.tags) };
+  });
+
+export const batchDeleteMediaRequestSchema = z.object({
+  ids: z.array(positiveIntFromInput).min(1).transform((ids) => [...new Set(ids)])
+});
+
+export const caseDetailMediaIdsSchema = z.array(positiveIntFromInput).transform((ids) => [...new Set(ids)]);
 
 export type ApiSuccess<T> = {
   success: true;
@@ -54,17 +139,38 @@ export const fail = (code: string, message: string): ApiFailure => ({
 
 export type MediaAssetDto = {
   id: number;
+  resourceName: string;
   originalName: string;
-  filename: string;
+  md5: string;
   mimeType: string;
-  mediaType: "image" | "video";
-  usage: MediaUsage;
+  mediaType: MediaType;
   url: string;
   width: number | null;
   height: number | null;
   size: number;
   storageType: "local";
+  tags: string[];
+  referenceCount: number;
+  inUse: boolean;
+  createdBy: number | null;
+  createdByName: string | null;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type CaseMediaDto = {
+  id: number;
+  mediaType: MediaType;
+  url: string;
+  width: number;
+  height: number;
+  sortOrder: number;
+};
+
+export type MediaUploadConfigDto = {
+  image: { mimeTypes: ["image/jpeg", "image/png", "image/webp"]; maxBytes: number };
+  video: { mimeTypes: ["video/mp4"]; maxBytes: number };
+  fieldRules: Record<MediaFieldKey, MediaFieldRule>;
 };
 
 export type SiteConfigDto = {
@@ -116,7 +222,7 @@ export type ActivityCaseDto = {
   eventDate: string;
   location: string;
   detail: string;
-  mediaJson: unknown;
+  media: CaseMediaDto[];
   isFeatured: boolean;
   featuredSortOrder: number;
   sortOrder: number;
@@ -184,13 +290,3 @@ export const menuConfigSchemaByType = {
     description: z.string().optional()
   })
 } satisfies Record<MenuType, z.ZodType>;
-
-export const mediaDimensionRules: Partial<Record<MediaUsage, { width: number; height: number }>> = {
-  banner: { width: 1420, height: 580 },
-  default_banner: { width: 1420, height: 580 },
-  placeholder_banner: { width: 1420, height: 580 },
-  menu_icon: { width: 176, height: 176 },
-  placeholder_icon: { width: 176, height: 176 },
-  case_cover: { width: 460, height: 320 },
-  placeholder_case: { width: 460, height: 320 }
-};

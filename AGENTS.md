@@ -51,9 +51,10 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Production deployments must change the default password and JWT secret.
 
 ## Media Rules
-- Uploads must include `usage`.
-- Backend must validate fixed image dimensions with Sharp.
-- `media_assets` records original name, generated filename, MIME type, media type, usage, URL, width, height, size, storage type, creator, and upload time.
+- The media library is purpose-neutral. Library uploads do not include `usage`; form-local uploads may include `fieldKey` for early slot validation.
+- Clients preflight type, size and dimensions and calculate MD5; the backend independently recalculates MD5, extracts trusted metadata, and validates every business association.
+- `media_assets` records a globally unique normalized resource name, original name, generated filename, MD5, verified MIME/media type, URL, width, height, size, tags, storage type, creator, and timestamps.
+- Business forms continue to reference media by integer ID. Local filenames use collision-safe random 32-character hexadecimal names.
 - Referenced media cannot be deleted; unused media can be deleted after confirmation.
 - Local files go to `uploads`; production object storage remains an environment-backed adapter point.
 

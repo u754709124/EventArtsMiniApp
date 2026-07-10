@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 export const apiBase = "http://127.0.0.1:3001";
@@ -28,6 +29,25 @@ export async function adminApi<T>(
     throw new Error(body.error?.message ?? `Admin API failed: ${method} ${path}`);
   }
   return body.data as T;
+}
+
+export async function adminUploadMedia(
+  request: APIRequestContext,
+  input: { resourceName: string; name: string; mimeType: string; buffer: Buffer }
+) {
+  const token = await adminToken(request);
+  const response = await request.post(`${apiBase}/api/admin/media-assets/upload`, {
+    headers: { authorization: `Bearer ${token}` },
+    multipart: {
+      resourceName: input.resourceName,
+      md5: createHash("md5").update(input.buffer).digest("hex"),
+      tags: "[]",
+      file: { name: input.name, mimeType: input.mimeType, buffer: input.buffer }
+    }
+  });
+  const body = await response.json();
+  if (!body.success) throw new Error(body.error?.message ?? "Media upload failed");
+  return body.data.asset as { id: number; resourceName: string };
 }
 
 export async function clientApi<T>(request: APIRequestContext, path: string) {
@@ -65,6 +85,23 @@ export async function selectOption(page: Page, testid: string, option: string | 
   const target = visibleSelectOption(page, option);
   await expect(target).toBeVisible();
   await target.click();
+}
+
+export async function chooseMediaFromLibrary(
+  page: Page,
+  testid: string,
+  resourceName: string | RegExp,
+  multiple = false,
+  mediaType: "image" | "video" = "image"
+) {
+  await page.getByTestId(`${testid}-add`).click();
+  await page.getByTestId("media-action-library").click();
+  const modal = page.locator('[data-testid="media-library-modal"]:visible');
+  await expect(modal).toBeVisible();
+  if (mediaType === "video") await modal.getByRole("tab", { name: "视频" }).click();
+  await modal.getByRole("button", { name: resourceName }).click();
+  if (multiple) await expect(modal).toBeHidden();
+  else await expect(page.getByTestId(`${testid}-preview`)).toBeVisible();
 }
 
 export async function waitForToast(page: Page, text: string | RegExp) {

@@ -24,6 +24,8 @@ CI=true pnpm install
 - `JWT_SECRET`：管理员 JWT 密钥，生产环境必须替换
 - `DATABASE_URL`：SQLite 数据库地址，默认 `file:./dev.db`
 - `UPLOAD_DIR`：本地上传目录，默认指向仓库根目录 `uploads`
+- `MAX_IMAGE_UPLOAD_BYTES`：图片上传上限，默认 `10MB`
+- `MAX_VIDEO_UPLOAD_BYTES`：视频上传上限，默认 `100MB`
 - `PUBLIC_BASE_URL`：资源 URL 前缀
 - `VITE_API_BASE_URL`：后台管理系统 API Base URL；本地也可留空走 Vite proxy
 - `TARO_APP_API_BASE_URL`：Taro H5/weapp 编译时注入的小程序 API Base URL
@@ -72,7 +74,9 @@ pnpm e2e
 E2E 会自动启动 API、Admin 和 Taro H5，并生成首页设计复核截图 `docs/design/actual-home-h5.png`。
 
 ## 上传目录
-本地上传文件存储在仓库根目录 `uploads`。`media_assets` 会记录文件名、类型、用途、URL、宽高、大小和上传时间。正在被 Banner、菜单、案例、人员头像或站点配置引用的资源不可删除。
+本地上传文件存储在仓库根目录 `uploads`。资源库不区分业务用途；资源保存全局唯一资源名、原始文件名、MD5、真实格式与尺寸、标签、上传人和时间，物理文件使用随机 32 位十六进制名称防止覆盖。业务表单继续以整数资源 ID 建立关联。
+
+管理端会在上传前读取图片/视频尺寸并分片计算 MD5；服务端会重新计算并校验。MD5 已存在时直接复用资源；Banner、菜单图标、案例封面等固定槽位会在上传和最终保存时再次校验尺寸。正在被站点配置、Banner、菜单、案例封面/详情或人员头像引用的资源不可删除。
 
 ## 对象存储预留
 一期默认使用本地存储，数据库字段已保留 `storageType` 和稳定 `url`。生产迁移对象存储时建议保持 API 返回 URL 不变，或通过 CDN/对象存储域名更新 `PUBLIC_BASE_URL`。
@@ -81,6 +85,7 @@ E2E 会自动启动 API、Admin 和 Taro H5，并生成首页设计复核截图 
 - 替换默认管理员密码和 `JWT_SECRET`。
 - 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`VITE_API_BASE_URL`、`TARO_APP_API_BASE_URL`。
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
+- 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
 - 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名。
 - 使用 `pnpm build:weapp` 后在微信开发者工具中复核页面、TabBar、上传资源访问和接口域名。
 

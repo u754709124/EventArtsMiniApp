@@ -10,18 +10,23 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@event-arts/shared": "workspace:*",
     "@vitejs/plugin-react": "^5.2.0",
     "antd": "^6.5.0",
     "dayjs": "^1.11.19",
-    "vite": "^8.1.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.10.1"
+    "react-router-dom": "^7.10.1",
+    "spark-md5": "^3.0.2",
+    "vite": "^8.1.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
+    "@types/spark-md5": "^3.0.5",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

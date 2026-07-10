@@ -154,7 +154,7 @@ test("无 Banner 时显示默认图且有指示点", async ({ page, request }) =
   await setBannerStatus(request, "disabled");
   await openHome(page);
   await expect(page.getByTestId("home-banner")).toBeVisible();
-  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", /banner-default\.png/);
+  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", /\/uploads\/seed\/[a-f\d]{32}\.png$/);
   await expect(page.getByTestId("home-banner-dots")).toContainText("•");
 });
 
@@ -217,7 +217,7 @@ test("图片失败时使用占位图", async ({ page, request }) => {
   const home = await clientApi<HomeResponse>(request, "/api/client/home");
   await page.route(home.site.defaultBannerUrl, (route) => route.abort());
   await openHome(page);
-  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", /placeholder-banner\.png/);
+  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", home.site.placeholderBannerUrl);
   await page.unroute(home.site.defaultBannerUrl);
 });
 

@@ -19,7 +19,6 @@ import {
   Switch,
   Table,
   Tag,
-  Upload,
   message
 } from "antd";
 import { ConfigProvider } from "antd";
@@ -40,41 +39,16 @@ import dayjs from "dayjs";
 import {
   artistTypeValues,
   bannerLinkTypeValues,
-  mediaUsageValues,
   statusValues,
   type DashboardOverviewResponse,
-  type MediaAssetDto,
   type MenuType
 } from "@event-arts/shared";
+import { clearToken, getToken, request, setToken } from "./api";
+import { MediaField } from "./media/MediaField";
+import { MediaPage } from "./media/MediaPage";
 import "./styles.css";
 
-type ApiSuccess<T> = { success: true; data: T; message: "ok" };
-type ApiFailure = { success: false; error: { code: string; message: string } };
-type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 type AnyRecord = Record<string, unknown>;
-type UploadRequestOption = {
-  file: unknown;
-  onSuccess?: (body: unknown, file: File) => void;
-  onError?: (error: Error) => void;
-};
-
-const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-const tokenKey = "eventarts.admin.token";
-
-function getToken() {
-  return localStorage.getItem(tokenKey);
-}
-
-async function request<T>(path: string, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
-  if (init.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
-  const token = getToken();
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
-  const body = (await response.json()) as ApiResponse<T>;
-  if (!body.success) throw new Error(body.error.message);
-  return body.data;
-}
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -87,7 +61,7 @@ function LoginPage() {
         method: "POST",
         body: JSON.stringify(values)
       });
-      localStorage.setItem(tokenKey, data.token);
+      setToken(data.token);
       message.success("登录成功");
       navigate("/dashboard");
     } catch (error) {
@@ -137,7 +111,7 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   function logout() {
-    localStorage.removeItem(tokenKey);
+    clearToken();
     navigate("/login");
   }
 
@@ -196,35 +170,6 @@ function DashboardPage() {
   );
 }
 
-function MediaSelect({
-  value,
-  onChange,
-  usage,
-  testid = "media-select"
-}: {
-  value?: number;
-  onChange?: (value: number) => void;
-  usage?: string[];
-  testid?: string;
-}) {
-  const [assets, setAssets] = useState<MediaAssetDto[]>([]);
-  useEffect(() => {
-    request<{ items: MediaAssetDto[] }>("/api/admin/media-assets").then((data) => setAssets(data.items));
-  }, []);
-  return (
-    <Select
-      data-testid={testid}
-      value={value}
-      onChange={onChange}
-      optionFilterProp="label"
-      showSearch
-      options={assets
-        .filter((asset) => !usage || usage.includes(asset.usage))
-        .map((asset) => ({ value: asset.id, label: `${asset.originalName} (${asset.usage})` }))}
-    />
-  );
-}
-
 function SiteConfigPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
@@ -236,8 +181,12 @@ function SiteConfigPage() {
   }, [form]);
 
   async function save(values: AnyRecord) {
-    await request("/api/admin/site-config", { method: "PUT", body: JSON.stringify(values) });
-    message.success("保存成功");
+    try {
+      await request("/api/admin/site-config", { method: "PUT", body: JSON.stringify(values) });
+      message.success("保存成功");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    }
   }
 
   return (
@@ -251,16 +200,16 @@ function SiteConfigPage() {
             <Input data-testid="site-subtitle" />
           </Form.Item>
           <Form.Item label="默认 Banner 图" name="defaultBannerAssetId">
-            <MediaSelect testid="site-default-banner-select" usage={["banner", "default_banner"]} />
+            <MediaField testid="site-default-banner-select" fieldKey="site.defaultBanner" />
           </Form.Item>
           <Form.Item label="Banner 占位图" name="placeholderBannerAssetId">
-            <MediaSelect testid="site-placeholder-banner-select" usage={["placeholder_banner", "default_banner"]} />
+            <MediaField testid="site-placeholder-banner-select" fieldKey="site.placeholderBanner" />
           </Form.Item>
           <Form.Item label="菜单图标占位图" name="placeholderIconAssetId">
-            <MediaSelect testid="site-placeholder-icon-select" usage={["placeholder_icon", "menu_icon"]} />
+            <MediaField testid="site-placeholder-icon-select" fieldKey="site.placeholderIcon" />
           </Form.Item>
           <Form.Item label="案例封面占位图" name="placeholderCaseAssetId">
-            <MediaSelect testid="site-placeholder-case-select" usage={["placeholder_case", "case_cover"]} />
+            <MediaField testid="site-placeholder-case-select" fieldKey="site.placeholderCase" />
           </Form.Item>
           <Button data-testid="site-save" type="primary" htmlType="submit">
             保存
@@ -321,13 +270,17 @@ function CrudPage({ config }: { config: CrudConfig }) {
 
   async function save(values: AnyRecord) {
     const normalized = config.normalize ? config.normalize(values) : values;
-    await request(editing ? `${config.path}/${editing.id}` : config.path, {
-      method: editing ? "PUT" : "POST",
-      body: JSON.stringify(normalized)
-    });
-    message.success("保存成功");
-    setDrawerOpen(false);
-    await load();
+    try {
+      await request(editing ? `${config.path}/${editing.id}` : config.path, {
+        method: editing ? "PUT" : "POST",
+        body: JSON.stringify(normalized)
+      });
+      message.success("保存成功");
+      setDrawerOpen(false);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    }
   }
 
   async function remove(record: AnyRecord) {
@@ -390,7 +343,7 @@ function CrudPage({ config }: { config: CrudConfig }) {
         data-testid={`${config.testid}-drawer`}
         title={editing ? `编辑${config.title}` : `新增${config.title}`}
         open={drawerOpen}
-        width={560}
+        size={560}
         onClose={() => setDrawerOpen(false)}
       >
         <Form data-testid={`${config.testid}-form`} form={form} layout="vertical" onFinish={save} initialValues={{ status: "enabled", sortOrder: 1 }}>
@@ -519,7 +472,7 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="banner-title" />
         </Form.Item>
         <Form.Item label="图片" name="imageAssetId" rules={[{ required: true }]}>
-          <MediaSelect testid="banner-image-select" usage={["banner", "default_banner"]} />
+          <MediaField testid="banner-image-select" fieldKey="banner.image" />
         </Form.Item>
         <Form.Item label="跳转类型" name="linkType" initialValue="none">
           <Select data-testid="banner-link-type" options={bannerLinkTypeValues.map((value) => ({ value, label: value }))} />
@@ -550,7 +503,7 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="menu-text" />
         </Form.Item>
         <Form.Item label="菜单图标" name="iconAssetId" rules={[{ required: true }]}>
-          <MediaSelect testid="menu-icon-select" usage={["menu_icon"]} />
+          <MediaField testid="menu-icon-select" fieldKey="menu.icon" />
         </Form.Item>
         <Form.Item label="菜单类型" name="type" rules={[{ required: true }]}>
           <Select
@@ -593,7 +546,7 @@ const configs: Record<string, CrudConfig> = {
           <Input data-testid="case-tag" />
         </Form.Item>
         <Form.Item label="封面图" name="coverAssetId" rules={[{ required: true }]}>
-          <MediaSelect testid="case-cover-select" usage={["case_cover"]} />
+          <MediaField testid="case-cover-select" fieldKey="case.cover" />
         </Form.Item>
         <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
           <Input.TextArea data-testid="case-summary" />
@@ -606,6 +559,9 @@ const configs: Record<string, CrudConfig> = {
         </Form.Item>
         <Form.Item label="详情内容" name="detail" rules={[{ required: true }]}>
           <Input.TextArea data-testid="case-detail" />
+        </Form.Item>
+        <Form.Item label="详情图片/视频" name="detailMediaAssetIds" initialValue={[]}>
+          <MediaField testid="case-detail-media" fieldKey="case.detail" multiple />
         </Form.Item>
         <Form.Item label="是否精选" name="isFeatured" valuePropName="checked" initialValue={false}>
           <Switch data-testid="case-featured" />
@@ -636,7 +592,7 @@ const configs: Record<string, CrudConfig> = {
           <Select options={artistTypeValues.map((value) => ({ value, label: value }))} />
         </Form.Item>
         <Form.Item label="头像" name="avatarAssetId">
-          <MediaSelect testid="artist-avatar-select" usage={["person_avatar", "other"]} />
+          <MediaField testid="artist-avatar-select" fieldKey="artist.avatar" />
         </Form.Item>
         <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
           <Input.TextArea />
@@ -653,93 +609,6 @@ const configs: Record<string, CrudConfig> = {
     )
   }
 };
-
-function MediaPage() {
-  const [assets, setAssets] = useState<MediaAssetDto[]>([]);
-  const [usage, setUsage] = useState<string>("banner");
-  const [loading, setLoading] = useState(false);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await request<{ items: MediaAssetDto[] }>("/api/admin/media-assets");
-      setAssets(data.items);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function uploadFile(options: UploadRequestOption) {
-    const file = options.file as File;
-    const form = new FormData();
-    form.append("usage", usage);
-    form.append("file", file);
-    try {
-      await request("/api/admin/media-assets/upload", { method: "POST", body: form });
-      message.success("上传成功");
-      await load();
-      options.onSuccess?.({}, file);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "上传失败");
-      options.onError?.(error as Error);
-    }
-  }
-
-  async function remove(asset: MediaAssetDto) {
-    Modal.confirm({
-      title: "确认删除资源？",
-      okText: "确定",
-      cancelText: "取消",
-      async onOk() {
-        try {
-          await request(`/api/admin/media-assets/${asset.id}`, { method: "DELETE" });
-          message.success("删除成功");
-          await load();
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : "删除失败");
-        }
-      }
-    });
-  }
-
-  return (
-    <Card title="资源管理">
-      <Space className="toolbar">
-        <Select
-          data-testid="media-usage-select"
-          value={usage}
-          onChange={setUsage}
-          options={mediaUsageValues.map((value) => ({ value, label: value }))}
-        />
-        <Upload customRequest={uploadFile} showUploadList={false}>
-          <Button data-testid="media-upload-button">上传资源</Button>
-        </Upload>
-      </Space>
-      <Table
-        data-testid="media-table"
-        rowKey="id"
-        loading={loading}
-        dataSource={assets}
-        columns={[
-          { title: "预览", render: (_, asset) => (asset.mediaType === "image" ? <img alt={asset.originalName} src={asset.url} className="media-thumb" /> : <a href={asset.url}>视频</a>) },
-          { title: "文件名", dataIndex: "originalName" },
-          { title: "用途", dataIndex: "usage" },
-          { title: "类型", dataIndex: "mediaType" },
-          { title: "宽高", render: (_, asset) => `${asset.width ?? "-"} x ${asset.height ?? "-"}` },
-          { title: "大小", dataIndex: "size" },
-          { title: "上传时间", dataIndex: "createdAt" },
-          { title: "操作", render: (_, asset) => <Button danger data-testid={`media-delete-${asset.id}`} onClick={() => remove(asset)}>删除</Button> }
-        ]}
-        pagination={{ pageSize: 10 }}
-        locale={{ emptyText: <Empty description="暂无资源" /> }}
-      />
-    </Card>
-  );
-}
 
 function AppRoutes() {
   const crudRoutes = useMemo(() => configs, []);

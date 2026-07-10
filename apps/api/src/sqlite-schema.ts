@@ -1,4 +1,14 @@
+import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { readFile, unlink } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
+import { normalizeResourceName } from "@event-arts/shared";
+import ffprobe from "@ffprobe-installer/ffprobe";
+import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
+
+const execFileAsync = promisify(execFile);
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS admin_users (
@@ -11,19 +21,32 @@ const statements = [
   )`,
   `CREATE TABLE IF NOT EXISTS media_assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resourceName TEXT NOT NULL,
+    resourceNameKey TEXT NOT NULL UNIQUE,
     originalName TEXT NOT NULL,
     filename TEXT NOT NULL UNIQUE,
+    md5 TEXT NOT NULL UNIQUE,
     mimeType TEXT NOT NULL,
     mediaType TEXT NOT NULL,
-    usage TEXT NOT NULL,
+    usage TEXT NOT NULL DEFAULT 'legacy',
     url TEXT NOT NULL,
     width INTEGER,
     height INTEGER,
     size INTEGER NOT NULL,
     storageType TEXT NOT NULL DEFAULT 'local',
     createdBy INTEGER,
-    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS media_asset_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mediaAssetId INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    labelKey TEXT NOT NULL,
+    FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE CASCADE,
+    UNIQUE(mediaAssetId, labelKey)
+  )`,
+  `CREATE INDEX IF NOT EXISTS media_asset_tags_labelKey_idx ON media_asset_tags(labelKey)`,
   `CREATE TABLE IF NOT EXISTS site_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
     appName TEXT NOT NULL,
@@ -106,6 +129,16 @@ const statements = [
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(coverAssetId) REFERENCES media_assets(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS activity_case_media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    activityCaseId INTEGER NOT NULL,
+    mediaAssetId INTEGER NOT NULL,
+    sortOrder INTEGER NOT NULL,
+    FOREIGN KEY(activityCaseId) REFERENCES activity_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+    UNIQUE(activityCaseId, mediaAssetId)
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_case_media_mediaAssetId_idx ON activity_case_media(mediaAssetId)`,
   `CREATE TABLE IF NOT EXISTS page_view_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pagePath TEXT NOT NULL,
@@ -119,10 +152,208 @@ const statements = [
     detail TEXT,
     createdBy INTEGER,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS seed_records (
+    key TEXT PRIMARY KEY,
+    entityType TEXT NOT NULL,
+    entityId INTEGER NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`
 ];
 
-export async function ensureDatabaseSchema(prisma: AppPrismaClient) {
+type SchemaOptions = { uploadDir?: string };
+
+type LegacyMediaRow = {
+  id: number;
+  originalName: string;
+  filename: string;
+  mimeType: string;
+  mediaType: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+};
+
+async function tableExists(prisma: AppPrismaClient, table: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    table
+  );
+  return rows.length > 0;
+}
+
+function storagePath(uploadDir: string, row: LegacyMediaRow) {
+  const resolveInsideUploadDir = (storageKey: string) => {
+    const root = path.resolve(uploadDir);
+    const candidate = path.resolve(root, storageKey);
+    if (!candidate.startsWith(`${root}${path.sep}`)) {
+      throw new Error(`旧资源路径越界: ${row.id}:${row.originalName}`);
+    }
+    return candidate;
+  };
+  try {
+    const pathname = decodeURIComponent(new URL(row.url).pathname);
+    const marker = "/uploads/";
+    const index = pathname.indexOf(marker);
+    if (index >= 0) return resolveInsideUploadDir(pathname.slice(index + marker.length));
+  } catch {
+    // Fall back to the stored filename for legacy relative URLs.
+  }
+  return resolveInsideUploadDir(row.filename);
+}
+
+async function preflightLegacyMedia(prisma: AppPrismaClient, uploadDir: string) {
+  const rows = await prisma.$queryRawUnsafe<LegacyMediaRow[]>(
+    "SELECT id, originalName, filename, mimeType, mediaType, url, width, height FROM media_assets ORDER BY id"
+  );
+  if (await tableExists(prisma, "activity_cases")) {
+    const unsupported = await prisma.$queryRawUnsafe<Array<{ id: number; mediaJson: string }>>(
+      "SELECT id, mediaJson FROM activity_cases WHERE TRIM(COALESCE(mediaJson, '')) NOT IN ('', '[]')"
+    );
+    if (unsupported.length) {
+      throw new Error(`无法迁移非空 mediaJson，案例 ID: ${unsupported.map((item) => item.id).join(", ")}`);
+    }
+  }
+
+  const prepared: Array<LegacyMediaRow & {
+    absolutePath: string;
+    storageKey: string;
+    resourceName: string;
+    resourceNameKey: string;
+    md5: string;
+    size: number;
+    actualWidth: number;
+    actualHeight: number;
+  }> = [];
+  const usedNames = new Set<string>();
+  const missing: string[] = [];
+  for (const row of rows) {
+    const absolutePath = storagePath(uploadDir, row);
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(absolutePath);
+    } catch {
+      missing.push(`${row.id}:${row.originalName} (${absolutePath})`);
+      continue;
+    }
+    let actualWidth = row.width ?? 0;
+    let actualHeight = row.height ?? 0;
+    try {
+      if (row.mediaType === "image") {
+        const metadata = await sharp(buffer).metadata();
+        actualWidth = metadata.width ?? 0;
+        actualHeight = metadata.height ?? 0;
+      } else if (row.mediaType === "video") {
+        const { stdout } = await execFileAsync(ffprobe.path, [
+          "-v",
+          "error",
+          "-select_streams",
+          "v:0",
+          "-show_entries",
+          "stream=width,height",
+          "-of",
+          "json",
+          absolutePath
+        ]);
+        const info = JSON.parse(stdout) as { streams?: Array<{ width?: number; height?: number }> };
+        actualWidth = info.streams?.[0]?.width ?? 0;
+        actualHeight = info.streams?.[0]?.height ?? 0;
+      }
+    } catch {
+      throw new Error(`无法读取旧资源尺寸: ${row.id}:${row.originalName}`);
+    }
+    if (!actualWidth || !actualHeight) {
+      throw new Error(`无法读取旧资源尺寸: ${row.id}:${row.originalName}`);
+    }
+    let name = normalizeResourceName(row.originalName);
+    if (usedNames.has(name.key)) name = normalizeResourceName(`${name.displayName} (${row.id})`);
+    usedNames.add(name.key);
+    prepared.push({
+      ...row,
+      absolutePath,
+      storageKey: path.relative(uploadDir, absolutePath),
+      resourceName: name.displayName,
+      resourceNameKey: name.key,
+      md5: createHash("md5").update(buffer).digest("hex"),
+      size: buffer.length,
+      actualWidth,
+      actualHeight
+    });
+  }
+  if (missing.length) throw new Error(`旧资源文件缺失: ${missing.join("; ")}`);
+  return prepared;
+}
+
+async function migrateLegacyMedia(prisma: AppPrismaClient, uploadDir: string) {
+  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(media_assets)");
+  if (columns.some((column) => column.name === "resourceName")) return;
+  const prepared = await preflightLegacyMedia(prisma, uploadDir);
+  const canonicalByMd5 = new Map<string, (typeof prepared)[number]>();
+  const duplicateToCanonical = new Map<number, number>();
+  for (const row of prepared) {
+    const canonical = canonicalByMd5.get(row.md5);
+    if (canonical) duplicateToCanonical.set(row.id, canonical.id);
+    else canonicalByMd5.set(row.md5, row);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("ALTER TABLE media_assets ADD COLUMN resourceName TEXT");
+    await tx.$executeRawUnsafe("ALTER TABLE media_assets ADD COLUMN resourceNameKey TEXT");
+    await tx.$executeRawUnsafe("ALTER TABLE media_assets ADD COLUMN md5 TEXT");
+    await tx.$executeRawUnsafe("ALTER TABLE media_assets ADD COLUMN updatedAt DATETIME");
+
+    const references = [
+      ["site_config", "defaultBannerAssetId"],
+      ["site_config", "placeholderBannerAssetId"],
+      ["site_config", "placeholderIconAssetId"],
+      ["site_config", "placeholderCaseAssetId"],
+      ["banners", "imageAssetId"],
+      ["menu_items", "iconAssetId"],
+      ["artists", "avatarAssetId"],
+      ["activity_cases", "coverAssetId"]
+    ] as const;
+    for (const [duplicateId, canonicalId] of duplicateToCanonical) {
+      for (const [table, column] of references) {
+        const exists = await tx.$queryRawUnsafe<Array<{ name: string }>>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+          table
+        );
+        if (exists.length) await tx.$executeRawUnsafe(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`, canonicalId, duplicateId);
+      }
+    }
+
+    for (const row of canonicalByMd5.values()) {
+      await tx.$executeRawUnsafe(
+        "UPDATE media_assets SET resourceName = ?, resourceNameKey = ?, md5 = ?, filename = ?, width = ?, height = ?, size = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        row.resourceName,
+        row.resourceNameKey,
+        row.md5,
+        row.storageKey,
+        row.actualWidth,
+        row.actualHeight,
+        row.size,
+        row.id
+      );
+    }
+    for (const duplicateId of duplicateToCanonical.keys()) {
+      await tx.$executeRawUnsafe("DELETE FROM media_assets WHERE id = ?", duplicateId);
+    }
+    await tx.$executeRawUnsafe("CREATE UNIQUE INDEX media_assets_resourceNameKey_key ON media_assets(resourceNameKey)");
+    await tx.$executeRawUnsafe("CREATE UNIQUE INDEX media_assets_md5_key ON media_assets(md5)");
+  });
+
+  for (const row of prepared.filter((item) => duplicateToCanonical.has(item.id))) {
+    await unlink(row.absolutePath).catch(() => undefined);
+  }
+}
+
+export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: SchemaOptions = {}) {
+  const hasMediaTable = await tableExists(prisma, "media_assets");
+  if (hasMediaTable) {
+    const uploadDir = options.uploadDir ?? path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? "../../uploads");
+    await migrateLegacyMedia(prisma, uploadDir);
+  }
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
   for (const statement of statements) {
     await prisma.$executeRawUnsafe(statement);

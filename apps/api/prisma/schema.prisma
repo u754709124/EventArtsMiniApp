@@ -37,11 +37,14 @@ model SiteConfig {
 
 model MediaAsset {
   id                       Int            @id @default(autoincrement())
+  resourceName             String
+  resourceNameKey          String         @unique
   originalName             String
   filename                 String         @unique
+  md5                      String         @unique
   mimeType                 String
   mediaType                String
-  usage                    String
+  legacyUsage              String         @default("legacy") @map("usage")
   url                      String
   width                    Int?
   height                   Int?
@@ -49,6 +52,9 @@ model MediaAsset {
   storageType              String         @default("local")
   createdBy                Int?
   createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  tags                     MediaAssetTag[]
+  caseDetailMedia          ActivityCaseMedia[]
   banners                  Banner[]
   menuItems                MenuItem[]
   artists                  Artist[]
@@ -59,6 +65,18 @@ model MediaAsset {
   placeholderCaseConfigs   SiteConfig[]   @relation("placeholderCase")
 
   @@map("media_assets")
+}
+
+model MediaAssetTag {
+  id           Int        @id @default(autoincrement())
+  mediaAssetId Int
+  label        String
+  labelKey     String
+  mediaAsset   MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaAssetId, labelKey])
+  @@index([labelKey])
+  @@map("media_asset_tags")
 }
 
 model Announcement {
@@ -133,7 +151,8 @@ model ActivityCase {
   eventDate         DateTime
   location          String
   detail            String
-  mediaJson         String
+  legacyMediaJson   String      @default("[]") @map("mediaJson")
+  media             ActivityCaseMedia[]
   isFeatured        Boolean    @default(false)
   featuredSortOrder Int        @default(0)
   sortOrder         Int        @default(0)
@@ -142,6 +161,19 @@ model ActivityCase {
   updatedAt         DateTime   @updatedAt
 
   @@map("activity_cases")
+}
+
+model ActivityCaseMedia {
+  id             Int          @id @default(autoincrement())
+  activityCaseId Int
+  mediaAssetId   Int
+  sortOrder      Int
+  activityCase   ActivityCase @relation(fields: [activityCaseId], references: [id], onDelete: Cascade)
+  mediaAsset     MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([activityCaseId, mediaAssetId])
+  @@index([mediaAssetId])
+  @@map("activity_case_media")
 }
 
 model PageViewEvent {
@@ -162,4 +194,14 @@ model OperationLog {
   createdAt DateTime @default(now())
 
   @@map("operation_logs")
+}
+
+model SeedRecord {
+  key        String   @id
+  entityType String
+  entityId   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("seed_records")
 }
