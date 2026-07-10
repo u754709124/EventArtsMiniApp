@@ -40,15 +40,16 @@ pnpm build:weapp
 - [x] 最终命令矩阵已运行并记录
 
 ## 已完成事项
-- 2026-07-10 最终复核：`pnpm install`、`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 全部完成。安装输出为 `Already up to date`；测试包含 shared 4 项、api 11 项，Playwright 18 项且运行记录为 `passed`。
+- 2026-07-10 最终复核：`pnpm install`、`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 全部完成。安装输出为 `Already up to date`；测试包含 shared 4 项、api 11 项，Playwright 20 项且运行记录为 `passed`。
 - `pnpm install`：当前 Codex 无 TTY 环境下直接运行会触发 pnpm module purge 确认并中断；按 pnpm 提示使用 `CI=true pnpm install` 后通过。
 - `pnpm lint`：通过。
 - `pnpm test`：通过；sandbox 内 Prisma engine cache 写入 `~/.cache/prisma` 被拒，使用提升权限运行后通过，shared 4 个测试、api 11 个测试全部通过。
-- `pnpm e2e`：通过；Admin 与 Miniapp H5 共 18 个 Playwright 场景全部通过。
+- `pnpm e2e`：通过；Admin 与 Miniapp H5 共 20 个 Playwright 场景全部通过，包含首页顶部/Banner 几何与精选案例卡片高度回归。
 - `pnpm --filter api build`：通过；包含 Prisma Client 生成和 TypeScript noEmit。
 - `pnpm --filter admin build`：通过；Vite 构建成功，有 Ant Design 后台首包大 chunk 警告。
 - `pnpm --filter miniapp build:h5`：通过；Taro H5 构建成功，有参考图生成大图资源体积警告。
 - `pnpm build:weapp`：通过；微信小程序端产物已生成到 `apps/miniapp/dist`。
+- 首页视觉校准后复跑：`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 均通过；H5 截图已更新，Playwright 总数为 20。
 - `.env.example` 已修正为 `VITE_API_BASE_URL` 与 `TARO_APP_API_BASE_URL`。
 - README 已补全安装、数据库、seed、启动、构建、测试、默认账号、生产注意事项、上传目录和对象存储预留说明。
 

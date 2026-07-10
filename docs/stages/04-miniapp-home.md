@@ -30,6 +30,8 @@
 - 首页调用 `GET /api/client/home`，成功后上报 `POST /api/client/track/page-view`。
 - 首页实现顶部标题区、公告栏、Banner、菜单卡片、精选案例、失败重试状态、空状态和图片 fallback。
 - 菜单跳转规则严格对应 `host`、`singer`、`actor`、`activity_case`、`contact`。
+- 已完成首页视觉校准：H5 顶部安全区为 36px，微信端仍使用胶囊按钮位置；标题/副标题采用 36rpx/24rpx 明确行高，公告栏与 Banner 纵向节奏对齐参考图。
+- 已将精选案例卡片的文字区固定为 224rpx，标题与简介限制为两行，封面改为块级元素以消除 H5 行内基线空隙；首卡 H5 实测高度为 219px。
 - H5 和 weapp 构建均已成功。
 - 验证通过：`pnpm --filter miniapp build:h5`、`pnpm build:weapp`、`pnpm lint`、`pnpm test`。
 
@@ -37,4 +39,4 @@
 6dd9a7d
 
 ## 已知问题或设计取舍
-参考图下方扩展模块不纳入一期交互范围。Taro 构建需要写入 `~/.taro4.0` 缓存目录，sandbox 内需授权运行。H5/weapp 构建对 `banner-default.png` 和 `placeholder-banner.png` 给出资源体积警告；这些文件按固定尺寸生成用于测试和 seed，后续生产应替换为压缩后的正式素材或 CDN 资源。
+参考图下方扩展模块不纳入一期交互范围。H5 截图不模拟微信状态栏和胶囊按钮，因此采用独立的 36px 顶部安全区；微信端保持运行时胶囊按钮适配。Taro 构建需要写入 `~/.taro4.0` 缓存目录，sandbox 内需授权运行。H5/weapp 构建对 `banner-default.png` 和 `placeholder-banner.png` 给出资源体积警告；这些文件按固定尺寸生成用于测试和 seed，后续生产应替换为压缩后的正式素材或 CDN 资源。

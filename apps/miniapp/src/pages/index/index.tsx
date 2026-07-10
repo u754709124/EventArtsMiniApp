@@ -34,6 +34,7 @@ function openMenu(type: string) {
 
 function useSafeTop() {
   return useMemo(() => {
+    if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return 36;
     try {
       const rect = Taro.getMenuButtonBoundingClientRect?.();
       if (rect?.top) return rect.top + 12;

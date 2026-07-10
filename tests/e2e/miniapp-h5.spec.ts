@@ -104,6 +104,36 @@ test("首页成功加载，小程序名和副标题来自接口", async ({ page,
   await expect(page.getByTestId("home-subtitle")).toHaveText(home.site.subtitle);
 });
 
+test("首页 H5 顶部留白接近参考图", async ({ page }) => {
+  await openHome(page);
+  const metrics = await page.evaluate(() => {
+    const getRect = (selector: string) => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error(`Missing ${selector}`);
+      return node.getBoundingClientRect();
+    };
+
+    const title = getRect('[data-testid="home-app-name"]');
+    const banner = getRect('[data-testid="home-banner"]');
+    return {
+      titleTop: title.top,
+      bannerTop: banner.top,
+      bannerRatio: banner.width / banner.height
+    };
+  });
+
+  expect(metrics.titleTop).toBeLessThanOrEqual(44);
+  expect(metrics.bannerTop).toBeLessThanOrEqual(138);
+  expect(metrics.bannerRatio).toBeCloseTo(710 / 290, 1);
+});
+
+test("首页案例卡片高度接近参考图", async ({ page }) => {
+  await openHome(page);
+  const firstCaseHeight = await page.getByTestId("home-case-card").first().evaluate((node) => node.getBoundingClientRect().height);
+
+  expect(firstCaseHeight).toBeLessThanOrEqual(220);
+});
+
 test("无公告时公告栏隐藏", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await openHome(page);
