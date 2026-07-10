@@ -83,3 +83,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Show recoverable UI failures with clear retry paths.
 - Home API failure shows “页面加载失败 / 请稍后重试 / 重新加载”.
 - Scope changes require updating this guide, the relevant stage doc, README, and tests.
+
+## Model and Reasoning Allocation
+- Use `5.6 Sol` with `xhigh` reasoning for plan creation, plan comprehension, plan persistence, and goal formulation.
+- Use `5.5` with `xhigh` reasoning for concrete plan execution and code writing.
