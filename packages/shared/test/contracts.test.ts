@@ -98,7 +98,7 @@ describe("shared contracts", () => {
         badge: " 金牌主持 ",
         tags: ["10年经验", "婚礼主持"],
         summary: " 风格大气沉稳。 ",
-        detail: "详情内容",
+        detailPage: { type: "rich_text", richTextHtml: "<p>详情内容</p>" },
         sortOrder: 1,
         status: "enabled"
       })
@@ -112,7 +112,7 @@ describe("shared contracts", () => {
         badge: "金牌主持",
         tagsJson: '["婚礼主持", "婚礼主持"]',
         summary: "简介",
-        detail: "详情",
+        detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
         sortOrder: 1,
         status: "enabled"
       }).tags
@@ -124,7 +124,7 @@ describe("shared contracts", () => {
       badge: "金牌主持",
       tags: [],
       summary: "简介",
-      detail: "详情",
+      detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
       sortOrder: 1,
       status: "enabled"
     })).toThrow();
@@ -136,7 +136,7 @@ describe("shared contracts", () => {
       badge: "金牌主持",
       tags: ["超过十二个字符的标签内容啊"],
       summary: "简介",
-      detail: "详情",
+      detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
       sortOrder: 1,
       status: "enabled"
     })).toThrow();

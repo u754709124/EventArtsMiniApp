@@ -55,6 +55,8 @@ model MediaAsset {
   updatedAt                DateTime       @updatedAt
   tags                     MediaAssetTag[]
   caseDetailMedia          ActivityCaseMedia[]
+  detailPageBanners        DetailPageBannerMedia[]
+  detailPageContentMedia   DetailPageContentMedia[]
   banners                  Banner[]
   menuItems                MenuItem[]
   artists                  Artist[]
@@ -176,6 +178,53 @@ model ActivityCaseMedia {
   @@unique([activityCaseId, mediaAssetId])
   @@index([mediaAssetId])
   @@map("activity_case_media")
+}
+
+model DetailPageConfig {
+  id            Int      @id @default(autoincrement())
+  ownerType     String
+  ownerId       Int
+  pageType      String
+  heroSubtitle  String   @default("")
+  richTextHtml  String   @default("")
+  schemaVersion Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  banners      DetailPageBannerMedia[]
+  contentMedia DetailPageContentMedia[]
+
+  @@unique([ownerType, ownerId])
+  @@index([ownerType])
+  @@map("detail_page_configs")
+}
+
+model DetailPageBannerMedia {
+  id                 Int @id @default(autoincrement())
+  detailPageConfigId Int
+  mediaAssetId       Int
+  sortOrder          Int @default(0)
+
+  detailPageConfig DetailPageConfig @relation(fields: [detailPageConfigId], references: [id], onDelete: Cascade)
+  mediaAsset       MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([detailPageConfigId, mediaAssetId])
+  @@index([detailPageConfigId, sortOrder])
+  @@index([mediaAssetId])
+  @@map("detail_page_banner_media")
+}
+
+model DetailPageContentMedia {
+  id                 Int @id @default(autoincrement())
+  detailPageConfigId Int
+  mediaAssetId       Int
+
+  detailPageConfig DetailPageConfig @relation(fields: [detailPageConfigId], references: [id], onDelete: Cascade)
+  mediaAsset       MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([detailPageConfigId, mediaAssetId])
+  @@index([mediaAssetId])
+  @@map("detail_page_content_media")
 }
 
 model PageViewEvent {

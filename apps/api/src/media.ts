@@ -12,6 +12,7 @@ import {
   normalizeResourceName,
   type MediaAssetDto,
   type MediaFieldKey,
+  type MediaReferenceSourceDto,
   type MediaType,
   type MediaUploadConfigDto
 } from "@event-arts/shared";
@@ -72,7 +73,11 @@ export function canonicalExtension(mimeType: string) {
 }
 
 export async function mediaReferenceCount(prisma: AppPrismaClient, id: number) {
-  const [defaultBanners, placeholderBanners, placeholderIcons, placeholderCases, banners, menus, cases, artists, detailMedia] = await Promise.all([
+  return (await mediaReferenceSources(prisma, id)).reduce((total, source) => total + source.count, 0);
+}
+
+export async function mediaReferenceSources(prisma: AppPrismaClient, id: number): Promise<MediaReferenceSourceDto[]> {
+  const counts = await Promise.all([
     prisma.siteConfig.count({ where: { defaultBannerAssetId: id } }),
     prisma.siteConfig.count({ where: { placeholderBannerAssetId: id } }),
     prisma.siteConfig.count({ where: { placeholderIconAssetId: id } }),
@@ -81,9 +86,24 @@ export async function mediaReferenceCount(prisma: AppPrismaClient, id: number) {
     prisma.menuItem.count({ where: { iconAssetId: id } }),
     prisma.activityCase.count({ where: { coverAssetId: id } }),
     prisma.artist.count({ where: { avatarAssetId: id } }),
-    prisma.activityCaseMedia.count({ where: { mediaAssetId: id } })
+    prisma.activityCaseMedia.count({ where: { mediaAssetId: id } }),
+    prisma.detailPageBannerMedia.count({ where: { mediaAssetId: id } }),
+    prisma.detailPageContentMedia.count({ where: { mediaAssetId: id } })
   ]);
-  return defaultBanners + placeholderBanners + placeholderIcons + placeholderCases + banners + menus + cases + artists + detailMedia;
+  const definitions: Array<Omit<MediaReferenceSourceDto, "count">> = [
+    { type: "site_default_banner", label: "首页默认 BANNER" },
+    { type: "site_placeholder_banner", label: "BANNER 占位图" },
+    { type: "site_placeholder_icon", label: "菜单占位图" },
+    { type: "site_placeholder_case", label: "案例占位图" },
+    { type: "banner", label: "首页 BANNER" },
+    { type: "menu", label: "菜单图标" },
+    { type: "case_cover", label: "案例封面" },
+    { type: "artist_cover", label: "人员列表封面" },
+    { type: "legacy_case_detail", label: "旧案例详情媒体" },
+    { type: "detail_page_banner", label: "详情页 BANNER" },
+    { type: "detail_page_content", label: "详情页富文本" }
+  ];
+  return definitions.flatMap((definition, index) => counts[index] ? [{ ...definition, count: counts[index] }] : []);
 }
 
 type AssetWithTags = Prisma.MediaAssetGetPayload<{ include: { tags: true } }>;
@@ -93,12 +113,13 @@ export async function toMediaAssetDto(
   asset: AssetWithTags,
   known: { referenceCount?: number; createdByName?: string | null } = {}
 ): Promise<MediaAssetDto> {
-  const [referenceCount, creator] = await Promise.all([
-    known.referenceCount ?? mediaReferenceCount(prisma, asset.id),
+  const [referenceSources, creator] = await Promise.all([
+    mediaReferenceSources(prisma, asset.id),
     Object.hasOwn(known, "createdByName")
       ? known.createdByName ? { username: known.createdByName } : null
       : asset.createdBy ? prisma.adminUser.findUnique({ where: { id: asset.createdBy }, select: { username: true } }) : null
   ]);
+  const referenceCount = known.referenceCount ?? referenceSources.reduce((total, source) => total + source.count, 0);
   return {
     id: asset.id,
     resourceName: asset.resourceName,
@@ -113,6 +134,7 @@ export async function toMediaAssetDto(
     storageType: "local",
     tags: asset.tags.map((tag) => tag.label),
     referenceCount,
+    referenceSources,
     inUse: referenceCount > 0,
     createdBy: asset.createdBy,
     createdByName: creator?.username ?? null,
@@ -130,7 +152,9 @@ const mediaReferenceSql = `
   (SELECT COUNT(*) FROM menu_items mi WHERE mi.iconAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_cases ac WHERE ac.coverAssetId = m.id) +
   (SELECT COUNT(*) FROM artists a WHERE a.avatarAssetId = m.id) +
-  (SELECT COUNT(*) FROM activity_case_media cm WHERE cm.mediaAssetId = m.id)
+  (SELECT COUNT(*) FROM activity_case_media cm WHERE cm.mediaAssetId = m.id) +
+  (SELECT COUNT(*) FROM detail_page_banner_media dbm WHERE dbm.mediaAssetId = m.id) +
+  (SELECT COUNT(*) FROM detail_page_content_media dcm WHERE dcm.mediaAssetId = m.id)
 `;
 
 export type MediaReferenceQuery = {

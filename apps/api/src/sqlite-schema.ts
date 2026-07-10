@@ -7,10 +7,15 @@ import { normalizeResourceName } from "@event-arts/shared";
 import ffprobe from "@ffprobe-installer/ffprobe";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
+import { runDetailPageMigration } from "./detail-pages/detail-page-migration";
 
 const execFileAsync = promisify(execFile);
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    appliedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS admin_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -141,6 +146,49 @@ const statements = [
     UNIQUE(activityCaseId, mediaAssetId)
   )`,
   `CREATE INDEX IF NOT EXISTS activity_case_media_mediaAssetId_idx ON activity_case_media(mediaAssetId)`,
+  `CREATE TABLE IF NOT EXISTS detail_page_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ownerType TEXT NOT NULL,
+    ownerId INTEGER NOT NULL,
+    pageType TEXT NOT NULL,
+    heroSubtitle TEXT NOT NULL DEFAULT '',
+    richTextHtml TEXT NOT NULL DEFAULT '',
+    schemaVersion INTEGER NOT NULL DEFAULT 1,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(ownerType, ownerId)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS detail_page_configs_ownerType_ownerId_key
+    ON detail_page_configs(ownerType, ownerId)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_configs_ownerType_idx
+    ON detail_page_configs(ownerType)`,
+  `CREATE TABLE IF NOT EXISTS detail_page_banner_media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    detailPageConfigId INTEGER NOT NULL,
+    mediaAssetId INTEGER NOT NULL,
+    sortOrder INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(detailPageConfigId) REFERENCES detail_page_configs(id) ON DELETE CASCADE,
+    FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+    UNIQUE(detailPageConfigId, mediaAssetId)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS detail_page_banner_media_detailPageConfigId_mediaAssetId_key
+    ON detail_page_banner_media(detailPageConfigId, mediaAssetId)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_banner_media_detailPageConfigId_sortOrder_idx
+    ON detail_page_banner_media(detailPageConfigId, sortOrder)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_banner_media_mediaAssetId_idx
+    ON detail_page_banner_media(mediaAssetId)`,
+  `CREATE TABLE IF NOT EXISTS detail_page_content_media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    detailPageConfigId INTEGER NOT NULL,
+    mediaAssetId INTEGER NOT NULL,
+    FOREIGN KEY(detailPageConfigId) REFERENCES detail_page_configs(id) ON DELETE CASCADE,
+    FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+    UNIQUE(detailPageConfigId, mediaAssetId)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS detail_page_content_media_detailPageConfigId_mediaAssetId_key
+    ON detail_page_content_media(detailPageConfigId, mediaAssetId)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_content_media_mediaAssetId_idx
+    ON detail_page_content_media(mediaAssetId)`,
   `CREATE TABLE IF NOT EXISTS page_view_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pagePath TEXT NOT NULL,
@@ -373,4 +421,5 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
     await prisma.$executeRawUnsafe(statement);
   }
   await ensureArtistColumns(prisma);
+  await runDetailPageMigration(prisma);
 }

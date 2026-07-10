@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { DetailPageInputSchema, type DetailPageConfigDto } from "./detail-pages";
+
+export * from "./detail-pages";
 
 export const statusValues = ["enabled", "disabled"] as const;
 export const menuTypeValues = ["host", "singer", "actor", "activity_case", "contact"] as const;
@@ -14,7 +17,9 @@ export const mediaFieldKeyValues = [
   "menu.icon",
   "case.cover",
   "artist.avatar",
-  "case.detail"
+  "case.detail",
+  "detail.banner",
+  "detail.richText"
 ] as const;
 
 export type Status = (typeof statusValues)[number];
@@ -53,7 +58,9 @@ export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
   "menu.icon": { label: "菜单图标", allowedTypes: ["image"], width: 176, height: 176 },
   "case.cover": { label: "案例封面", allowedTypes: ["image"], width: 460, height: 320 },
   "artist.avatar": { label: "列表封面图", allowedTypes: ["image"], width: null, height: null },
-  "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null }
+  "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null },
+  "detail.banner": { label: "详情页 BANNER", allowedTypes: ["image"], width: null, height: null },
+  "detail.richText": { label: "详情页富文本媒体", allowedTypes: ["image", "video"], width: null, height: null }
 };
 
 export function normalizeResourceName(value: string) {
@@ -101,7 +108,6 @@ const artistNameSchema = z.string().trim().min(1).max(60);
 const artistLocationSchema = z.string().trim().min(1).max(30);
 const artistBadgeSchema = z.string().trim().min(1).max(12);
 const artistSummarySchema = z.string().trim().min(1).max(120);
-const artistDetailSchema = z.string().trim().min(1);
 const artistTagsSchema = z
   .array(z.string())
   .transform((values) => normalizeArtistTags(values))
@@ -139,7 +145,7 @@ export const ArtistCreateRequestSchema = z
     badge: artistBadgeSchema,
     ...artistTagInput,
     summary: artistSummarySchema,
-    detail: artistDetailSchema,
+    detailPage: DetailPageInputSchema,
     sortOrder: z.coerce.number().int().min(0),
     status: StatusSchema
   })
@@ -156,7 +162,7 @@ export const ArtistUpdateRequestSchema = z
     badge: artistBadgeSchema.optional(),
     ...artistTagInput,
     summary: artistSummarySchema.optional(),
-    detail: artistDetailSchema.optional(),
+    detailPage: DetailPageInputSchema.optional(),
     sortOrder: z.coerce.number().int().min(0).optional(),
     status: StatusSchema.optional()
   })
@@ -169,6 +175,24 @@ export const artistListQuerySchema = z.object({
   location: artistQueryTextSchema,
   tag: artistQueryTextSchema
 });
+
+const activityCaseFields = {
+  title: z.string().trim().min(1),
+  category: z.string().trim().min(1),
+  tag: z.string().trim().min(1),
+  coverAssetId: positiveIntFromInput,
+  summary: z.string().trim().min(1),
+  eventDate: z.union([z.string().trim().min(1), z.date()]),
+  location: z.string().trim().min(1),
+  isFeatured: z.boolean(),
+  featuredSortOrder: z.coerce.number().int().min(0),
+  sortOrder: z.coerce.number().int().min(0),
+  status: StatusSchema,
+  detailPage: DetailPageInputSchema
+};
+
+export const ActivityCaseCreateRequestSchema = z.object(activityCaseFields).strict();
+export const ActivityCaseUpdateRequestSchema = z.object(activityCaseFields).partial().strict();
 
 export const mediaListQuerySchema = z.object({
   mediaType: MediaTypeSchema.optional(),
@@ -255,11 +279,29 @@ export type MediaAssetDto = {
   storageType: "local";
   tags: string[];
   referenceCount: number;
+  referenceSources?: MediaReferenceSourceDto[];
   inUse: boolean;
   createdBy: number | null;
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type MediaReferenceSourceDto = {
+  type:
+    | "site_default_banner"
+    | "site_placeholder_banner"
+    | "site_placeholder_icon"
+    | "site_placeholder_case"
+    | "banner"
+    | "menu"
+    | "case_cover"
+    | "artist_cover"
+    | "legacy_case_detail"
+    | "detail_page_banner"
+    | "detail_page_content";
+  label: string;
+  count: number;
 };
 
 export type CaseMediaDto = {
@@ -326,6 +368,7 @@ export type ActivityCaseDto = {
   eventDate: string;
   location: string;
   detail: string;
+  detailPage: DetailPageConfigDto;
   media: CaseMediaDto[];
   isFeatured: boolean;
   featuredSortOrder: number;
@@ -344,6 +387,7 @@ export type ArtistDto = {
   tags: string[];
   summary: string;
   detail: string;
+  detailPage: DetailPageConfigDto;
   sortOrder: number;
   status: Status;
 };

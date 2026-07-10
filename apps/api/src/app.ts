@@ -7,6 +7,8 @@ import type { Prisma } from "@prisma/client";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  ActivityCaseCreateRequestSchema,
+  ActivityCaseUpdateRequestSchema,
   ArtistCreateRequestSchema,
   ArtistUpdateRequestSchema,
   BannerLinkTypeSchema,
@@ -14,8 +16,8 @@ import {
   MenuTypeSchema,
   artistListQuerySchema,
   batchDeleteMediaRequestSchema,
-  caseDetailMediaIdsSchema,
   checkMediaNameRequestSchema,
+  DetailPageInputSchema,
   fail,
   lookupMediaRequestSchema,
   mediaFieldRules,
@@ -26,19 +28,28 @@ import {
   pageViewRequestSchema,
   serializeArtistTags,
   updateMediaMetadataSchema,
-  type ArtistDto,
   type ArtistType,
   type CaseMediaDto,
+  type DetailPageConfigDto,
   type MediaFieldKey
 } from "@event-arts/shared";
 import type { AppPrismaClient } from "./db";
+import {
+  deleteDetailPageConfig,
+  getDetailPageConfig,
+  getRequiredDetailPageConfig,
+  previewDetailPageConfig,
+  upsertDetailPageConfig
+} from "./detail-pages/detail-page-service";
+import { extractRichTextMedia } from "./detail-pages/detail-page-sanitizer";
+import { DetailPageDomainError } from "./detail-pages/detail-page-types";
 import {
   createMediaAsset,
   deleteStoredFile,
   getUploadConfig,
   getUploadLimits,
   inspectUpload,
-  mediaReferenceCount,
+  mediaReferenceSources,
   moveUploadToStorage,
   persistMultipartFile,
   queryMediaReferences,
@@ -106,22 +117,7 @@ const menuCreateSchema = z.object({
   status: statusInputSchema
 }).strict();
 const menuUpdateSchema = menuCreateSchema.partial().strict();
-const caseCreateSchema = z.object({
-  title: z.string().min(1),
-  category: z.string().min(1),
-  tag: z.string().min(1),
-  coverAssetId: positiveIdSchema,
-  summary: z.string().min(1),
-  eventDate: z.union([z.string().min(1), z.date()]),
-  location: z.string().min(1),
-  detail: z.string().min(1),
-  detailMediaAssetIds: caseDetailMediaIdsSchema.optional(),
-  isFeatured: z.boolean(),
-  featuredSortOrder: sortOrderSchema,
-  sortOrder: sortOrderSchema,
-  status: statusInputSchema
-}).strict();
-const caseUpdateSchema = caseCreateSchema.partial().strict();
+const detailPagePreviewSchema = z.object({ detailPage: DetailPageInputSchema }).strict();
 function sendError(reply: FastifyReply, statusCode: number, code: string, message: string) {
   return reply.code(statusCode).headers(jsonHeaders).send(fail(code, message));
 }
@@ -155,7 +151,7 @@ function serializeCaseMedia(item: {
 
 type ArtistWithCover = Prisma.ArtistGetPayload<{ include: { avatarAsset: true } }>;
 
-export function serializeArtist(item: ArtistWithCover): ArtistDto {
+export function serializeArtist(item: ArtistWithCover) {
   const coverUrl = item.avatarAsset?.url ?? null;
   return {
     id: item.id,
@@ -173,9 +169,40 @@ export function serializeArtist(item: ArtistWithCover): ArtistDto {
   };
 }
 
-function serializeAdminArtist(item: ArtistWithCover) {
+function serializeAdminArtist(item: ArtistWithCover, detailPage: DetailPageConfigDto | null) {
   const artist = serializeArtist(item);
-  return { ...item, ...artist, tagsJson: artist.tags };
+  return {
+    ...item,
+    ...artist,
+    detail: detailPage?.richTextHtml ?? item.detail,
+    detailPage,
+    detailPageType: detailPage?.type ?? null,
+    detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
+    bannerCount: detailPage?.banners.length ?? 0,
+    detailMediaCount: detailPage ? extractRichTextMedia(detailPage.richTextHtml).length : 0,
+    hasRichText: Boolean(detailPage?.richTextHtml),
+    tagsJson: artist.tags
+  };
+}
+
+async function legacyCaseMediaFromDetailPage(prisma: AppPrismaClient, detailPage: DetailPageConfigDto) {
+  const references = extractRichTextMedia(detailPage.richTextHtml);
+  const assets = references.length
+    ? await prisma.mediaAsset.findMany({ where: { id: { in: references.map((item) => item.assetId) } } })
+    : [];
+  const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+  return references.flatMap((reference, sortOrder) => {
+    const asset = assetsById.get(reference.assetId);
+    if (!asset) return [];
+    return [{
+      id: asset.id,
+      mediaType: asset.mediaType as "image" | "video",
+      url: asset.url,
+      width: asset.width ?? 0,
+      height: asset.height ?? 0,
+      sortOrder
+    } satisfies CaseMediaDto];
+  });
 }
 
 function startOfDay(date: Date) {
@@ -227,6 +254,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, _request, reply) => {
+    if (error instanceof DetailPageDomainError) {
+      return sendError(reply, error.statusCode, error.code, error.message);
+    }
     if (error.code === "MEDIA_RECOVERY_FAILED") {
       return sendError(reply, 500, error.code, error.message);
     }
@@ -250,7 +280,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   async function deleteMediaAssetWithFile(id: number) {
     const asset = await prisma.mediaAsset.findUnique({ where: { id }, include: { tags: true } });
     if (!asset) return { status: "not_found" as const };
-    if ((await mediaReferenceCount(prisma, id)) > 0) return { status: "in_use" as const };
+    const referenceSources = await mediaReferenceSources(prisma, id);
+    if (referenceSources.length) return { status: "in_use" as const, referenceSources };
 
     const staged = await stageStoredFileForDeletion(options.uploadDir, asset.filename);
     try {
@@ -261,7 +292,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       } catch (restoreError) {
         throw new MediaRecoveryError(`资源删除失败且文件恢复失败，需人工检查暂存文件：${String(restoreError)}`);
       }
-      if ((error as { code?: string }).code === "P2003") return { status: "in_use" as const };
+      if ((error as { code?: string }).code === "P2003") {
+        return { status: "in_use" as const, referenceSources: await mediaReferenceSources(prisma, id) };
+      }
       throw error;
     }
 
@@ -463,8 +496,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       where: { id, status: "enabled" },
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
     });
-    return item
-      ? reply.send(ok({
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "案例不存在");
+    const detailPage = await getRequiredDetailPageConfig(prisma, "activity_case", item.id);
+    return reply.send(ok({
           id: item.id,
           title: item.title,
           category: item.category,
@@ -472,15 +506,15 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           summary: item.summary,
           eventDate: toIsoDate(item.eventDate),
           location: item.location,
-          detail: item.detail,
+          detail: detailPage.richTextHtml,
+          detailPage,
           isFeatured: item.isFeatured,
           featuredSortOrder: item.featuredSortOrder,
           sortOrder: item.sortOrder,
           status: item.status,
           coverUrl: item.coverAsset.url,
-          media: item.media.map(serializeCaseMedia)
-        }))
-      : sendError(reply, 404, "NOT_FOUND", "案例不存在");
+          media: await legacyCaseMediaFromDetailPage(prisma, detailPage)
+        }));
   });
 
   app.get("/api/client/artists", async (request, reply) => {
@@ -507,9 +541,15 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/client/artists/:id", async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const item = await prisma.artist.findFirst({ where: { id, status: "enabled" }, include: { avatarAsset: true } });
-    return item
-      ? reply.send(ok(serializeArtist(item)))
-      : sendError(reply, 404, "NOT_FOUND", "人员不存在");
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "人员不存在");
+    const detailPage = await getRequiredDetailPageConfig(prisma, "artist", item.id);
+    return reply.send(ok({ ...serializeArtist(item), detail: detailPage.richTextHtml, detailPage }));
+  });
+
+  app.post("/api/admin/detail-pages/preview", { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = detailPagePreviewSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "详情页预览参数错误");
+    return reply.send(ok(await previewDetailPageConfig(prisma, parsed.data.detailPage)));
   });
 
   app.get("/api/admin/site-config", { preHandler: requireAdmin }, async (_request, reply) => {
@@ -754,7 +794,14 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     const id = Number((request.params as { id: string }).id);
     const result = await deleteMediaAssetWithFile(id);
     if (result.status === "not_found") return sendError(reply, 404, "NOT_FOUND", "资源不存在");
-    if (result.status === "in_use") return sendError(reply, 409, "MEDIA_IN_USE", "资源正在被使用，无法删除");
+    if (result.status === "in_use") {
+      return sendError(
+        reply,
+        409,
+        "MEDIA_IN_USE",
+        `资源正在被使用，无法删除：${result.referenceSources.map((source) => source.label).join("、")}`
+      );
+    }
     return reply.send(ok({}));
   });
 
@@ -894,8 +941,9 @@ function registerCrud(
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } },
       orderBy: { sortOrder: "asc" }
     });
-    return reply.send(ok({
-      items: items.map((item) => ({
+    const serialized = await Promise.all(items.map(async (item) => {
+      const detailPage = await getDetailPageConfig(prisma, "activity_case", item.id);
+      return {
         id: item.id,
         title: item.title,
         category: item.category,
@@ -905,49 +953,61 @@ function registerCrud(
         summary: item.summary,
         eventDate: toIsoDate(item.eventDate),
         location: item.location,
-        detail: item.detail,
+        detail: detailPage?.richTextHtml ?? item.detail,
+        detailPage,
+        detailPageType: detailPage?.type ?? null,
+        detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
+        bannerCount: detailPage?.banners.length ?? 0,
+        detailMediaCount: detailPage ? extractRichTextMedia(detailPage.richTextHtml).length : 0,
+        hasRichText: Boolean(detailPage?.richTextHtml),
         isFeatured: item.isFeatured,
         featuredSortOrder: item.featuredSortOrder,
         sortOrder: item.sortOrder,
         status: item.status,
-        detailMediaAssetIds: item.media.map((media) => media.mediaAssetId),
-        media: item.media.map(serializeCaseMedia)
-      })),
+        detailMediaAssetIds: detailPage ? extractRichTextMedia(detailPage.richTextHtml).map((media) => media.assetId) : [],
+        media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
+      };
+    }));
+    return reply.send(ok({
+      items: serialized,
       total: items.length
     }));
   });
   app.post("/api/admin/cases", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = caseCreateSchema.safeParse(request.body);
+    const parsed = ActivityCaseCreateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "案例参数错误");
     const body = parsed.data;
-    const mediaIds = body.detailMediaAssetIds ?? [];
     const coverProblem = await mediaProblemForId(prisma, body.coverAssetId, "case.cover");
     if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
-    for (const id of mediaIds) {
-      const problem = await mediaProblemForId(prisma, id, "case.detail");
-      if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
-    }
-    const caseBody = { ...body };
-    delete caseBody.detailMediaAssetIds;
-    const item = await prisma.$transaction(async (tx) => {
+    const { detailPage, eventDate, ...caseBody } = body;
+    const result = await prisma.$transaction(async (tx) => {
       const created = await tx.activityCase.create({
         data: {
           ...caseBody,
-          eventDate: new Date(String(body.eventDate)),
+          eventDate: new Date(String(eventDate)),
+          detail: "",
           legacyMediaJson: "[]"
-        } as never
+        }
       });
-      if (mediaIds.length) {
-        await tx.activityCaseMedia.createMany({
-          data: mediaIds.map((mediaAssetId, sortOrder) => ({ activityCaseId: created.id, mediaAssetId, sortOrder }))
-        });
-      }
-      return created;
+      const config = await upsertDetailPageConfig(tx, "activity_case", created.id, detailPage);
+      return { created, config };
     });
-    return reply.send(ok(item));
+    return reply.send(ok({
+      ...result.created,
+      eventDate: toIsoDate(result.created.eventDate),
+      detail: result.config.richTextHtml,
+      detailPage: result.config,
+      detailPageType: result.config.type,
+      detailPageTypeLabel: result.config.typeLabel,
+      bannerCount: result.config.banners.length,
+      detailMediaCount: extractRichTextMedia(result.config.richTextHtml).length,
+      hasRichText: Boolean(result.config.richTextHtml),
+      detailMediaAssetIds: extractRichTextMedia(result.config.richTextHtml).map((item) => item.assetId),
+      media: await legacyCaseMediaFromDetailPage(prisma, result.config)
+    }));
   });
   app.put("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = caseUpdateSchema.safeParse(request.body);
+    const parsed = ActivityCaseUpdateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "案例参数错误");
     const body = parsed.data;
     const id = Number((request.params as { id: string }).id);
@@ -956,36 +1016,44 @@ function registerCrud(
       include: { media: { orderBy: { sortOrder: "asc" } } }
     });
     if (!existing) return sendError(reply, 404, "NOT_FOUND", "案例不存在");
-    const replacesMedia = Object.hasOwn(request.body as object, "detailMediaAssetIds");
-    const mediaIds = replacesMedia ? body.detailMediaAssetIds ?? [] : existing.media.map((item) => item.mediaAssetId);
     const coverProblem = await mediaProblemForId(prisma, body.coverAssetId ?? existing.coverAssetId, "case.cover");
     if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
-    for (const mediaAssetId of mediaIds) {
-      const problem = await mediaProblemForId(prisma, mediaAssetId, "case.detail");
-      if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
-    }
-    const caseBody = { ...body };
-    delete caseBody.detailMediaAssetIds;
-    if (body.eventDate !== undefined) caseBody.eventDate = new Date(String(body.eventDate));
-    const item = await prisma.$transaction(async (tx) => {
+    const { detailPage, eventDate, ...caseBody } = body;
+    const updateData = {
+      ...caseBody,
+      ...(eventDate !== undefined ? { eventDate: new Date(String(eventDate)) } : {})
+    };
+    const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.activityCase.update({
         where: { id },
-        data: caseBody as never
+        data: updateData
       });
-      if (replacesMedia) {
-        await tx.activityCaseMedia.deleteMany({ where: { activityCaseId: id } });
-        if (mediaIds.length) {
-          await tx.activityCaseMedia.createMany({
-            data: mediaIds.map((mediaAssetId, sortOrder) => ({ activityCaseId: id, mediaAssetId, sortOrder }))
-          });
-        }
-      }
-      return updated;
+      const config = detailPage
+        ? await upsertDetailPageConfig(tx, "activity_case", id, detailPage)
+        : await getRequiredDetailPageConfig(tx, "activity_case", id);
+      return { updated, config };
     });
-    return reply.send(ok(item));
+    return reply.send(ok({
+      ...result.updated,
+      eventDate: toIsoDate(result.updated.eventDate),
+      detail: result.config.richTextHtml,
+      detailPage: result.config,
+      detailPageType: result.config.type,
+      detailPageTypeLabel: result.config.typeLabel,
+      bannerCount: result.config.banners.length,
+      detailMediaCount: extractRichTextMedia(result.config.richTextHtml).length,
+      hasRichText: Boolean(result.config.richTextHtml),
+      detailMediaAssetIds: extractRichTextMedia(result.config.richTextHtml).map((item) => item.assetId),
+      media: await legacyCaseMediaFromDetailPage(prisma, result.config)
+    }));
   });
   app.delete("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
-    await prisma.activityCase.delete({ where: { id: Number((request.params as { id: string }).id) } });
+    const id = Number((request.params as { id: string }).id);
+    await prisma.$transaction(async (tx) => {
+      await deleteDetailPageConfig(tx, "activity_case", id);
+      await tx.activityCase.delete({ where: { id } });
+      await tx.operationLog.create({ data: { action: "DELETE_ACTIVITY_CASE", detail: String(id) } });
+    });
     return reply.send(ok({}));
   });
 
@@ -994,7 +1062,10 @@ function registerCrud(
       include: { avatarAsset: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
     });
-    return reply.send(ok({ items: items.map(serializeAdminArtist), total: items.length }));
+    const serialized = await Promise.all(items.map(async (item) =>
+      serializeAdminArtist(item, await getDetailPageConfig(prisma, "artist", item.id))
+    ));
+    return reply.send(ok({ items: serialized, total: items.length }));
   });
   app.post("/api/admin/artists", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistCreateRequestSchema.safeParse(request.body);
@@ -1002,12 +1073,16 @@ function registerCrud(
     const body = parsed.data;
     const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
-    const { tags, ...artistData } = body;
-    const item = await prisma.artist.create({
-      data: { ...artistData, tagsJson: serializeArtistTags(tags) },
-      include: { avatarAsset: true }
+    const { tags, detailPage, ...artistData } = body;
+    const result = await prisma.$transaction(async (tx) => {
+      const item = await tx.artist.create({
+        data: { ...artistData, detail: "", tagsJson: serializeArtistTags(tags) },
+        include: { avatarAsset: true }
+      });
+      const config = await upsertDetailPageConfig(tx, "artist", item.id, detailPage);
+      return { item, config };
     });
-    return reply.send(ok(serializeAdminArtist(item)));
+    return reply.send(ok(serializeAdminArtist(result.item, result.config)));
   });
   app.put("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistUpdateRequestSchema.safeParse(request.body);
@@ -1020,16 +1095,27 @@ function registerCrud(
       const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
       if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     }
-    const { tags, ...artistData } = body;
-    const item = await prisma.artist.update({
-      where: { id },
-      data: { ...artistData, ...(tags !== undefined ? { tagsJson: serializeArtistTags(tags) } : {}) },
-      include: { avatarAsset: true }
+    const { tags, detailPage, ...artistData } = body;
+    const result = await prisma.$transaction(async (tx) => {
+      const item = await tx.artist.update({
+        where: { id },
+        data: { ...artistData, ...(tags !== undefined ? { tagsJson: serializeArtistTags(tags) } : {}) },
+        include: { avatarAsset: true }
+      });
+      const config = detailPage
+        ? await upsertDetailPageConfig(tx, "artist", id, detailPage)
+        : await getRequiredDetailPageConfig(tx, "artist", id);
+      return { item, config };
     });
-    return reply.send(ok(serializeAdminArtist(item)));
+    return reply.send(ok(serializeAdminArtist(result.item, result.config)));
   });
   app.delete("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
-    await prisma.artist.delete({ where: { id: Number((request.params as { id: string }).id) } });
+    const id = Number((request.params as { id: string }).id);
+    await prisma.$transaction(async (tx) => {
+      await deleteDetailPageConfig(tx, "artist", id);
+      await tx.artist.delete({ where: { id } });
+      await tx.operationLog.create({ data: { action: "DELETE_ARTIST", detail: String(id) } });
+    });
     return reply.send(ok({}));
   });
 }

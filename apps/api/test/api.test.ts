@@ -347,7 +347,7 @@ describe("artist client and admin contracts", () => {
         badge: "金牌主持",
         tags: ["婚礼主持", "婚礼主持", "高端晚宴"],
         summary: "专业稳重的主持人。",
-        detail: "详情内容",
+        detailPage: { type: "rich_text", richTextHtml: "<p>详情内容</p>" },
         sortOrder: 99,
         status: "enabled"
       }
@@ -716,8 +716,10 @@ describe("media upload and references", () => {
         summary: "简介",
         eventDate: "2026-07-10T00:00:00.000Z",
         location: "杭州",
-        detail: "详情",
-        detailMediaAssetIds: [second.json().data.asset.id, first.json().data.asset.id],
+        detailPage: {
+          type: "rich_text",
+          richTextHtml: `<p>详情</p><img data-media-asset-id="${second.json().data.asset.id}"><img data-media-asset-id="${first.json().data.asset.id}">`
+        },
         isFeatured: false,
         featuredSortOrder: 0,
         sortOrder: 999,

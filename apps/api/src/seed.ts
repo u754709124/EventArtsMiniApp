@@ -2,9 +2,16 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { normalizeResourceName, serializeArtistTags, type ArtistType } from "@event-arts/shared";
+import {
+  buildActivityCaseTemplate,
+  buildArtistProfileTemplate,
+  normalizeResourceName,
+  serializeArtistTags,
+  type ArtistType
+} from "@event-arts/shared";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
+import { upsertDetailPageConfig } from "./detail-pages/detail-page-service";
 import { hashPassword } from "./security";
 
 type SeedOptions = {
@@ -32,6 +39,7 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.seedRecord.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.pageViewEvent.deleteMany();
+  await prisma.detailPageConfig.deleteMany();
   await prisma.activityCase.deleteMany();
   await prisma.artist.deleteMany();
   await prisma.menuItem.deleteMany();
@@ -252,7 +260,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       sortOrder: index + 1,
       status: "enabled"
     };
-    await upsertSeedEntity(prisma, {
+    const activityCase = await upsertSeedEntity(prisma, {
       key: `case.${index + 1}`,
       entityType: "activityCase",
       findById: (id) => prisma.activityCase.findUnique({ where: { id } }),
@@ -260,6 +268,26 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       create: () => prisma.activityCase.create({ data }),
       update: (id) => prisma.activityCase.update({ where: { id }, data })
     });
+    const caseImageIds = [
+      assets.get(cover)!.id,
+      assets.get(`case-${((index + 1) % 3) + 1}.png` as (typeof files)[number])!.id
+    ];
+    await upsertDetailPageConfig(
+      prisma,
+      "activity_case",
+      activityCase.id,
+      index === 0
+        ? {
+            type: "banner_rich_text",
+            heroSubtitle: "专业策划・精彩呈现",
+            bannerAssetIds: caseImageIds,
+            richTextHtml: buildActivityCaseTemplate(caseImageIds)
+          }
+        : {
+            type: "rich_text",
+            richTextHtml: buildActivityCaseTemplate(caseImageIds)
+          }
+    );
   }
 
   const legacyArtists = [
@@ -500,7 +528,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       sortOrder,
       status: "enabled"
     };
-    await upsertSeedEntity(prisma, {
+    const seededArtist = await upsertSeedEntity(prisma, {
       key: `artist.${type}.${sortOrder}`,
       entityType: "artist",
       findById: (id) => prisma.artist.findUnique({ where: { id } }),
@@ -508,5 +536,34 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       create: () => prisma.artist.create({ data }),
       update: (id) => prisma.artist.update({ where: { id }, data })
     });
+    if (name === "林然") {
+      const bannerAssetIds = [
+        assets.get("artist-cover-01.png")!.id,
+        assets.get("artist-cover-02.png")!.id,
+        assets.get("artist-cover-03.png")!.id
+      ];
+      const contentAssetIds = [
+        assets.get("case-1.png")!.id,
+        assets.get("case-2.png")!.id,
+        assets.get("case-3.png")!.id,
+        assets.get("artist-cover-04.png")!.id,
+        assets.get("artist-cover-05.png")!.id
+      ];
+      await upsertDetailPageConfig(prisma, "artist", seededArtist.id, {
+        type: "banner_rich_text",
+        heroSubtitle: "温暖・专业・掌控全场",
+        bannerAssetIds,
+        richTextHtml: buildArtistProfileTemplate(contentAssetIds)
+      });
+    } else {
+      await upsertDetailPageConfig(prisma, "artist", seededArtist.id, {
+        type: "rich_text",
+        richTextHtml: `<section class="ea-detail-card"><h2 class="ea-section-title">个人简介</h2><div class="ea-section-body"><p>${escapeHtmlForSeed(detail)}</p></div></section>`
+      });
+    }
   }
+}
+
+function escapeHtmlForSeed(value: string) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
