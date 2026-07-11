@@ -238,21 +238,28 @@ export function RichTextEditorField({
       mediaAssetId,
       src: asset.url
     });
+    const selection = editor.state.selection;
+    const selectedNodeName =
+      "node" in selection
+        ? (selection as { node?: { type?: { name?: unknown } } }).node?.type?.name
+        : undefined;
+    const shouldAppendAfterSelectedMedia =
+      typeof selectedNodeName === "string" && ["assetImage", "assetVideo"].includes(selectedNodeName);
+    const insert = (content: Parameters<ReturnType<Editor["chain"]>["insertContent"]>[0]) => {
+      const chain = editor.chain().focus();
+      if (shouldAppendAfterSelectedMedia) {
+        chain.insertContentAt(selection.to, content).run();
+        return;
+      }
+      chain.insertContent(content).run();
+    };
     if (asset.mediaType === "image") {
-      editor
-        .chain()
-        .focus()
-        .insertContent({
-          type: "assetImage",
-          attrs: { src: asset.url, mediaAssetId, alt: asset.resourceName || "内容图片", align: null }
-        })
-        .run();
+      insert({
+        type: "assetImage",
+        attrs: { src: asset.url, mediaAssetId, alt: asset.resourceName || "内容图片", align: null }
+      });
     } else {
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId, align: null } })
-        .run();
+      insert({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId, align: null } });
     }
     setPickerType(null);
   }

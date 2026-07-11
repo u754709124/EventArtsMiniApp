@@ -296,6 +296,8 @@ describe("RichTextEditorField", () => {
     fireEvent.click(screen.getByRole("button", { name: "选择测试视频" }));
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).toContain('src="/uploads/content.webp"');
+      expect(html).toContain('data-media-asset-id="123"');
       expect(html).toContain('src="/uploads/content.mp4"');
       expect(html).toContain('data-media-asset-id="456"');
       expect(html).toContain('class="ea-media ea-video"');

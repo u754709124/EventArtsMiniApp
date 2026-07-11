@@ -29,7 +29,8 @@ export function DetailPageTypeSelect({
         content: "当前已选择 BANNER；确认切换后，保存后解除 BANNER 资源关联。富文本内容会保留。",
         okText: "确认切换",
         cancelText: "取消",
-        okButtonProps: { danger: true },
+        okButtonProps: { danger: true, "aria-label": "确认切换" },
+        cancelButtonProps: { "aria-label": "取消" },
         onOk: () => onChange?.(nextType)
       });
       return;

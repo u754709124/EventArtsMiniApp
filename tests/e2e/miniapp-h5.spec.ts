@@ -155,8 +155,12 @@ async function resolveDetailFixtures(request: APIRequestContext): Promise<Detail
   return { artistBanner, artistRich, caseBanner, caseRich };
 }
 
+function detailRoute(owner: "artists" | "cases", id: number) {
+  return `/#/pages/${owner}/detail?id=${id}`;
+}
+
 async function openDetail(page: Page, owner: "artists" | "cases", id: number) {
-  await page.goto(`/pages/${owner}/detail?id=${id}`);
+  await page.goto(detailRoute(owner, id));
   await expect(
     page.getByTestId(owner === "artists" ? "artist-detail-page" : "case-detail-page")
   ).toBeVisible();
@@ -243,7 +247,8 @@ async function expectRichOnlyDetail(page: Page, expectedTitle: string) {
       .querySelector('[data-testid="detail-navigation"]')!
       .getBoundingClientRect();
     const content = document.querySelector('[data-testid="detail-content-normal"]')!;
-    const rect = content.getBoundingClientRect();
+    const richContent = document.querySelector('[data-testid="detail-rich-content"]')!;
+    const rect = richContent.getBoundingClientRect();
     return {
       gap: rect.top - navigation.bottom,
       marginTop: Number.parseFloat(getComputedStyle(content).marginTop)
@@ -551,7 +556,7 @@ test("详情路由切换 ID 不显示上一条数据", async ({ page, request })
     await route.continue();
   });
   await openDetail(page, "artists", artistBanner.id);
-  await page.goto(`/pages/artists/detail?id=${artistRich.id}`);
+  await page.goto(detailRoute("artists", artistRich.id));
   await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
   await expect(page.getByTestId("detail-navigation")).toContainText(artistRich.name);
   await expect(page.getByText(artistBanner.name)).toHaveCount(0);

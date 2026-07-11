@@ -1,7 +1,19 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 import { adminApi, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+
+async function createUniqueLibraryUploadPng() {
+  return sharp({
+    create: {
+      width: 2,
+      height: 2,
+      channels: 4,
+      background: { r: 122, g: 52, b: 18, alpha: 1 }
+    }
+  }).png().toBuffer();
+}
 
 test("登录页展示", async ({ page }) => {
   await page.goto("/login");
@@ -295,6 +307,9 @@ test("表单本地上传在客户端拦截错误尺寸，引用资源不可删�
 
   await page.locator(".ant-drawer-close").click();
   await page.getByTestId("sidebar-media-assets").click();
+  const mediaSearch = page.getByTestId("media-search").locator("input");
+  await mediaSearch.fill("placeholder-icon.png");
+  await mediaSearch.press("Enter");
   await expect(page.getByTestId(`media-delete-${referencedAssetId}`)).toBeDisabled();
 });
 
@@ -308,10 +323,11 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await expect(page.getByRole("tab", { name: "图片" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "视频" })).toBeVisible();
 
+  const uploadBuffer = await createUniqueLibraryUploadPng();
   const file = {
     name: "e2e-unused.png",
     mimeType: "image/png",
-    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64")
+    buffer: uploadBuffer
   };
   await page.getByTestId("media-upload-button-input").setInputFiles(file);
   await expect(page.getByTestId("media-resource-name")).toBeVisible();

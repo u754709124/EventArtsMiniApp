@@ -183,13 +183,13 @@ describe("DetailPageConfigFields", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("保存后解除 BANNER 资源关联");
     expect(form.getFieldValue(["detailPage", "type"])).toBe("banner_rich_text");
-    fireEvent.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(form.getFieldValue(["detailPage", "type"])).toBe("banner_rich_text");
     expect(form.getFieldValue(["detailPage", "richTextHtml"])).toBe("<p>保留的正文</p>");
 
     await chooseType("单富文本");
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /确\s*认\s*切\s*换/ }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "确认切换" }));
     await waitFor(() => expect(form.getFieldValue(["detailPage", "type"])).toBe("rich_text"));
     expect(form.getFieldValue(["detailPage", "richTextHtml"])).toBe("<p>保留的正文</p>");
     expect(screen.queryByTestId("detail-banner-field")).toBeNull();
