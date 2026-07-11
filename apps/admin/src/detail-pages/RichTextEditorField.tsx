@@ -5,13 +5,20 @@ import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
 import { MediaPickerModal } from "./MediaPickerModal";
 import {
+  createRichTextEditorExtensions,
+  createTrustedMediaRegistry,
   isSafeAssetMediaSource,
   normalizeMediaAssetId,
-  richTextEditorExtensions
+  type TrustedMediaRegistry
 } from "./RichTextEditorExtensions";
 import "./rich-text-editor.css";
 
-export { isSafeAssetMediaSource, normalizeMediaAssetId } from "./RichTextEditorExtensions";
+export {
+  isSafeAssetMediaSource,
+  normalizeMediaAssetId,
+  sanitizeRichTextClassName,
+  sanitizeRichTextStyle
+} from "./RichTextEditorExtensions";
 
 export type RichTextEditorLifecycleObserver = {
   onCreate?: (editor: Editor) => void;
@@ -74,13 +81,21 @@ export function RichTextEditorField({
   const onChangeRef = useRef(onChange);
   const lifecycleObserverRef = useRef(lifecycleObserver);
   const controlledValueRef = useRef(value);
+  const trustedMediaRegistryRef = useRef<TrustedMediaRegistry | null>(null);
+  const extensionsRef = useRef<ReturnType<typeof createRichTextEditorExtensions> | null>(null);
   onChangeRef.current = onChange;
   lifecycleObserverRef.current = lifecycleObserver;
   controlledValueRef.current = value;
+  if (!trustedMediaRegistryRef.current) trustedMediaRegistryRef.current = createTrustedMediaRegistry();
+  // Trust only API-loaded or MediaAsset-hydrated controlled HTML; arbitrary editor input never seeds this registry.
+  trustedMediaRegistryRef.current.syncControlledHtml(value);
+  if (!extensionsRef.current) {
+    extensionsRef.current = createRichTextEditorExtensions(trustedMediaRegistryRef.current);
+  }
 
   const editor = useEditor(
     {
-      extensions: richTextEditorExtensions,
+      extensions: extensionsRef.current,
       content: value,
       editable: !disabled,
       immediatelyRender: false,
@@ -88,6 +103,7 @@ export function RichTextEditorField({
         attributes: {
           "aria-label": "详情页富文本内容",
           "aria-describedby": "detail-rich-text-help",
+          "aria-multiline": "true",
           class: "rich-text-editor-content",
           role: "textbox"
         }
@@ -217,6 +233,11 @@ export function RichTextEditorField({
       message.error("资源地址无效，请重新选择已登记资源");
       return;
     }
+    trustedMediaRegistryRef.current?.trustPickerAsset({
+      mediaType: asset.mediaType,
+      mediaAssetId,
+      src: asset.url
+    });
     if (asset.mediaType === "image") {
       editor
         .chain()

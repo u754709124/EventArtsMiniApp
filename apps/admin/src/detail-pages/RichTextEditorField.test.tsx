@@ -2,13 +2,15 @@
 
 import { StrictMode, act } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MediaAssetDto } from "@event-arts/shared";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildArtistProfileTemplate, type MediaAssetDto } from "@event-arts/shared";
 import type { Editor } from "@tiptap/core";
 import {
   RichTextEditorField,
   isSafeAssetMediaSource,
   normalizeMediaAssetId,
+  sanitizeRichTextClassName,
+  sanitizeRichTextStyle,
   type RichTextEditorLifecycleObserver
 } from "./RichTextEditorField";
 
@@ -54,6 +56,9 @@ let pickerProps: {
   onSelect: (asset: MediaAssetDto) => void;
 } | null = null;
 
+const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+const previousActEnvironment = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+
 vi.mock("./MediaPickerModal", () => ({
   MediaPickerModal: (props: typeof pickerProps) => {
     pickerProps = props;
@@ -69,6 +74,7 @@ vi.mock("./MediaPickerModal", () => ({
 }));
 
 beforeAll(() => {
+  actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn().mockImplementation(() => ({
@@ -100,6 +106,11 @@ beforeAll(() => {
   }));
 });
 
+afterAll(() => {
+  if (previousActEnvironment === undefined) delete actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+  else actEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+});
+
 beforeEach(() => {
   pickerProps = null;
   vi.restoreAllMocks();
@@ -125,6 +136,22 @@ function editorObserver() {
   };
 }
 
+function canonicalArtistTemplate() {
+  return buildArtistProfileTemplate([801, 802])
+    .replace(
+      /<img data-media-asset-id="(\d+)"/g,
+      '<img src="https://assets.example.com/$1.webp" data-media-asset-id="$1"'
+    )
+    .replace(
+      '<section class="ea-detail-card">',
+      '<section class="ea-detail-card unknown-card" style="padding:16px;color:#663300;position:fixed">'
+    )
+    .replace(
+      "林然，资深",
+      '<span class="ea-intro unknown-inline" style="font-size:18px;color:#663300;background-image:url(javascript:bad)">林然</span>，资深'
+    );
+}
+
 describe("RichTextEditorField", () => {
   it("renders the complete accessible toolbar and emits HTML from real Tiptap commands", async () => {
     const lifecycle = editorObserver();
@@ -140,6 +167,7 @@ describe("RichTextEditorField", () => {
     await waitFor(() => expect(lifecycle.current).not.toBeNull());
     expect(screen.getByTestId("detail-rich-text-editor")).toBeTruthy();
     expect(screen.getByText("详情页富文本")).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "详情页富文本内容" }).getAttribute("aria-multiline")).toBe("true");
     expect(screen.getByRole("combobox", { name: "段落与标题" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "字号" })).toBeTruthy();
     expect(screen.getByLabelText("文字颜色")).toBeTruthy();
@@ -166,6 +194,65 @@ describe("RichTextEditorField", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "居中" }));
     await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("text-align: center"));
+  });
+
+  it("preserves the complete trusted template structure, safe classes, styles and order after editing", async () => {
+    const lifecycle = editorObserver();
+    const onChange = vi.fn();
+    render(
+      <RichTextEditorField
+        value={canonicalArtistTemplate()}
+        onChange={onChange}
+        lifecycleObserver={lifecycle.observer}
+      />
+    );
+    await waitFor(() => expect(lifecycle.current).not.toBeNull());
+
+    let firstParagraphPosition = -1;
+    lifecycle.current?.state.doc.descendants((node, position) => {
+      if (firstParagraphPosition < 0 && node.type.name === "paragraph") firstParagraphPosition = position;
+    });
+    expect(firstParagraphPosition).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      lifecycle.current?.commands.setTextSelection(firstParagraphPosition + 1);
+      lifecycle.current?.commands.insertContent("已编辑：");
+    });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const html = lifecycle.current?.getHTML() ?? "";
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const sections = [...template.content.querySelectorAll("section.ea-detail-card")];
+    expect(sections).toHaveLength(6);
+    expect(sections.map((section) => section.querySelector("h2")?.textContent)).toEqual([
+      "个人简介",
+      "服务优势",
+      "代表案例",
+      "服务流程",
+      "客户评价",
+      "档期提醒"
+    ]);
+    expect(template.content.querySelectorAll("div.ea-advantage-grid > div.ea-advantage-item")).toHaveLength(4);
+    expect(template.content.querySelectorAll("div.ea-case-grid > div.ea-case-item > strong")).toHaveLength(5);
+    expect(template.content.querySelectorAll("div.ea-process-row > div.ea-process-item > strong")).toHaveLength(5);
+    expect(template.content.querySelectorAll("div.ea-review-list > div.ea-review-item > div.ea-review-main")).toHaveLength(2);
+    expect(template.content.querySelectorAll("div.ea-two-column > div.ea-calendar-card")).toHaveLength(1);
+    expect(template.content.querySelectorAll("div.ea-two-column > div.ea-faq-card > ul > li")).toHaveLength(3);
+    expect(template.content.querySelector("p")?.textContent?.startsWith("已编辑：")).toBe(true);
+    expect(template.content.querySelector("span.ea-intro")?.textContent).toBe("已编辑：林然");
+
+    const firstSection = sections[0] as HTMLElement;
+    expect(firstSection.className).toBe("ea-detail-card");
+    expect(firstSection.getAttribute("style")).toContain("padding: 16px");
+    expect(firstSection.style.color).toBe("rgb(102, 51, 0)");
+    expect(firstSection.getAttribute("style")).not.toContain("position");
+    const intro = template.content.querySelector("span.ea-intro") as HTMLElement;
+    expect(intro.className).toBe("ea-intro");
+    expect(intro.getAttribute("style")).toContain("font-size: 18px");
+    expect(intro.getAttribute("style")).not.toContain("background-image");
+    expect(html).not.toContain("unknown-card");
+    expect(html).not.toContain("unknown-inline");
+    expect(html).not.toContain("javascript:");
   });
 
   it("uses the shared type-filtered picker and serializes stable image and video attributes", async () => {
@@ -233,13 +320,28 @@ describe("RichTextEditorField", () => {
     expect(isSafeAssetMediaSource("wxfile://tmp/file.png")).toBe(false);
     expect(isSafeAssetMediaSource("/tmp/file.png")).toBe(false);
     expect(isSafeAssetMediaSource("https://unregistered.invalid/file.png")).toBe(false);
+
+    const safeClasses = [
+      "ea-detail-card", "ea-section-title", "ea-section-body", "ea-intro",
+      "ea-advantage-grid", "ea-advantage-item", "ea-case-grid", "ea-case-item",
+      "ea-process-row", "ea-process-item", "ea-review-list", "ea-review-item",
+      "ea-review-main", "ea-review-image", "ea-two-column", "ea-calendar-card",
+      "ea-faq-card", "ea-media", "ea-image", "ea-video", "ea-media-block",
+      "ea-align-left", "ea-align-center", "ea-align-right"
+    ];
+    expect(sanitizeRichTextClassName(`${safeClasses.join(" ")} unknown fixed`)).toBe(safeClasses.join(" "));
+    expect(sanitizeRichTextStyle("color:#663300;padding:16px;position:fixed;background-image:url(x)")).toBe(
+      "color: #663300; padding: 16px"
+    );
   });
 
   it("round-trips canonical remote media only when it carries a valid registered asset id", async () => {
     const lifecycle = editorObserver();
     const canonical =
+      '<section class="ea-detail-card"><div class="ea-media-block">' +
       '<img src="https://assets.example.com/registered.webp" alt="对象存储图片" data-media-asset-id="808" class="ea-media ea-image">' +
-      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" class="ea-media ea-video" controls preload="metadata"></video>';
+      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" class="ea-media ea-video" controls preload="metadata"></video>' +
+      "</div></section>";
     const { rerender } = render(
       <RichTextEditorField value={canonical} onChange={vi.fn()} lifecycleObserver={lifecycle.observer} />
     );
@@ -250,6 +352,20 @@ describe("RichTextEditorField", () => {
       expect(html).toContain('data-media-asset-id="808"');
       expect(html).toContain('src="https://assets.example.com/registered.mp4"');
       expect(html).toContain('data-media-asset-id="809"');
+      expect(html).toContain('<section class="ea-detail-card"><div class="ea-media-block">');
+    });
+
+    await act(async () => {
+      lifecycle.current?.commands.setContent(
+        '<img src="https://evil.invalid/rebound.webp" data-media-asset-id="808">' +
+        '<video src="/uploads/rebound.mp4" data-media-asset-id="809"></video>'
+      );
+    });
+    await waitFor(() => {
+      const html = lifecycle.current?.getHTML() ?? "";
+      expect(html).not.toContain("evil.invalid");
+      expect(html).not.toContain("rebound.mp4");
+      expect(html).not.toMatch(/<img|<video/);
     });
 
     rerender(
