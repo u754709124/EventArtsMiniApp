@@ -319,6 +319,9 @@ describe("RichTextEditorField", () => {
     expect(isSafeAssetMediaSource("file:///tmp/file.png")).toBe(false);
     expect(isSafeAssetMediaSource("wxfile://tmp/file.png")).toBe(false);
     expect(isSafeAssetMediaSource("/tmp/file.png")).toBe(false);
+    expect(isSafeAssetMediaSource("/\\evil.invalid/video.mp4")).toBe(false);
+    expect(isSafeAssetMediaSource("/%5cevil.invalid/video.mp4")).toBe(false);
+    expect(isSafeAssetMediaSource("/%5C%5Cevil.invalid/video.mp4")).toBe(false);
     expect(isSafeAssetMediaSource("https://unregistered.invalid/file.png")).toBe(false);
 
     const safeClasses = [
@@ -333,6 +336,34 @@ describe("RichTextEditorField", () => {
     expect(sanitizeRichTextStyle("color:#663300;padding:16px;position:fixed;background-image:url(x)")).toBe(
       "color: #663300; padding: 16px"
     );
+  });
+
+  it("rejects disguised remote local paths before parse or render while retaining normal uploads", async () => {
+    const lifecycle = editorObserver();
+    const disguised =
+      '<video src="/\\evil.invalid/video.mp4" data-media-asset-id="910"></video>' +
+      '<img src="/%5cevil.invalid/image.webp" data-media-asset-id="911">' +
+      '<img src="/uploads/normal.webp" data-media-asset-id="912" alt="正常图片">';
+    render(<RichTextEditorField value={disguised} onChange={vi.fn()} lifecycleObserver={lifecycle.observer} />);
+
+    await waitFor(() => expect(lifecycle.current).not.toBeNull());
+    await waitFor(() => {
+      const html = lifecycle.current?.getHTML() ?? "";
+      expect(html).not.toContain("evil.invalid");
+      expect(html).not.toContain("video.mp4");
+      expect(html).toContain('src="/uploads/normal.webp"');
+      expect(html).toContain('data-media-asset-id="912"');
+    });
+    expect(screen.getByRole("textbox", { name: "详情页富文本内容" }).querySelectorAll("video")).toHaveLength(0);
+
+    await act(async () => {
+      lifecycle.current?.commands.insertContent({
+        type: "assetVideo",
+        attrs: { src: "/\\evil.invalid/direct.mp4", mediaAssetId: 910, align: null }
+      });
+    });
+    expect(lifecycle.current?.getHTML()).not.toContain("evil.invalid");
+    expect(screen.getByRole("textbox", { name: "详情页富文本内容" }).querySelectorAll("video")).toHaveLength(0);
   });
 
   it("round-trips canonical remote media only when it carries a valid registered asset id", async () => {

@@ -143,6 +143,7 @@ function normalizeAssetMediaSource(source: unknown, allowRemote: boolean) {
   if (typeof source !== "string") return null;
   const value = source.trim();
   if (!value || /[\s<>"']/.test(value)) return null;
+  if (value.includes("\\")) return null;
   if (/^(?:data:|blob:|file:|wxfile:)/i.test(value)) return null;
   if (/^(?:\/private)?\/tmp(?:\/|$)/i.test(value)) return null;
   try {
@@ -153,8 +154,16 @@ function normalizeAssetMediaSource(source: unknown, allowRemote: boolean) {
       return url.href;
     }
     if (!/^\/(?!\/)/.test(value)) return null;
-    const url = new URL(value, "https://event-arts.invalid");
-    const decodedPath = decodeURIComponent(url.pathname);
+    const localOrigin = "https://event-arts.invalid";
+    const url = new URL(value, localOrigin);
+    if (url.origin !== localOrigin || url.username || url.password) return null;
+    let decodedPath = url.pathname;
+    for (let index = 0; index < 5; index += 1) {
+      const next = decodeURIComponent(decodedPath);
+      if (next === decodedPath) break;
+      decodedPath = next;
+    }
+    if (decodedPath.includes("\\")) return null;
     if (/^(?:\/private)?\/tmp(?:\/|$)/i.test(decodedPath)) return null;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
@@ -253,9 +262,12 @@ function createAssetImage(registry: TrustedMediaRegistry) {
             if (!(node instanceof HTMLElement)) return false;
             const mediaAssetId = normalizeMediaAssetId(node.getAttribute("data-media-asset-id"));
             const src = node.getAttribute("src") ?? "";
-            if (!mediaAssetId || !registry.has({ mediaType: "image", mediaAssetId, src })) return false;
+            const normalizedSrc = normalizeAssetMediaSource(src, true);
+            if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "image", mediaAssetId, src })) {
+              return false;
+            }
             return {
-              src,
+              src: normalizedSrc,
               mediaAssetId,
               alt: node.getAttribute("alt")?.trim() || "内容图片",
               align: readAlignment(node)
@@ -268,14 +280,15 @@ function createAssetImage(registry: TrustedMediaRegistry) {
     renderHTML({ node }) {
       const mediaAssetId = normalizeMediaAssetId(node.attrs.mediaAssetId);
       const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
-      if (!mediaAssetId || !registry.has({ mediaType: "image", mediaAssetId, src })) {
+      const normalizedSrc = normalizeAssetMediaSource(src, true);
+      if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "image", mediaAssetId, src })) {
         return ["span", { class: "ea-media-invalid" }];
       }
       const align = (["left", "center", "right"] as const).includes(node.attrs.align) ? node.attrs.align : null;
       return [
         "img",
         mergeAttributes({
-          src,
+          src: normalizedSrc,
           alt: typeof node.attrs.alt === "string" && node.attrs.alt.trim() ? node.attrs.alt.trim() : "内容图片",
           "data-media-asset-id": String(mediaAssetId),
           class: mediaClass("image", align)
@@ -310,8 +323,11 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
             if (!(node instanceof HTMLElement)) return false;
             const mediaAssetId = normalizeMediaAssetId(node.getAttribute("data-media-asset-id"));
             const src = node.getAttribute("src") ?? "";
-            if (!mediaAssetId || !registry.has({ mediaType: "video", mediaAssetId, src })) return false;
-            return { src, mediaAssetId, align: readAlignment(node) };
+            const normalizedSrc = normalizeAssetMediaSource(src, true);
+            if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "video", mediaAssetId, src })) {
+              return false;
+            }
+            return { src: normalizedSrc, mediaAssetId, align: readAlignment(node) };
           }
         }
       ];
@@ -320,14 +336,15 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
     renderHTML({ node }) {
       const mediaAssetId = normalizeMediaAssetId(node.attrs.mediaAssetId);
       const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
-      if (!mediaAssetId || !registry.has({ mediaType: "video", mediaAssetId, src })) {
+      const normalizedSrc = normalizeAssetMediaSource(src, true);
+      if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "video", mediaAssetId, src })) {
         return ["span", { class: "ea-media-invalid" }];
       }
       const align = (["left", "center", "right"] as const).includes(node.attrs.align) ? node.attrs.align : null;
       return [
         "video",
         mergeAttributes({
-          src,
+          src: normalizedSrc,
           "data-media-asset-id": String(mediaAssetId),
           class: mediaClass("video", align),
           controls: "",
