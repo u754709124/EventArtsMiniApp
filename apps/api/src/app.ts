@@ -1050,6 +1050,8 @@ function registerCrud(
   app.delete("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     await prisma.$transaction(async (tx) => {
+      const exists = await tx.activityCase.count({ where: { id } });
+      if (!exists) throw new DetailPageDomainError("NOT_FOUND", "案例不存在", 404);
       await deleteDetailPageConfig(tx, "activity_case", id);
       await tx.activityCase.delete({ where: { id } });
       await tx.operationLog.create({ data: { action: "DELETE_ACTIVITY_CASE", detail: String(id) } });
@@ -1112,6 +1114,8 @@ function registerCrud(
   app.delete("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     await prisma.$transaction(async (tx) => {
+      const exists = await tx.artist.count({ where: { id } });
+      if (!exists) throw new DetailPageDomainError("NOT_FOUND", "人员不存在", 404);
       await deleteDetailPageConfig(tx, "artist", id);
       await tx.artist.delete({ where: { id } });
       await tx.operationLog.create({ data: { action: "DELETE_ARTIST", detail: String(id) } });

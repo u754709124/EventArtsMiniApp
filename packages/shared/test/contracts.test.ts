@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ArtistCreateRequestSchema,
   artistListQuerySchema,
@@ -13,7 +13,12 @@ import {
   ok,
   serializeArtistTags,
   updateMediaMetadataSchema,
-  type ClientHomeResponse
+  type ActivityCaseDetailDto,
+  type ActivityCaseListItemDto,
+  type ArtistDetailDto,
+  type ArtistListItemDto,
+  type ClientHomeResponse,
+  type DetailPageConfigDto
 } from "../src/index";
 
 describe("shared contracts", () => {
@@ -78,6 +83,14 @@ describe("shared contracts", () => {
     };
 
     expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "featuredCases"]);
+  });
+
+  it("separates list summaries from required detail-page DTOs", () => {
+    expectTypeOf<ArtistListItemDto>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
+    expectTypeOf<ActivityCaseListItemDto>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
+    expectTypeOf<ClientHomeResponse["featuredCases"][number]>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
+    expectTypeOf<ArtistDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
+    expectTypeOf<ActivityCaseDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
   });
 
   it("normalizes artist tags once and exposes Chinese artist labels", () => {

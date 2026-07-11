@@ -1,13 +1,13 @@
 import Taro, { useLoad } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ArtistDto, ArtistType } from "@event-arts/shared";
+import type { ArtistListItemDto, ArtistType } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { request } from "../../services/api";
 import "./list.scss";
 
-type ArtistListItem = ArtistDto;
+type ArtistListItem = ArtistListItemDto;
 
 type FilterOptions = {
   locations: string[];

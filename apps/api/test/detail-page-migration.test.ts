@@ -8,6 +8,7 @@ import {
   runDetailPageMigration
 } from "../src/detail-pages/detail-page-migration";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
+import { mediaReferenceCount } from "../src/media";
 
 const root = path.join(process.cwd(), ".tmp/detail-page-migration-tests");
 
@@ -159,6 +160,125 @@ describe("legacy business detail migration", () => {
         DETAIL_PAGE_MIGRATION_ID
       )
     ).toEqual([{ total: 1n }]);
+    await prisma.$disconnect();
+  });
+
+  it("keeps an existing case config authoritative and removes stale legacy media references", async () => {
+    const prisma = await createDatabase("existing-case-config");
+    const cover = await createAsset(prisma, 30, "image");
+    const content = await createAsset(prisma, 31, "image");
+    const activityCase = await prisma.activityCase.create({
+      data: {
+        title: "已有新配置案例",
+        category: "活动",
+        tag: "权威配置",
+        coverAssetId: cover.id,
+        summary: "简介",
+        eventDate: new Date("2026-07-11T00:00:00.000Z"),
+        location: "杭州",
+        detail: "旧详情不得覆盖新内容",
+        legacyMediaJson: "[]",
+        isFeatured: false,
+        featuredSortOrder: 0,
+        sortOrder: 1,
+        status: "enabled",
+        media: { create: [{ mediaAssetId: content.id, sortOrder: 0 }] }
+      }
+    });
+    await prisma.detailPageConfig.create({
+      data: {
+        ownerType: "activity_case",
+        ownerId: activityCase.id,
+        pageType: "rich_text",
+        richTextHtml: `<p>权威新内容</p><img data-media-asset-id="${content.id}" src="${content.url}">`,
+        contentMedia: { create: [{ mediaAssetId: content.id }] }
+      }
+    });
+
+    expect(await mediaReferenceCount(prisma, content.id)).toBe(1);
+
+    await runDetailPageMigration(prisma);
+
+    const config = await prisma.detailPageConfig.findUniqueOrThrow({
+      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } }
+    });
+    expect(config.richTextHtml).toContain("权威新内容");
+    expect(config.richTextHtml).not.toContain("旧详情不得覆盖新内容");
+    expect(await prisma.activityCaseMedia.count({ where: { activityCaseId: activityCase.id } })).toBe(0);
+    expect(await mediaReferenceCount(prisma, content.id)).toBe(1);
+    await prisma.$disconnect();
+  });
+
+  it("rolls back a previously written owner when validating the next owner's existing config fails", async () => {
+    const prisma = await createDatabase("mid-transaction-rollback");
+    const artist = await prisma.artist.create({
+      data: {
+        name: "事务内第一位人员",
+        type: "actor",
+        location: "宁波",
+        badge: "演员",
+        summary: "简介",
+        tagsJson: "[]",
+        detail: "第一位人员详情",
+        sortOrder: 1,
+        status: "enabled"
+      }
+    });
+    const cover = await createAsset(prisma, 40, "image");
+    const legacy = await createAsset(prisma, 41, "image");
+    const activityCase = await prisma.activityCase.create({
+      data: {
+        title: "事务内第二个案例",
+        category: "活动",
+        tag: "异常配置",
+        coverAssetId: cover.id,
+        summary: "简介",
+        eventDate: new Date("2026-07-11T00:00:00.000Z"),
+        location: "杭州",
+        detail: "案例详情",
+        legacyMediaJson: "[]",
+        isFeatured: false,
+        featuredSortOrder: 0,
+        sortOrder: 1,
+        status: "enabled",
+        media: { create: [{ mediaAssetId: legacy.id, sortOrder: 0 }] }
+      }
+    });
+    await prisma.detailPageConfig.create({
+      data: {
+        ownerType: "activity_case",
+        ownerId: activityCase.id,
+        pageType: "future_type",
+        richTextHtml: "<p>不能解释的新配置</p>"
+      }
+    });
+
+    await expect(runDetailPageMigration(prisma)).rejects.toThrow(/activity_case.*事务内第二个案例.*未知详情页类型/s);
+
+    expect(await prisma.detailPageConfig.findUnique({
+      where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } }
+    })).toBeNull();
+    expect(await prisma.activityCaseMedia.count({ where: { activityCaseId: activityCase.id } })).toBe(1);
+    expect(await prisma.$queryRawUnsafe<Array<{ total: number }>>(
+      "SELECT COUNT(*) AS total FROM schema_migrations WHERE id = ?",
+      DETAIL_PAGE_MIGRATION_ID
+    )).toEqual([{ total: 0n }]);
+    await prisma.$disconnect();
+  });
+
+  it("reports unknown owner types and missing polymorphic owners in the orphan audit", async () => {
+    const prisma = await createDatabase("orphan-audit");
+    await prisma.detailPageConfig.createMany({
+      data: [
+        { ownerType: "future_owner", ownerId: 7, pageType: "rich_text", richTextHtml: "<p>未知业务</p>" },
+        { ownerType: "artist", ownerId: 999, pageType: "rich_text", richTextHtml: "<p>人员不存在</p>" }
+      ]
+    });
+
+    expect(await auditDetailPageOrphans(prisma)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ownerType: "future_owner", ownerId: 7, reason: "未知 ownerType" }),
+      expect.objectContaining({ ownerType: "artist", ownerId: 999, reason: "业务对象不存在" })
+    ]));
     await prisma.$disconnect();
   });
 

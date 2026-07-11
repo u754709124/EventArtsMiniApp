@@ -3,6 +3,7 @@ import {
   ActivityCaseCreateRequestSchema,
   ArtistCreateRequestSchema,
   DetailPageInputSchema,
+  detailPageInputSchemas,
   detailOwnerTypeValues,
   detailPageTypeDefinitions,
   detailPageTypeLabels,
@@ -14,6 +15,10 @@ import {
 const richTextHtml = '<section class="ea-detail-card"><p>有效详情</p></section>';
 
 describe("detail page registry", () => {
+  it("binds every registered detail type to an input schema", () => {
+    expect(Object.keys(detailPageInputSchemas)).toEqual(detailPageTypeValues);
+  });
+
   it("defines the two phase-one types and two owner types exactly", () => {
     expect(detailPageTypeValues).toEqual(["banner_rich_text", "rich_text"]);
     expect(detailOwnerTypeValues).toEqual(["artist", "activity_case"]);

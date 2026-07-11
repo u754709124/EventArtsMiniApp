@@ -77,6 +77,16 @@ export async function mediaReferenceCount(prisma: AppPrismaClient, id: number) {
 }
 
 export async function mediaReferenceSources(prisma: AppPrismaClient, id: number): Promise<MediaReferenceSourceDto[]> {
+  const legacyCaseDetailCount = prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
+    `SELECT COUNT(*) AS count
+     FROM activity_case_media cm
+     WHERE cm.mediaAssetId = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM detail_page_configs dpc
+         WHERE dpc.ownerType = 'activity_case' AND dpc.ownerId = cm.activityCaseId
+       )`,
+    id
+  ).then((rows) => Number(rows[0]?.count ?? 0));
   const counts = await Promise.all([
     prisma.siteConfig.count({ where: { defaultBannerAssetId: id } }),
     prisma.siteConfig.count({ where: { placeholderBannerAssetId: id } }),
@@ -86,7 +96,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     prisma.menuItem.count({ where: { iconAssetId: id } }),
     prisma.activityCase.count({ where: { coverAssetId: id } }),
     prisma.artist.count({ where: { avatarAssetId: id } }),
-    prisma.activityCaseMedia.count({ where: { mediaAssetId: id } }),
+    legacyCaseDetailCount,
     prisma.detailPageBannerMedia.count({ where: { mediaAssetId: id } }),
     prisma.detailPageContentMedia.count({ where: { mediaAssetId: id } })
   ]);
@@ -152,7 +162,12 @@ const mediaReferenceSql = `
   (SELECT COUNT(*) FROM menu_items mi WHERE mi.iconAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_cases ac WHERE ac.coverAssetId = m.id) +
   (SELECT COUNT(*) FROM artists a WHERE a.avatarAssetId = m.id) +
-  (SELECT COUNT(*) FROM activity_case_media cm WHERE cm.mediaAssetId = m.id) +
+  (SELECT COUNT(*) FROM activity_case_media cm
+   WHERE cm.mediaAssetId = m.id
+     AND NOT EXISTS (
+       SELECT 1 FROM detail_page_configs dpc
+       WHERE dpc.ownerType = 'activity_case' AND dpc.ownerId = cm.activityCaseId
+     )) +
   (SELECT COUNT(*) FROM detail_page_banner_media dbm WHERE dbm.mediaAssetId = m.id) +
   (SELECT COUNT(*) FROM detail_page_content_media dcm WHERE dcm.mediaAssetId = m.id)
 `;

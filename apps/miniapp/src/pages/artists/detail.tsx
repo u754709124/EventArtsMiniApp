@@ -1,13 +1,13 @@
 import { Text, View } from "@tarojs/components";
 import { useLoad } from "@tarojs/taro";
 import { useState } from "react";
-import type { ArtistDto } from "@event-arts/shared";
+import type { ArtistDetailDto } from "@event-arts/shared";
 import { request } from "../../services/api";
 
 export default function ArtistDetail() {
-  const [item, setItem] = useState<ArtistDto | null>(null);
+  const [item, setItem] = useState<ArtistDetailDto | null>(null);
   useLoad((query) => {
-    void request<ArtistDto>(`/api/client/artists/${query.id}`).then(setItem);
+    void request<ArtistDetailDto>(`/api/client/artists/${query.id}`).then(setItem);
   });
   return (
     <View className="page" data-testid="artist-detail-page">

@@ -1,7 +1,7 @@
 import Taro from "@tarojs/taro";
 import { Text, View } from "@tarojs/components";
 import { useEffect, useState } from "react";
-import type { ActivityCaseDto } from "@event-arts/shared";
+import type { ActivityCaseListItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { EmptyState } from "../../components/PageState";
@@ -12,9 +12,9 @@ function openCase(id: number) {
 }
 
 export default function CaseList() {
-  const [items, setItems] = useState<ActivityCaseDto[]>([]);
+  const [items, setItems] = useState<ActivityCaseListItemDto[]>([]);
   useEffect(() => {
-    void request<ActivityCaseDto[]>("/api/client/cases").then(setItems);
+    void request<ActivityCaseListItemDto[]>("/api/client/cases").then(setItems);
   }, []);
   return (
     <View className="page" data-testid="case-list-page">

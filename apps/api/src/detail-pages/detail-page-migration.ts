@@ -6,6 +6,11 @@ import {
   extractRichTextMedia,
   sanitizeAndNormalizeRichText
 } from "./detail-page-sanitizer";
+import {
+  detailPageConfigInclude,
+  serializeDetailPageConfig,
+  type DetailPageConfigRecord
+} from "./detail-page-serializer";
 import type { DetailPageMediaAsset } from "./detail-page-types";
 
 export const DETAIL_PAGE_MIGRATION_ID = "20260710_detail_page_config_v1";
@@ -111,15 +116,34 @@ async function migrateLegacyHtml(db: MigrationDb, legacyDetail: string, addition
   return { html: sanitizeAndNormalizeRichText(initial, assets), assets };
 }
 
+function validateExistingConfig(record: DetailPageConfigRecord) {
+  const config = serializeDetailPageConfig(record);
+  const htmlAssetIds = [...new Set(extractRichTextMedia(record.richTextHtml).map((item) => item.assetId))].sort((a, b) => a - b);
+  const relationAssetIds = [...new Set(record.contentMedia.map((item) => item.mediaAssetId))].sort((a, b) => a - b);
+  if (htmlAssetIds.length !== relationAssetIds.length || htmlAssetIds.some((id, index) => id !== relationAssetIds[index])) {
+    throw new Error("富文本媒体关系与 HTML 不一致");
+  }
+  if (config.type === "rich_text" && (record.heroSubtitle.trim() || record.banners.length)) {
+    throw new Error("单富文本配置不得保留 BANNER 文案或关系");
+  }
+  if (config.type === "banner_rich_text") {
+    if (!record.heroSubtitle.trim()) throw new Error("BANNER 配置缺少宣传语");
+    if (record.banners.length < 1 || record.banners.length > 6) throw new Error("BANNER 配置数量应为 1 至 6 张");
+  }
+}
+
 async function migrateArtists(db: MigrationDb) {
   const artists = await db.artist.findMany({ orderBy: { id: "asc" } });
   for (const artist of artists) {
-    const existing = await db.detailPageConfig.findUnique({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } },
-      select: { id: true }
-    });
-    if (existing) continue;
     try {
+      const existing = await db.detailPageConfig.findUnique({
+        where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } },
+        include: detailPageConfigInclude
+      });
+      if (existing) {
+        validateExistingConfig(existing);
+        continue;
+      }
       const migrated = await migrateLegacyHtml(db, artist.detail);
       const media = migrated.html ? extractRichTextMedia(migrated.html) : [];
       await db.detailPageConfig.create({
@@ -147,15 +171,20 @@ async function migrateCases(db: MigrationDb) {
     orderBy: { id: "asc" }
   });
   for (const activityCase of cases) {
-    const existing = await db.detailPageConfig.findUnique({
-      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } },
-      select: { id: true }
-    });
-    if (existing) continue;
     try {
       const legacyJson = activityCase.legacyMediaJson.trim();
       if (legacyJson && legacyJson !== "[]") {
         throw new Error(`legacyMediaJson 非空且无法解释: ${legacyJson}`);
+      }
+
+      const existing = await db.detailPageConfig.findUnique({
+        where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } },
+        include: detailPageConfigInclude
+      });
+      if (existing) {
+        validateExistingConfig(existing);
+        await db.activityCaseMedia.deleteMany({ where: { activityCaseId: activityCase.id } });
+        continue;
       }
 
       const oldMediaIds = activityCase.media.map((item) => item.mediaAssetId);

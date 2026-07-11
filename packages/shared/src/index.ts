@@ -358,7 +358,7 @@ export type MenuItemDto = {
   status: Status;
 };
 
-export type ActivityCaseDto = {
+export type ActivityCaseListItemDto = {
   id: number;
   title: string;
   category: string;
@@ -368,7 +368,6 @@ export type ActivityCaseDto = {
   eventDate: string;
   location: string;
   detail: string;
-  detailPage: DetailPageConfigDto;
   media: CaseMediaDto[];
   isFeatured: boolean;
   featuredSortOrder: number;
@@ -376,7 +375,14 @@ export type ActivityCaseDto = {
   status: Status;
 };
 
-export type ArtistDto = {
+export type ActivityCaseDetailDto = ActivityCaseListItemDto & {
+  detailPage: DetailPageConfigDto;
+};
+
+/** @deprecated Use ActivityCaseListItemDto or ActivityCaseDetailDto for an exact endpoint contract. */
+export type ActivityCaseDto = ActivityCaseDetailDto;
+
+export type ArtistListItemDto = {
   id: number;
   name: string;
   type: ArtistType;
@@ -387,17 +393,23 @@ export type ArtistDto = {
   tags: string[];
   summary: string;
   detail: string;
-  detailPage: DetailPageConfigDto;
   sortOrder: number;
   status: Status;
 };
+
+export type ArtistDetailDto = ArtistListItemDto & {
+  detailPage: DetailPageConfigDto;
+};
+
+/** @deprecated Use ArtistListItemDto or ArtistDetailDto for an exact endpoint contract. */
+export type ArtistDto = ArtistDetailDto;
 
 export type ClientHomeResponse = {
   site: SiteConfigDto;
   announcements: AnnouncementDto[];
   banners: BannerDto[];
   menus: MenuItemDto[];
-  featuredCases: ActivityCaseDto[];
+  featuredCases: ActivityCaseListItemDto[];
 };
 
 export type DashboardOverviewResponse = {
