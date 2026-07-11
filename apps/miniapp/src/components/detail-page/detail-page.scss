@@ -295,6 +295,8 @@ $detail-body-line-height: 1.72;
   font-size: $detail-body-size;
   line-height: $detail-body-line-height;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  white-space: break-spaces;
 
   h1 {
     display: block;
@@ -312,7 +314,8 @@ $detail-body-line-height: 1.72;
   }
 
   p {
-    margin: 0 0 12rpx;
+    min-height: 1.72em;
+    margin: 0;
   }
 
   p:last-child {

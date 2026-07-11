@@ -49,6 +49,17 @@ describe("detail rich-text sanitizer", () => {
     expect(html).not.toMatch(/999px|99999px|-1px|-20px/);
   });
 
+  it("preserves author-entered spaces, text newlines and blank paragraphs", () => {
+    const html = sanitizeAndNormalizeRichText(
+      "<p>第一  第二</p><p><br></p><p>第三\n\n第四</p>",
+      assets
+    );
+
+    expect(html).toContain("<p>第一  第二</p>");
+    expect(html).toContain("<p><br></p>");
+    expect(html).toContain("第三\n\n第四");
+  });
+
   it("rewrites image and video URLs from registered assets and normalizes their attributes", () => {
     const html = sanitizeAndNormalizeRichText(
       `<p>前文</p>

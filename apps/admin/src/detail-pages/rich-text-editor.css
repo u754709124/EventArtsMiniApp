@@ -10,6 +10,15 @@
   gap: 4px;
 }
 
+.rich-text-editor-frame {
+  position: relative;
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .rich-text-editor-label {
   color: #262626;
   font-weight: 600;
@@ -23,15 +32,18 @@
 }
 
 .rich-text-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   padding: 10px;
   overflow: hidden;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px 8px 0 0;
-  background: #fafafa;
+  border-bottom: 1px solid #d9d9d9;
+  background: rgb(250 250 250 / 96%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 5%);
 }
 
 .rich-text-toolbar-button.ant-btn,
@@ -91,21 +103,28 @@
   max-width: 100%;
   padding: 16px;
   overflow-wrap: anywhere;
-  border: 1px solid #d9d9d9;
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  border: 0;
   background: #fff;
   line-height: 1.65;
 }
 
 .rich-text-editor .tiptap.ProseMirror-focused {
-  border-color: #b77836;
   box-shadow: inset 0 0 0 1px #b77836;
 }
 
-.rich-text-editor .tiptap p:first-child,
-.rich-text-editor .tiptap h1:first-child {
-  margin-top: 0;
+.rich-text-editor .tiptap p {
+  min-height: 1.65em;
+  margin: 0;
+}
+
+.rich-text-editor .tiptap h1 {
+  margin: 0 0 8px;
+}
+
+.rich-text-editor .tiptap h1:not(:first-child) {
+  margin-top: 10px;
 }
 
 .rich-text-editor .tiptap img[data-media-asset-id],
@@ -132,6 +151,7 @@
   opacity: 0.56;
 }
 
+.rich-text-editor.is-disabled .rich-text-editor-frame,
 .rich-text-editor.is-disabled .rich-text-toolbar,
 .rich-text-editor.is-disabled .tiptap.ProseMirror {
   background: #f5f5f5;

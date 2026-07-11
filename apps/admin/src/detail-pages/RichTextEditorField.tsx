@@ -70,6 +70,21 @@ function emptyEquivalent(value: string) {
   return value.trim() ? value : "<p></p>";
 }
 
+const richTextParseOptions = { preserveWhitespace: "full" as const };
+
+function removeUntrustedControlledMedia(html: string, registry: TrustedMediaRegistry) {
+  if (typeof document === "undefined" || !html) return html;
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  for (const element of template.content.querySelectorAll("img, video")) {
+    const mediaType = element.tagName === "IMG" ? "image" : "video";
+    const mediaAssetId = normalizeMediaAssetId(element.getAttribute("data-media-asset-id"));
+    const src = element.getAttribute("src") ?? "";
+    if (!mediaAssetId || !registry.has({ mediaType, mediaAssetId, src })) element.remove();
+  }
+  return template.innerHTML;
+}
+
 export function RichTextEditorField({
   value = "",
   onChange,
@@ -87,6 +102,7 @@ export function RichTextEditorField({
   if (!trustedMediaRegistryRef.current) trustedMediaRegistryRef.current = createTrustedMediaRegistry();
   // Trust only API-loaded or MediaAsset-hydrated controlled HTML; arbitrary editor input never seeds this registry.
   trustedMediaRegistryRef.current.syncControlledHtml(value);
+  const controlledEditorHtml = removeUntrustedControlledMedia(value, trustedMediaRegistryRef.current);
   if (!extensionsRef.current) {
     extensionsRef.current = createRichTextEditorExtensions(trustedMediaRegistryRef.current);
   }
@@ -94,9 +110,10 @@ export function RichTextEditorField({
   const editor = useEditor(
     {
       extensions: extensionsRef.current,
-      content: value,
+      content: controlledEditorHtml,
       editable: !disabled,
       immediatelyRender: false,
+      parseOptions: richTextParseOptions,
       editorProps: {
         attributes: {
           "aria-label": "详情页富文本内容",
@@ -143,9 +160,14 @@ export function RichTextEditorField({
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
-    const incoming = emptyEquivalent(value);
+    const incomingHtml = removeUntrustedControlledMedia(value, trustedMediaRegistryRef.current!);
+    const incoming = emptyEquivalent(incomingHtml);
     if (editor.getHTML() !== incoming) {
-      editor.commands.setContent(value, { emitUpdate: false, errorOnInvalidContent: false });
+      editor.commands.setContent(incomingHtml, {
+        emitUpdate: false,
+        errorOnInvalidContent: false,
+        parseOptions: richTextParseOptions
+      });
     }
   }, [editor, value]);
 
@@ -250,68 +272,70 @@ export function RichTextEditorField({
         </span>
       </div>
 
-      <div className="rich-text-toolbar" role="toolbar" aria-label="富文本编辑工具栏">
-        <label className="rich-text-select-label">
-          <span>段落与标题</span>
-          <select
-            aria-label="段落与标题"
-            value={state.block}
-            disabled={unavailable}
-            onChange={(event) => setBlock(event.target.value)}
-          >
-            <option value="p">正文 P</option>
-            <option value="h1">标题 H1</option>
-          </select>
-        </label>
+      <div className="rich-text-editor-frame" data-testid="detail-rich-text-frame">
+        <div className="rich-text-toolbar" role="toolbar" aria-label="富文本编辑工具栏" data-testid="detail-rich-text-toolbar">
+          <label className="rich-text-select-label">
+            <span>段落与标题</span>
+            <select
+              aria-label="段落与标题"
+              value={state.block}
+              disabled={unavailable}
+              onChange={(event) => setBlock(event.target.value)}
+            >
+              <option value="p">正文 P</option>
+              <option value="h1">标题 H1</option>
+            </select>
+          </label>
 
-        <label className="rich-text-select-label">
-          <span>字号</span>
-          <select
-            aria-label="字号"
-            value={state.fontSize ?? ""}
-            disabled={unavailable}
-            onChange={(event) => {
-              if (!editor) return;
-              const chain = editor.chain().focus();
-              if (event.target.value) chain.setFontSize(event.target.value).run();
-              else chain.unsetFontSize().run();
-            }}
-          >
-            <option value="">默认字号</option>
-            <option value="12px">12</option>
-            <option value="14px">14</option>
-            <option value="16px">16</option>
-            <option value="18px">18</option>
-            <option value="24px">24</option>
-            <option value="32px">32</option>
-          </select>
-        </label>
+          <label className="rich-text-select-label">
+            <span>字号</span>
+            <select
+              aria-label="字号"
+              value={state.fontSize ?? ""}
+              disabled={unavailable}
+              onChange={(event) => {
+                if (!editor) return;
+                const chain = editor.chain().focus();
+                if (event.target.value) chain.setFontSize(event.target.value).run();
+                else chain.unsetFontSize().run();
+              }}
+            >
+              <option value="">默认字号</option>
+              <option value="12px">12</option>
+              <option value="14px">14</option>
+              <option value="16px">16</option>
+              <option value="18px">18</option>
+              <option value="24px">24</option>
+              <option value="32px">32</option>
+            </select>
+          </label>
 
-        <label className="rich-text-color-label">
-          <span>文字颜色</span>
-          <input
-            type="color"
-            aria-label="文字颜色"
-            value={state.color ?? "#262626"}
-            disabled={unavailable}
-            onChange={(event) => editor?.chain().focus().setColor(event.target.value).run()}
-          />
-        </label>
+          <label className="rich-text-color-label">
+            <span>文字颜色</span>
+            <input
+              type="color"
+              aria-label="文字颜色"
+              value={state.color ?? "#262626"}
+              disabled={unavailable}
+              onChange={(event) => editor?.chain().focus().setColor(event.target.value).run()}
+            />
+          </label>
 
-        <ToolbarButton label="粗体" disabled={unavailable} active={state.bold} onClick={() => editor?.chain().focus().toggleBold().run()}>B</ToolbarButton>
-        <ToolbarButton label="斜体" disabled={unavailable} active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><em>I</em></ToolbarButton>
-        <ToolbarButton label="下划线" disabled={unavailable} active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
-        <ToolbarButton label="删除线" disabled={unavailable} active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><s>S</s></ToolbarButton>
-        <ToolbarButton label="添加链接" disabled={unavailable} active={state.link} onClick={editLink}>链接</ToolbarButton>
-        <ToolbarButton label="插入图片" disabled={unavailable} onClick={() => setPickerType("image")}>图片</ToolbarButton>
-        <ToolbarButton label="编辑图片替代文本" disabled={unavailable || !state.image} onClick={editImageAlt}>图片 ALT</ToolbarButton>
-        <ToolbarButton label="插入视频" disabled={unavailable} onClick={() => setPickerType("video")}>视频</ToolbarButton>
-        <ToolbarButton label="撤销" disabled={unavailable} onClick={() => editor?.chain().focus().undo().run()}>撤销</ToolbarButton>
-        <ToolbarButton label="重做" disabled={unavailable} onClick={() => editor?.chain().focus().redo().run()}>重做</ToolbarButton>
-        <ToolbarButton label="清除格式" disabled={unavailable} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>清除格式</ToolbarButton>
+          <ToolbarButton label="粗体" disabled={unavailable} active={state.bold} onClick={() => editor?.chain().focus().toggleBold().run()}>B</ToolbarButton>
+          <ToolbarButton label="斜体" disabled={unavailable} active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><em>I</em></ToolbarButton>
+          <ToolbarButton label="下划线" disabled={unavailable} active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
+          <ToolbarButton label="删除线" disabled={unavailable} active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><s>S</s></ToolbarButton>
+          <ToolbarButton label="添加链接" disabled={unavailable} active={state.link} onClick={editLink}>链接</ToolbarButton>
+          <ToolbarButton label="插入图片" disabled={unavailable} onClick={() => setPickerType("image")}>图片</ToolbarButton>
+          <ToolbarButton label="编辑图片替代文本" disabled={unavailable || !state.image} onClick={editImageAlt}>图片 ALT</ToolbarButton>
+          <ToolbarButton label="插入视频" disabled={unavailable} onClick={() => setPickerType("video")}>视频</ToolbarButton>
+          <ToolbarButton label="撤销" disabled={unavailable} onClick={() => editor?.chain().focus().undo().run()}>撤销</ToolbarButton>
+          <ToolbarButton label="重做" disabled={unavailable} onClick={() => editor?.chain().focus().redo().run()}>重做</ToolbarButton>
+          <ToolbarButton label="清除格式" disabled={unavailable} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>清除格式</ToolbarButton>
+        </div>
+
+        <EditorContent editor={editor} />
       </div>
-
-      <EditorContent editor={editor} />
 
       <MediaPickerModal
         open={pickerType !== null}

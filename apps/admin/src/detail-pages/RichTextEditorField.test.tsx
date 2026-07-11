@@ -193,6 +193,26 @@ describe("RichTextEditorField", () => {
     expect([...screen.getByRole("combobox", { name: "段落与标题" }).querySelectorAll("option")].map((option) => option.value)).toEqual(["p", "h1"]);
   });
 
+  it("keeps whitespace-aware content parsing and floats the toolbar inside the editor frame", async () => {
+    const lifecycle = editorObserver();
+    render(
+      <RichTextEditorField
+        value={"<p>第一  第二</p><p><br></p><p>第三\n\n第四</p>"}
+        onChange={vi.fn()}
+        lifecycleObserver={lifecycle.observer}
+      />
+    );
+
+    await waitFor(() => expect(lifecycle.current).not.toBeNull());
+    expect(lifecycle.current?.options.parseOptions).toMatchObject({ preserveWhitespace: "full" });
+    expect(lifecycle.current?.getHTML()).toContain("第一  第二");
+    expect(lifecycle.current?.getHTML()).toContain("第三\n\n第四");
+
+    const frame = screen.getByTestId("detail-rich-text-frame");
+    expect(frame.contains(screen.getByTestId("detail-rich-text-toolbar"))).toBe(true);
+    expect(frame.contains(screen.getByRole("textbox", { name: "详情页富文本内容" }))).toBe(true);
+  });
+
   it("preserves the new H1 template order while stripping legacy classes after editing", async () => {
     const lifecycle = editorObserver();
     const onChange = vi.fn();

@@ -165,8 +165,24 @@ function hasRenderableInline(nodes: ChildNode[]) {
   );
 }
 
-function appendParagraph(nodes: ChildNode[], output: ChildNode[]) {
-  if (hasRenderableInline(nodes)) output.push(createElement("p", [], nodes));
+function hasOnlySpacingInline(nodes: ChildNode[]): boolean {
+  return nodes.every((node) => {
+    if (isTextNode(node)) return !node.value.replace(/[\s\u3000\u00a0\u200b]/gu, "");
+    if (!isElement(node)) return true;
+    if (node.tagName === "br") return true;
+    if (!["strong", "em", "u", "s", "a", "span"].includes(node.tagName)) return false;
+    return hasOnlySpacingInline(node.childNodes);
+  });
+}
+
+function appendParagraph(nodes: ChildNode[], output: ChildNode[], preserveBlank = false) {
+  if (hasRenderableInline(nodes)) {
+    output.push(createElement("p", [], nodes));
+    return;
+  }
+  if (preserveBlank && hasOnlySpacingInline(nodes)) {
+    output.push(createElement("p", [], nodes.length ? nodes : [createElement("br")]));
+  }
 }
 
 function canonicalMediaElement(element: Element, assets: ReadonlyMap<number, DetailPageMediaAsset>) {
@@ -216,7 +232,9 @@ function appendCanonicalContent(
   }
   const paragraphTags = new Set(["p", "li", "blockquote", "h2", "h3", "h4", "h5", "h6"]);
   const directInline = inlineChildren(node);
-  if (paragraphTags.has(node.tagName) || directInline.length) appendParagraph(directInline, output);
+  if (paragraphTags.has(node.tagName) || directInline.length) {
+    appendParagraph(directInline, output, paragraphTags.has(node.tagName));
+  }
   for (const child of node.childNodes) {
     if (child === skipNode) continue;
     if (!isElement(child)) continue;

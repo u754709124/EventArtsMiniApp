@@ -237,6 +237,8 @@
   font-size: 14px;
   line-height: 1.72;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  white-space: break-spaces;
 }
 
 .detail-preview-card {
@@ -279,7 +281,8 @@
 }
 
 .detail-preview-rich-text p {
-  margin: 0 0 6px;
+  min-height: 1.72em;
+  margin: 0;
 }
 
 .detail-preview-rich-text p:last-child {
