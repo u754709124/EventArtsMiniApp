@@ -111,11 +111,12 @@ async function createAnnouncement(
   summary: string,
   sortOrder: number,
   displayDurationMs = 300,
-  detailPageId: number | null = null
+  detailPageId: number | null = null,
+  content = `${summary} 内容`
 ) {
   return adminApi<Announcement>(request, "POST", "/api/admin/announcements", {
     summary,
-    content: `${summary} 内容`,
+    content,
     displayDurationMs,
     detailPageId,
     sortOrder,
@@ -511,6 +512,71 @@ test("首页案例卡片高度接近参考图", async ({ page }) => {
   expect(firstCaseHeight).toBeLessThanOrEqual(220);
 });
 
+test("首页精选案例标题简介截断且按钮底部对齐", async ({ page }) => {
+  await openHome(page);
+  const metrics = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('[data-testid="home-case-card"]'));
+    if (!cards.length) throw new Error("Missing home case cards");
+
+    const parseLineHeight = (node: Element) => {
+      const lineHeight = window.getComputedStyle(node).lineHeight;
+      const parsed = Number.parseFloat(lineHeight);
+      if (!Number.isFinite(parsed)) throw new Error(`Invalid line-height ${lineHeight}`);
+      return parsed;
+    };
+    const spread = (values: number[]) => (values.length > 1 ? Math.max(...values) - Math.min(...values) : 0);
+
+    const rows = cards.map((card) => {
+      const title = card.querySelector(".case-card__title");
+      const summary = card.querySelector(".case-card__summary");
+      const metaList = card.querySelector(".case-card__meta-list");
+      const button = card.querySelector(".case-card__button");
+      if (!title || !summary || !metaList || !button) throw new Error("Missing case card layout nodes");
+
+      const cardRect = card.getBoundingClientRect();
+      const titleRect = title.getBoundingClientRect();
+      const summaryRect = summary.getBoundingClientRect();
+      const metaRect = metaList.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+
+      return {
+        cardHeight: cardRect.height,
+        titleHeight: titleRect.height,
+        titleLineHeight: parseLineHeight(title),
+        summaryHeight: summaryRect.height,
+        summaryLineHeight: parseLineHeight(summary),
+        titleTop: titleRect.top,
+        summaryTop: summaryRect.top,
+        metaTop: metaRect.top,
+        buttonTop: buttonRect.top,
+        buttonBottomOffset: cardRect.bottom - buttonRect.bottom
+      };
+    });
+
+    return {
+      cardHeightSpread: spread(rows.map((row) => row.cardHeight)),
+      maxTitleHeight: Math.max(...rows.map((row) => row.titleHeight)),
+      titleLineHeight: rows[0].titleLineHeight,
+      maxSummaryHeight: Math.max(...rows.map((row) => row.summaryHeight)),
+      summaryLineHeight: rows[0].summaryLineHeight,
+      titleTopSpread: spread(rows.map((row) => row.titleTop)),
+      summaryTopSpread: spread(rows.map((row) => row.summaryTop)),
+      metaTopSpread: spread(rows.map((row) => row.metaTop)),
+      buttonTopSpread: spread(rows.map((row) => row.buttonTop)),
+      buttonBottomOffsetSpread: spread(rows.map((row) => row.buttonBottomOffset))
+    };
+  });
+
+  expect(metrics.cardHeightSpread).toBeLessThanOrEqual(1);
+  expect(metrics.maxTitleHeight).toBeLessThanOrEqual(metrics.titleLineHeight + 1);
+  expect(metrics.maxSummaryHeight).toBeLessThanOrEqual(metrics.summaryLineHeight * 2 + 1);
+  expect(metrics.titleTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.summaryTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.metaTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.buttonTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.buttonBottomOffsetSpread).toBeLessThanOrEqual(1);
+});
+
 test("无公告时公告栏隐藏", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await openHome(page);
@@ -532,16 +598,33 @@ test("长公告先横向滚动完整后再切换下一条", async ({ page, reque
   await setAnnouncementStatus(request, "disabled");
   await createAnnouncement(
     request,
-    "E2E 长公告完整滚动展示婚礼主持商演档期更新",
+    "E2E 长公告",
     650,
-    300
+    300,
+    null,
+    "公告内容需要完整滚动展示婚礼主持商演档期更新和咨询须知"
   );
   await createAnnouncement(request, "E2E 长公告之后", 651, 300);
   await openHome(page);
 
   const announcement = page.getByTestId("home-announcement");
+  const alignment = await page.evaluate(() => {
+    const summary = document.querySelector(".notice__summary");
+    const content = document.querySelector(".notice__content");
+    if (!summary || !content) throw new Error("公告文本节点缺失");
+    const summaryRect = summary.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    return {
+      contentCenterY: contentRect.top + contentRect.height / 2,
+      summaryCenterY: summaryRect.top + summaryRect.height / 2,
+      summaryLeft: summaryRect.left
+    };
+  });
+  expect(Math.abs(alignment.summaryCenterY - alignment.contentCenterY)).toBeLessThan(1);
   await expect(announcement).toHaveAttribute("data-current-index", "0");
   await page.waitForTimeout(900);
+  const summaryLeftAfterScrollStart = await page.locator(".notice__summary").first().evaluate((node) => node.getBoundingClientRect().left);
+  expect(Math.abs(summaryLeftAfterScrollStart - alignment.summaryLeft)).toBeLessThan(1);
   await expect(announcement).toHaveAttribute("data-current-index", "0");
   await expect(announcement).toHaveAttribute("data-current-index", "1", { timeout: 12_000 });
 });

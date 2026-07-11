@@ -49,36 +49,55 @@
   flex: 0 0 36rpx;
 }
 
-.notice__text-viewport {
+.notice__summary {
+  flex: 0 0 auto;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.notice__summary-text {
+  color: #d94332;
+  display: block;
+  font-size: 26rpx;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.notice__content-viewport {
   flex: 1;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.notice__text-track {
+.notice__content-track {
   min-width: 100%;
+  height: 36rpx;
   display: inline-flex;
   align-items: center;
-  gap: 14rpx;
   white-space: nowrap;
   will-change: transform;
 }
 
-.notice__summary {
-  color: #d94332;
+.notice__content {
   flex: 0 0 auto;
-  font-size: 26rpx;
-  line-height: 1.35;
-  font-weight: 700;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
   white-space: nowrap;
 }
 
-.notice__content {
-  flex: 0 0 auto;
+.notice__content-text {
   color: #1f1f1f;
+  display: block;
   font-size: 24rpx;
-  line-height: 1.35;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -210,45 +229,70 @@
   padding: 8rpx;
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
   overflow: hidden;
 }
 
 .case-card__title {
-  display: -webkit-box;
+  display: block;
+  width: 100%;
+  height: 30rpx;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   font-size: 24rpx;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 30rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .case-card__summary {
   display: -webkit-box;
+  width: 100%;
+  height: 52rpx;
+  margin-top: 6rpx;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: #5f5b57;
   font-size: 20rpx;
-  line-height: 1.3;
+  line-height: 26rpx;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+
+.case-card__meta-list {
+  height: 48rpx;
+  margin-top: 8rpx;
+  display: flex;
+  flex-direction: column;
 }
 
 .case-card__meta {
+  display: block;
+  width: 100%;
+  height: 24rpx;
   color: #8b7b6d;
   overflow: hidden;
   font-size: 18rpx;
-  line-height: 1.3;
+  line-height: 24rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .case-card__button {
+  box-sizing: border-box;
+  height: 34rpx;
+  margin-top: auto;
   border: 1rpx solid #d89b5d;
   border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   color: #9a5a1f;
-  padding: 4rpx 0;
   font-size: 18rpx;
-  line-height: 1.2;
+  line-height: 1;
+}
+
+.case-card__button--placeholder {
+  visibility: hidden;
 }

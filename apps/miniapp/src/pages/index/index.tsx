@@ -163,12 +163,12 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
 
     const measureTimer = setTimeout(() => {
       void Promise.all([
-        getNoticeNodeWidth(`#noticeTextViewport-${current}`),
-        getNoticeNodeWidth(`#noticeTextTrack-${current}`)
-      ]).then(([viewportWidth, trackWidth]) => {
+        getNoticeNodeWidth(`#noticeContentViewport-${current}`),
+        getNoticeNodeWidth(`#noticeContentItem-${current}`)
+      ]).then(([viewportWidth, contentWidth]) => {
         if (cancelled) return;
 
-        const timing = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, trackWidth - viewportWidth);
+        const timing = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, contentWidth - viewportWidth);
         setMarquee({
           announcementId: currentAnnouncement.id,
           distancePx: timing.distancePx,
@@ -246,14 +246,18 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
                 } : undefined}
               >
                 <Image className="notice__icon" src={generatedAssets.iconBullet} mode="aspectFit" />
-                <View className="notice__text-viewport" id={`noticeTextViewport-${index}`}>
+                <View className="notice__summary">
+                  <Text className="notice__summary-text">{announcement.summary}</Text>
+                </View>
+                <View className="notice__content-viewport" id={`noticeContentViewport-${index}`}>
                   <View
-                    className="notice__text-track"
-                    id={`noticeTextTrack-${index}`}
+                    className="notice__content-track"
+                    id={`noticeContentTrack-${index}`}
                     style={getNoticeTrackStyle(announcement.id, marquee)}
                   >
-                    <Text className="notice__summary">{announcement.summary}</Text>
-                    <Text className="notice__content">{announcement.content}</Text>
+                    <View className="notice__content" id={`noticeContentItem-${index}`}>
+                      <Text className="notice__content-text">{announcement.content}</Text>
+                    </View>
                   </View>
                 </View>
                 {clickable && <Text className="notice__arrow">›</Text>}
@@ -427,9 +431,13 @@ export default function HomePage() {
                 <View className="case-card__body">
                   <Text className="case-card__title">{item.title}</Text>
                   <Text className="case-card__summary">{item.summary}</Text>
-                  <Text className="case-card__meta">📅 {item.eventDate}</Text>
-                  <Text className="case-card__meta">⌖ {item.location}</Text>
-                  {clickable && <Text className="case-card__button">查看详情 ›</Text>}
+                  <View className="case-card__meta-list">
+                    <Text className="case-card__meta">📅 {item.eventDate}</Text>
+                    <Text className="case-card__meta">⌖ {item.location}</Text>
+                  </View>
+                  <Text className={clickable ? "case-card__button" : "case-card__button case-card__button--placeholder"}>
+                    查看详情 ›
+                  </Text>
                 </View>
               </View>
             );
