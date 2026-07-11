@@ -1,0 +1,172 @@
+.rich-text-editor {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  color: #262626;
+}
+
+.rich-text-editor-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.rich-text-editor-label {
+  color: #262626;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.rich-text-editor-help {
+  color: #595959;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px 8px 0 0;
+  background: #fafafa;
+}
+
+.rich-text-toolbar-button.ant-btn,
+.rich-text-select-label select,
+.rich-text-color-label input {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.rich-text-toolbar-button.ant-btn {
+  padding-inline: 12px;
+}
+
+.rich-text-toolbar-button.is-active.ant-btn {
+  border-color: #9a5b21;
+  color: #7a4316;
+  background: #fff7e8;
+}
+
+.rich-text-select-label,
+.rich-text-color-label {
+  display: grid;
+  gap: 3px;
+  color: #595959;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.rich-text-select-label select {
+  padding: 0 32px 0 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #262626;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rich-text-color-label input {
+  width: 52px;
+  padding: 5px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rich-text-toolbar-button.ant-btn:focus-visible,
+.rich-text-select-label select:focus-visible,
+.rich-text-color-label input:focus-visible,
+.rich-text-editor-content:focus-visible {
+  outline: 3px solid #b77836;
+  outline-offset: 2px;
+}
+
+.rich-text-editor .tiptap.ProseMirror {
+  min-height: 260px;
+  max-width: 100%;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  border: 1px solid #d9d9d9;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: #fff;
+  line-height: 1.65;
+}
+
+.rich-text-editor .tiptap.ProseMirror-focused {
+  border-color: #b77836;
+  box-shadow: inset 0 0 0 1px #b77836;
+}
+
+.rich-text-editor .tiptap p:first-child,
+.rich-text-editor .tiptap h1:first-child,
+.rich-text-editor .tiptap h2:first-child,
+.rich-text-editor .tiptap h3:first-child,
+.rich-text-editor .tiptap h4:first-child {
+  margin-top: 0;
+}
+
+.rich-text-editor .tiptap .ea-media {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 12px;
+  border-radius: 8px;
+  background: #f5f5f5;
+}
+
+.rich-text-editor .tiptap .ea-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.rich-text-editor .tiptap .ea-align-left {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+.rich-text-editor .tiptap .ea-align-center {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.rich-text-editor .tiptap .ea-align-right {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+.rich-text-editor .tiptap .ProseMirror-selectednode {
+  outline: 3px solid #b77836;
+  outline-offset: 3px;
+}
+
+.rich-text-editor.is-disabled {
+  opacity: 0.56;
+}
+
+.rich-text-editor.is-disabled .rich-text-toolbar,
+.rich-text-editor.is-disabled .tiptap.ProseMirror {
+  background: #f5f5f5;
+}
+
+.rich-text-editor.is-disabled .rich-text-toolbar button,
+.rich-text-editor.is-disabled .rich-text-toolbar select,
+.rich-text-editor.is-disabled .rich-text-toolbar input {
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .rich-text-toolbar {
+    padding: 8px;
+  }
+
+  .rich-text-editor .tiptap.ProseMirror {
+    min-height: 220px;
+    padding: 12px;
+  }
+}
