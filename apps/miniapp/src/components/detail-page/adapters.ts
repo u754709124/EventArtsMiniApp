@@ -1,4 +1,10 @@
-import type { ActivityCaseDetailDto, ArtistDetailDto, ArtistType } from "@event-arts/shared";
+import type {
+  ActivityCaseDetailDto,
+  ArtistDetailDto,
+  ArtistType,
+  DetailPageConfigDto
+} from "@event-arts/shared";
+import { resolveDetailPagePresentation } from "@event-arts/shared/detail-page-presentation";
 import type { DetailHeroViewModel } from "./types";
 
 const artistTypeLabels = {
@@ -12,17 +18,22 @@ function clean(value: string | null | undefined) {
   return normalized || undefined;
 }
 
+function detailSubtitle(detailPage: DetailPageConfigDto | null | undefined) {
+  return detailPage ? clean(resolveDetailPagePresentation(detailPage).hero.subtitle) : undefined;
+}
+
 export function buildArtistHero(item: ArtistDetailDto): DetailHeroViewModel {
   return {
     title: item.name,
     typeLabel: artistTypeLabels[item.type],
-    subtitle: clean(item.detailPage?.hero.subtitle || item.detailPage?.heroSubtitle),
-    badge: clean(item.badge),
+    subtitle: detailSubtitle(item.detailPage) ?? "",
+    badge: clean(item.badge) ?? "",
     tags: item.tags
       .map((tag) => tag.trim())
       .filter(Boolean)
       .slice(0, 4),
-    location: clean(item.location)
+    location: clean(item.location) ?? "",
+    metaItems: []
   };
 }
 
@@ -30,10 +41,11 @@ export function buildCaseHero(item: ActivityCaseDetailDto): DetailHeroViewModel 
   const eventDate = clean(item.eventDate);
   return {
     title: item.title,
-    typeLabel: clean(item.category) || clean(item.tag),
-    subtitle: clean(item.detailPage?.hero.subtitle || item.detailPage?.heroSubtitle),
-    badge: clean(item.tag),
-    location: clean(item.location),
-    metaItems: eventDate ? [{ label: "日期", value: eventDate }] : undefined
+    typeLabel: clean(item.category) || clean(item.tag) || "",
+    subtitle: detailSubtitle(item.detailPage) ?? "",
+    badge: clean(item.tag) ?? "",
+    tags: [],
+    location: clean(item.location) ?? "",
+    metaItems: eventDate ? [{ label: "日期", value: eventDate }] : []
   };
 }

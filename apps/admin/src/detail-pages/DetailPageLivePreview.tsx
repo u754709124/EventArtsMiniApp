@@ -1,57 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Spin } from "antd";
-import type { DetailPageBlockDto, DetailPageConfigDto, DetailPageInput } from "@event-arts/shared";
+import type { DetailPageConfigDto, DetailPageInput } from "@event-arts/shared";
 import { request } from "../api";
-import "./detail-page-preview.css";
+import { DetailPageMobilePreview } from "./DetailPageMobilePreview";
 import "./detail-page-designer.css";
-
-function PreviewBlock({ block, overlap, videoIndex }: { block: DetailPageBlockDto; overlap: boolean; videoIndex: number }) {
-  if (block.type === "video") {
-    return (
-      <section className={`detail-preview-card${overlap ? " detail-preview-first-card-overlap" : ""}`}>
-        <video className="detail-preview-video" src={block.url} controls preload="metadata" aria-label={`详情视频 ${videoIndex}`} />
-      </section>
-    );
-  }
-  return (
-    <section
-      className={`detail-preview-card detail-preview-rich-text${overlap ? " detail-preview-first-card-overlap" : ""}`}
-      dangerouslySetInnerHTML={{ __html: block.html }}
-    />
-  );
-}
-
-function MobilePreview({ dto }: { dto: DetailPageConfigDto }) {
-  const bannerMode = dto.type === "banner_rich_text";
-  let videoIndex = 0;
-  return (
-    <div className={`detail-mobile-preview detail-mobile-preview-${dto.type}`} data-testid="detail-designer-live-preview">
-      <header className="detail-preview-nav" aria-label="移动端导航预览">
-        <span aria-hidden="true">‹</span>
-        <strong>{bannerMode ? "详情预览" : dto.name || "详情页"}</strong>
-        <span aria-hidden="true" />
-      </header>
-      {bannerMode && (
-        <section className="detail-preview-hero">
-          {dto.banners.map((banner, index) => (
-            <img key={`${banner.assetId}-${index}`} className={index === 0 ? "detail-preview-banner is-current" : "detail-preview-banner"} src={banner.url} alt={`${dto.name} BANNER ${index + 1}`} />
-          ))}
-          <div className="detail-preview-hero-copy">
-            <h2>{dto.hero.title}</h2>
-            <p>{dto.hero.subtitle}</p>
-          </div>
-          {dto.banners.length > 1 && <span className="detail-preview-counter">1/{dto.banners.length}</span>}
-        </section>
-      )}
-      <main className="detail-preview-content">
-        {dto.blocks.map((block, index) => {
-          if (block.type === "video") videoIndex += 1;
-          return <PreviewBlock key={`${block.type}-${index}`} block={block} overlap={bannerMode && index === 0} videoIndex={videoIndex} />;
-        })}
-      </main>
-    </div>
-  );
-}
 
 export function DetailPageLivePreview({
   revision,
@@ -98,7 +50,7 @@ export function DetailPageLivePreview({
 
   return (
     <div className="detail-live-preview-shell">
-      {dto && <MobilePreview dto={dto} />}
+      {dto && <DetailPageMobilePreview dto={dto} testId="detail-designer-live-preview" />}
       {!dto && !error && (
         <div className="detail-live-preview-empty">
           <span>填写后生成实时预览</span>

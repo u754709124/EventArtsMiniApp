@@ -22,6 +22,19 @@ type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "act
 type CaseListItem = { id: number; title: string; detailPageId: number | null };
 type LinkedArtistListItem = ArtistListItem & { detailPageId: number };
 type LinkedCaseListItem = CaseListItem & { detailPageId: number };
+type DetailPageDto = {
+  id: number;
+  name: string;
+  typeLabel: string;
+  rendererKey: string;
+  hero: {
+    title: string;
+    typeLabel: string;
+    subtitle: string;
+  };
+  banners: Array<{ id: number; url: string; sortOrder: number }>;
+  blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
+};
 type DetailFixtures = {
   artistBanner: LinkedArtistListItem;
   artistRich: LinkedArtistListItem;
@@ -39,6 +52,10 @@ type HomeResponse = {
 };
 
 test.describe.configure({ mode: "serial" });
+
+function assetUrl(url: string) {
+  return new URL(url, apiBase).href;
+}
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -255,6 +272,43 @@ async function waitForDetailVisuals(page: Page) {
   });
 }
 
+async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
+  const expectedHeroTitle = dto.hero.title.trim() || dto.name.trim();
+  const expectedTypeLabel = dto.hero.typeLabel.trim() || dto.typeLabel.trim();
+  await expect(page.getByTestId("detail-hero")).toContainText(expectedHeroTitle);
+  await expect(page.getByTestId("detail-hero")).toContainText(expectedTypeLabel);
+  if (dto.hero.subtitle.trim()) {
+    await expect(page.getByTestId("detail-hero")).toContainText(dto.hero.subtitle.trim());
+  }
+
+  const expectedBannerUrls = [...dto.banners]
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
+    .map((banner) => assetUrl(banner.url));
+  const renderedBannerUrls = await page.getByTestId("detail-banner-image").evaluateAll((items) =>
+    items.map((item) => (item as HTMLElement).getAttribute("data-current-src") || "")
+  );
+  expect(renderedBannerUrls.map(assetUrl)).toEqual(expectedBannerUrls);
+
+  const renderedBlockTypes = await page.getByTestId("detail-rich-content").evaluate((root) =>
+    Array.from(root.children)
+      .filter((child) => child.getAttribute("data-testid") === "detail-rich-text-block" || child.getAttribute("data-testid") === "detail-video")
+      .map((child) => child.getAttribute("data-testid") === "detail-video" ? "video" : "richText")
+  );
+  expect(renderedBlockTypes).toEqual(dto.blocks.map((block) => block.type));
+
+  const geometry = await page.evaluate(() => {
+    const banner = document.querySelector('[data-testid="detail-banner"]')!.getBoundingClientRect();
+    const content = document.querySelector('[data-testid="detail-content-overlap"]')!.getBoundingClientRect();
+    return {
+      bannerRatio: banner.width / banner.height,
+      overlap: banner.bottom - content.top
+    };
+  });
+  expect(geometry.bannerRatio).toBeCloseTo(750 / 404, 1);
+  expect(geometry.overlap).toBeGreaterThanOrEqual(18);
+  expect(geometry.overlap).toBeLessThanOrEqual(28);
+}
+
 async function expectCommonDetailQuality(page: Page) {
   const geometry = await page.evaluate(() => ({
     viewportWidth: document.documentElement.clientWidth,
@@ -297,9 +351,11 @@ async function expectBannerDetail(page: Page, expectedTitle: string, expectedTyp
     const firstCard = document.querySelector(".ea-detail-card")!.getBoundingClientRect();
     return {
       amount: banner.bottom - content.top,
+      bannerRatio: banner.width / banner.height,
       firstCardVisible: firstCard.top >= content.top - 1
     };
   });
+  expect(overlap.bannerRatio).toBeCloseTo(750 / 404, 1);
   expect(overlap.amount).toBeGreaterThanOrEqual(18);
   expect(overlap.amount).toBeLessThanOrEqual(28);
   expect(overlap.firstCardVisible).toBeTruthy();
@@ -630,9 +686,11 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
 
 test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", async ({ page, request }) => {
   const { artistBanner } = await resolveDetailFixtures(request);
+  const dto = await clientApi<DetailPageDto>(request, `/api/client/detail-pages/${artistBanner.detailPageId}`);
   await openDetail(page, artistBanner.detailPageId);
   await waitForDetailVisuals(page);
   await expectBannerDetail(page, artistBanner.name, "主持人");
+  await expectDetailPageDtoContract(page, dto);
   await expect(page.getByTestId("detail-banner-image")).toHaveCount(3);
   await expect(page.getByTestId("detail-hero")).toContainText("温暖・专业・掌控全场");
   await expect(page.getByTestId("detail-hero")).toContainText("金牌主持");
@@ -656,9 +714,11 @@ test("人员单富文本详情完全移除 BANNER DOM、占高和负重叠", asy
 
 test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节点", async ({ page, request }) => {
   const { caseBanner } = await resolveDetailFixtures(request);
+  const dto = await clientApi<DetailPageDto>(request, `/api/client/detail-pages/${caseBanner.detailPageId}`);
   await openDetail(page, caseBanner.detailPageId);
   await waitForDetailVisuals(page);
   await expectBannerDetail(page, caseBanner.title, "婚礼主持");
+  await expectDetailPageDtoContract(page, dto);
   await expect(page.getByTestId("detail-hero")).toContainText("杭州・西湖区");
   await expect(page.getByTestId("detail-hero")).toContainText("日期：2024-05-18");
   const video = page.getByTestId("detail-video").locator("video");

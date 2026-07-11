@@ -44,7 +44,6 @@ export type DetailPageConfigFieldsProps = {
 
 export type DetailPagePreviewProps = {
   getDraft: () => DetailPageInput | Promise<DetailPageInput>;
-  ownerPreviewData: DetailPageOwnerPreviewData;
   disabled?: boolean;
 };
 

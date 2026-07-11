@@ -183,7 +183,6 @@ export function DetailPageConfigFields({
             </Button>
             <DetailPagePreview
               getDraft={buildDraft}
-              ownerPreviewData={ownerPreviewData}
               disabled={disabled}
             />
           </Space>

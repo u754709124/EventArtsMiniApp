@@ -1,19 +1,16 @@
 import { Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import { useMemo, useState } from "react";
+import { getDisplayDetailPageBanners } from "@event-arts/shared/detail-page-presentation";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../AppImage";
 import { DetailNavigation } from "./DetailNavigation";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
-import { sortDetailBanners } from "./model";
 import type { DetailRendererProps } from "./types";
 
 export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailRendererProps) {
-  const banners = useMemo(
-    () => sortDetailBanners(config.banners).filter((banner) => Boolean(banner.url.trim())),
-    [config.banners]
-  );
+  const banners = useMemo(() => getDisplayDetailPageBanners(config.banners), [config.banners]);
   const [current, setCurrent] = useState(0);
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
   const [bannerRetryKey, setBannerRetryKey] = useState(0);

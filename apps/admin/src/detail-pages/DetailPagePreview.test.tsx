@@ -64,7 +64,7 @@ describe("DetailPagePreview", () => {
       bannerAssetIds: [11],
       richTextHtml: "<p>未保存正文</p>"
     });
-    render(<DetailPagePreview getDraft={getDraft} ownerPreviewData={{ title: "主持人林然" }} />);
+    render(<DetailPagePreview getDraft={getDraft} />);
 
     fireEvent.click(screen.getByTestId("detail-page-preview"));
     const dialog = await screen.findByRole("dialog");
@@ -85,9 +85,14 @@ describe("DetailPagePreview", () => {
     expect(await within(dialog).findByText("主持人林然")).toBeTruthy();
     expect(within(dialog).getByText("温暖而专业")).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "主持人林然 BANNER 1" })).toBeTruthy();
+    expect((within(dialog).getByRole("img", { name: "主持人林然 BANNER 1" }) as HTMLImageElement).className).toContain("is-current");
+    expect(dialog.querySelector(".detail-preview-card")).toBeNull();
     const video = within(dialog).getByLabelText("详情视频 1") as HTMLVideoElement;
+    expect(video.poster).toBe("");
+    expect(video.style.aspectRatio).toBe("1920 / 1080");
     expect(video.autoplay).toBe(false);
     expect(video.loop).toBe(false);
+    expect(video.controls).toBe(true);
     expect(dialog.querySelector("iframe")).toBeNull();
     expect(dialog.querySelector(".detail-preview-first-card-overlap")).toBeTruthy();
   });
@@ -104,7 +109,7 @@ describe("DetailPagePreview", () => {
     vi.mocked(request).mockResolvedValue(dto);
     const draft = { type: "rich_text" as const, richTextHtml: "<p>未保存</p>" };
     const getDraft = vi.fn().mockResolvedValue(draft);
-    render(<DetailPagePreview getDraft={getDraft} ownerPreviewData={{ title: "案例标题" }} />);
+    render(<DetailPagePreview getDraft={getDraft} />);
     fireEvent.click(screen.getByTestId("detail-page-preview"));
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("已清洗正文");
@@ -113,6 +118,27 @@ describe("DetailPagePreview", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "关闭预览" }));
     expect(draft).toEqual({ type: "rich_text", richTextHtml: "<p>未保存</p>" });
     expect(getDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches the miniapp empty-content state by not reserving banner DOM", async () => {
+    vi.mocked(request).mockResolvedValue({
+      ...bannerDto,
+      richTextHtml: "<p><br></p>",
+      blocks: [{ type: "richText", html: "<p><br></p>" }]
+    });
+    const getDraft = vi.fn().mockResolvedValue({
+      type: "banner_rich_text",
+      heroSubtitle: "宣传语",
+      bannerAssetIds: [11],
+      richTextHtml: "<p><br></p>"
+    });
+    render(<DetailPagePreview getDraft={getDraft} />);
+    fireEvent.click(screen.getByTestId("detail-page-preview"));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("详情待补充")).toBeTruthy();
+    expect(dialog.querySelector(".detail-preview-hero")).toBeNull();
+    expect(dialog.querySelector(".detail-preview-banner")).toBeNull();
+    expect(dialog.querySelector(".detail-preview-first-card-overlap")).toBeNull();
   });
 
   it("shows an actionable error and retries the same current draft", async () => {
@@ -125,12 +151,13 @@ describe("DetailPagePreview", () => {
       bannerAssetIds: [11],
       richTextHtml: "<p>正文</p>"
     });
-    render(<DetailPagePreview getDraft={getDraft} ownerPreviewData={{ title: "重试预览" }} />);
+    render(<DetailPagePreview getDraft={getDraft} />);
     fireEvent.click(screen.getByTestId("detail-page-preview"));
     const dialog = await screen.findByRole("dialog");
     expect((await within(dialog).findByRole("alert")).textContent).toContain("媒体校验失败");
     fireEvent.click(within(dialog).getByRole("button", { name: "重新生成预览" }));
-    expect(await within(dialog).findByText("重试预览")).toBeTruthy();
+    expect(await within(dialog).findByText("主持人林然")).toBeTruthy();
+    expect(within(dialog).queryByText("重试预览")).toBeNull();
     expect(request).toHaveBeenCalledTimes(2);
   });
 });

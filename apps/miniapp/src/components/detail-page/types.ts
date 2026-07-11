@@ -1,17 +1,6 @@
-import type { DetailPageConfigDto } from "@event-arts/shared";
+import type { DetailPageConfigDto, DetailPageHeroPresentation } from "@event-arts/shared";
 
-export type DetailHeroViewModel = {
-  title: string;
-  typeLabel?: string;
-  subtitle?: string;
-  badge?: string;
-  tags?: string[];
-  location?: string;
-  metaItems?: Array<{
-    label: string;
-    value: string;
-  }>;
-};
+export type DetailHeroViewModel = DetailPageHeroPresentation;
 
 export type DetailRendererProps = {
   config: DetailPageConfigDto;

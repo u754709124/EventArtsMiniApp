@@ -10,6 +10,10 @@ import {
   detailPageTypeLabels,
   detailPageTypeValues,
   mediaFieldRules,
+  collectDetailPageImageUrls,
+  getDisplayDetailPageBanners,
+  hasSemanticDetailPageContent,
+  resolveDetailPagePresentation,
   type DetailPageConfigDto
 } from "../src/index";
 
@@ -226,5 +230,70 @@ describe("business request integration", () => {
     };
     expect(dto.banners).toEqual([]);
     expect(dto.blocks[0].type).toBe("richText");
+  });
+});
+
+describe("detail page presentation resolver", () => {
+  const dto: DetailPageConfigDto = {
+    id: 8,
+    name: "  详情名称  ",
+    type: "banner_rich_text",
+    typeLabel: " BANNER + 富文本 ",
+    rendererKey: "bannerRichText",
+    schemaVersion: 1,
+    hero: {
+      title: "  ",
+      typeLabel: "  主持人  ",
+      subtitle: " ",
+      badge: " 推荐 ",
+      tags: [" 婚礼主持 ", "", " 控场 "],
+      location: " 杭州 ",
+      metaItems: [
+        { label: " 经验 ", value: " 10年 " },
+        { label: "空值", value: " " },
+        { label: " ", value: "无效" }
+      ]
+    },
+    heroSubtitle: "  旧宣传语  ",
+    banners: [
+      { id: 3, assetId: 33, url: " /c.webp ", width: 100, height: 50, sortOrder: 2 },
+      { id: 2, assetId: 22, url: "  ", width: 100, height: 50, sortOrder: 0 },
+      { id: 4, assetId: 44, url: "/b.webp", width: 100, height: 50, sortOrder: 1 },
+      { id: 1, assetId: 11, url: "/a.webp", width: 100, height: 50, sortOrder: 1 }
+    ],
+    richTextHtml: "<p>正文</p>",
+    blocks: [
+      { type: "richText", html: '<section><img src="/one.jpg"><img src=" /two.jpg "></section>' },
+      { type: "video", assetId: 5, url: " /video.mp4 ", posterUrl: "/poster.jpg", width: 100, height: 50 }
+    ]
+  };
+
+  it("centralizes hero fallback, tag/meta cleanup, banner ordering and semantic content", () => {
+    expect(resolveDetailPagePresentation(dto)).toEqual({
+      hero: {
+        title: "详情名称",
+        typeLabel: "主持人",
+        subtitle: "旧宣传语",
+        badge: "推荐",
+        tags: ["婚礼主持", "控场"],
+        location: "杭州",
+        metaItems: [{ label: "经验", value: "10年" }]
+      },
+      banners: [
+        { id: 1, assetId: 11, url: "/a.webp", width: 100, height: 50, sortOrder: 1 },
+        { id: 4, assetId: 44, url: "/b.webp", width: 100, height: 50, sortOrder: 1 },
+        { id: 3, assetId: 33, url: "/c.webp", width: 100, height: 50, sortOrder: 2 }
+      ],
+      blocks: dto.blocks,
+      hasSemanticContent: true
+    });
+    expect(getDisplayDetailPageBanners(dto.banners).map((banner) => banner.id)).toEqual([1, 4, 3]);
+    expect(collectDetailPageImageUrls(dto.blocks)).toEqual(["/one.jpg", "/two.jpg"]);
+  });
+
+  it("treats empty markup and empty media urls as non-semantic", () => {
+    expect(hasSemanticDetailPageContent([{ type: "richText", html: "<p>&nbsp;<br></p>" }])).toBe(false);
+    expect(hasSemanticDetailPageContent([{ type: "video", assetId: 1, url: " ", posterUrl: null, width: null, height: null }])).toBe(false);
+    expect(hasSemanticDetailPageContent([{ type: "richText", html: '<p><img src="/valid.jpg"></p>' }])).toBe(true);
   });
 });

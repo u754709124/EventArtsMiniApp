@@ -175,7 +175,8 @@ describe("owner adapters and rich media model", () => {
       subtitle: "温暖 · 专业 · 掌控全场",
       badge: "金牌主持",
       tags: ["婚礼主持", "高端晚宴", "控场力强", "普通话一级"],
-      location: "杭州"
+      location: "杭州",
+      metaItems: []
     });
   });
 
@@ -183,8 +184,9 @@ describe("owner adapters and rich media model", () => {
     expect(buildCaseHero(activityCase())).toEqual({
       title: "年度品牌盛典",
       typeLabel: "企业活动",
-      subtitle: undefined,
+      subtitle: "",
       badge: "品牌发布",
+      tags: [],
       location: "上海",
       metaItems: [{ label: "日期", value: "2026-07-11" }]
     });

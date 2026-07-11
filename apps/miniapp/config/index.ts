@@ -5,6 +5,13 @@ const h5PerformanceBudget = {
   maxAssetSize: 620 * 1024,
   maxEntrypointSize: 380 * 1024
 };
+const sharedSourceDir = fileURLToPath(new URL("../../../packages/shared/src", import.meta.url));
+const sharedIndexPath = fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url));
+const sharedPresentationPath = fileURLToPath(new URL("../../../packages/shared/src/detail-page-presentation.ts", import.meta.url));
+
+function includeSharedSource(chain: { module: { rule: (name: string) => { include: { add: (path: string) => void } } } }) {
+  chain.module.rule("script").include.add(sharedSourceDir);
+}
 
 export default defineConfig({
   projectName: "EventArtsMiniApp",
@@ -24,15 +31,20 @@ export default defineConfig({
       enable: false
     }
   },
+  compile: {
+    include: [sharedSourceDir]
+  },
   plugins: ["@tarojs/plugin-framework-react"],
   defineConstants: {
     __TARO_API_BASE_URL__: JSON.stringify(process.env.TARO_APP_API_BASE_URL || "http://127.0.0.1:3001")
   },
   alias: {
-    "@event-arts/shared": fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url))
+    "@event-arts/shared/detail-page-presentation": sharedPresentationPath,
+    "@event-arts/shared": sharedIndexPath
   },
   mini: {
     webpackChain(chain) {
+      includeSharedSource(chain);
       chain.performance.hints(false);
     },
     postcss: {
@@ -49,6 +61,7 @@ export default defineConfig({
     publicPath: "/",
     staticDirectory: "static",
     webpackChain(chain) {
+      includeSharedSource(chain);
       chain.performance.maxAssetSize(h5PerformanceBudget.maxAssetSize);
       chain.performance.maxEntrypointSize(h5PerformanceBudget.maxEntrypointSize);
     },

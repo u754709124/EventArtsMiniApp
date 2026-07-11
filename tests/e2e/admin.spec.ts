@@ -1,10 +1,57 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import sharp from "sharp";
-import { adminApi, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
+import { adminApi, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
 type DetailPageSummary = { id: number; name: string; type: string; typeLabel: string; referenceCount: number };
+type MediaAssetSummary = { id: number; resourceName: string; url: string };
+
+function assetUrl(url: string) {
+  return new URL(url, apiBase).href;
+}
+
+async function expectLivePreviewContract(
+  preview: Locator,
+  expected: {
+    title: string;
+    typeLabel: string;
+    subtitle: string;
+    bannerUrls: string[];
+    blockTypes: Array<"richText" | "video">;
+  }
+) {
+  await expect(preview).toContainText(expected.title);
+  await expect(preview).toContainText(expected.typeLabel);
+  await expect(preview).toContainText(expected.subtitle);
+  await expect(preview.locator(".detail-preview-banner")).toHaveCount(expected.bannerUrls.length);
+  const bannerUrls = await preview.locator(".detail-preview-banner").evaluateAll((items) =>
+    items.map((item) => (item as HTMLImageElement).src)
+  );
+  expect(bannerUrls).toEqual(expected.bannerUrls.map(assetUrl));
+  await expect(preview.locator(".detail-preview-content > section")).toHaveCount(expected.blockTypes.length);
+  const blockTypes = await preview.locator(".detail-preview-content > section").evaluateAll((sections) =>
+    sections.map((section) =>
+      section.classList.contains("detail-preview-video-wrap") ? "video" : "richText"
+    )
+  );
+  expect(blockTypes).toEqual(expected.blockTypes);
+  const geometry = await preview.evaluate((root) => {
+    const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
+    const content = root.querySelector(".detail-preview-content")?.getBoundingClientRect();
+    const firstBlock = root.querySelector(".detail-preview-content > section")?.getBoundingClientRect();
+    if (!hero || !content || !firstBlock) throw new Error("后台详情预览结构缺失");
+    return {
+      heroHeight: hero.height,
+      gutter: Number.parseFloat(getComputedStyle(root.querySelector(".detail-preview-content")!).paddingLeft),
+      overlap: hero.bottom - firstBlock.top
+    };
+  });
+  expect(geometry.heroHeight).toBe(202);
+  expect(geometry.gutter).toBe(12);
+  expect(geometry.overlap).toBeGreaterThanOrEqual(20);
+  expect(geometry.overlap).toBeLessThanOrEqual(22);
+}
 
 async function createUniqueLibraryUploadPng() {
   const seed = Date.now();
@@ -197,7 +244,7 @@ test("详情页管理可创建 BANNER 富文本并被人员引用", async ({ pag
   await chooseDetailMediaFromLibrary(page, page.getByTestId("detail-banner-add"), "banner-linran-close.png");
   await chooseDetailMediaFromLibrary(page, page.getByTestId("detail-banner-add"), "banner-linran-wide.png");
 
-  const media = await adminApi<{ items: Array<{ id: number; resourceName: string }> }>(request, "GET", "/api/admin/media-assets?pageSize=100");
+  const media = await adminApi<{ items: MediaAssetSummary[] }>(request, "GET", "/api/admin/media-assets?pageSize=100");
   const balanced = media.items.find((asset) => asset.resourceName === "banner-linran-balanced.png");
   const close = media.items.find((asset) => asset.resourceName === "banner-linran-close.png");
   const wide = media.items.find((asset) => asset.resourceName === "banner-linran-wide.png");
@@ -215,9 +262,16 @@ test("详情页管理可创建 BANNER 富文本并被人员引用", async ({ pag
   await expect(editor.locator("img[data-media-asset-id]")).toHaveCount(1);
   await expect(editor.locator("video[data-media-asset-id]")).toHaveCount(1);
 
-  await expect(page.getByTestId("detail-designer-live-preview")).toContainText("E2E 共享详情演员");
-  await expect(page.getByTestId("detail-designer-live-preview").locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "contain");
-  await expect(page.getByTestId("detail-designer-live-preview").locator("video")).toHaveCount(1);
+  const livePreview = page.getByTestId("detail-designer-live-preview");
+  await expectLivePreviewContract(livePreview, {
+    title: "E2E 共享详情演员",
+    typeLabel: "演员",
+    subtitle: "E2E 专业舞台表达",
+    bannerUrls: [balanced.url, wide.url, close.url],
+    blockTypes: ["richText", "video"]
+  });
+  await expect(livePreview.locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "cover");
+  await expect(livePreview.locator("video")).toHaveCount(1);
 
   await page.getByTestId("detail-designer-save").click();
   await waitForToast(page, "保存成功");

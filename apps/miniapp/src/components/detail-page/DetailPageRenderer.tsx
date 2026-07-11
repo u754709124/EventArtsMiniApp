@@ -1,9 +1,9 @@
 import { Text, View } from "@tarojs/components";
 import type { ComponentType } from "react";
 import type { DetailPageRendererKey } from "@event-arts/shared";
+import { resolveDetailPagePresentation } from "@event-arts/shared/detail-page-presentation";
 import { BannerRichTextRenderer } from "./BannerRichTextRenderer";
 import { DetailNavigation } from "./DetailNavigation";
-import { hasSemanticDetailContent } from "./model";
 import { RichTextRenderer } from "./RichTextRenderer";
 import type { DetailRendererProps } from "./types";
 import "./detail-page.scss";
@@ -15,6 +15,7 @@ export const detailRendererRegistry = {
 
 export function DetailPageRenderer(props: DetailRendererProps) {
   const Renderer = detailRendererRegistry[props.config.rendererKey];
+  const presentation = resolveDetailPagePresentation(props.config);
   if (!Renderer) {
     return (
       <DetailConfigState
@@ -25,7 +26,7 @@ export function DetailPageRenderer(props: DetailRendererProps) {
       />
     );
   }
-  if (!hasSemanticDetailContent(props.config.blocks)) {
+  if (!presentation.hasSemanticContent) {
     return (
       <DetailConfigState
         {...props}

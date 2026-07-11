@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { DetailPageReferenceIdSchema, type DetailPageConfigDto } from "./detail-pages";
+import { DetailPageReferenceIdSchema, DetailPageConfigDto } from "./detail-pages";
 
 export * from "./detail-pages";
+export * from "./detail-page-presentation";
 
 export const statusValues = ["enabled", "disabled"] as const;
 export const menuTypeValues = ["host", "singer", "actor", "activity_case", "contact"] as const;

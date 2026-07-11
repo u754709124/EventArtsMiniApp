@@ -1,6 +1,7 @@
 import { View } from "@tarojs/components";
 import { useLoad } from "@tarojs/taro";
 import type { DetailPageConfigDto } from "@event-arts/shared";
+import { resolveDetailPagePresentation } from "@event-arts/shared/detail-page-presentation";
 import { DetailRouteView } from "../../components/detail-page/DetailRouteView";
 import { useDetailResource } from "../../components/detail-page/useDetailResource";
 import type { DetailHeroViewModel } from "../../components/detail-page/types";
@@ -22,16 +23,7 @@ function normalizeDetailPage(data: unknown): StandaloneDetailPageData {
 }
 
 function buildStandaloneHero(data: StandaloneDetailPageData): DetailHeroViewModel {
-  const { detailPage } = data;
-  return {
-    title: detailPage.hero.title || detailPage.name,
-    typeLabel: detailPage.hero.typeLabel || detailPage.typeLabel,
-    subtitle: detailPage.hero.subtitle || detailPage.heroSubtitle,
-    badge: detailPage.hero.badge,
-    tags: detailPage.hero.tags,
-    location: detailPage.hero.location,
-    metaItems: detailPage.hero.metaItems
-  };
+  return resolveDetailPagePresentation(data.detailPage).hero;
 }
 
 export default function DetailPage() {
