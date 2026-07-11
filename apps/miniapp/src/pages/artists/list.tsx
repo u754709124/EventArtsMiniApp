@@ -6,6 +6,7 @@ import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { request } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
+import { ignoreNavigationError } from "../../utils/menu-navigation";
 import "./list.scss";
 
 type ArtistListItem = ArtistListItemDto;

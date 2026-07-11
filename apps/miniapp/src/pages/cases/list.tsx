@@ -1,39 +1,92 @@
-import { Text, View } from "@tarojs/components";
-import { useEffect, useState } from "react";
+import { useDidShow } from "@tarojs/taro";
+import { Input, Text, View } from "@tarojs/components";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityCaseListItemDto } from "@event-arts/shared";
-import { generatedAssets } from "../../assets";
-import { AppImage } from "../../components/AppImage";
-import { EmptyState } from "../../components/PageState";
-import { request } from "../../services/api";
-import { navigateToDetailPage } from "../../utils/detail-page-navigation";
+import { CaseCard } from "../../components/CaseCard";
+import { EmptyState, LoadingState } from "../../components/PageState";
+import { getCases } from "../../services/api";
+import { consumePendingCaseMenuFilter } from "../../utils/menu-navigation";
 import "./list.scss";
+
+function normalizeCaseText(value: string) {
+  return value.trim().toLocaleLowerCase("zh-CN");
+}
+
+function matchesCaseKeyword(item: ActivityCaseListItemDto, keyword: string) {
+  const normalized = normalizeCaseText(keyword);
+  if (!normalized) return true;
+  return [item.title, item.category, item.tag, item.summary, item.location]
+    .some((value) => normalizeCaseText(value).includes(normalized));
+}
 
 export default function CaseList() {
   const [items, setItems] = useState<ActivityCaseListItemDto[]>([]);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const requestId = useRef(0);
+  const visibleItems = useMemo(
+    () => items.filter((item) => matchesCaseKeyword(item, query)),
+    [items, query]
+  );
+
+  async function load(nextCategory = category) {
+    const current = requestId.current + 1;
+    requestId.current = current;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const data = await getCases({ category: nextCategory });
+      if (requestId.current !== current) return;
+      setItems(data);
+    } catch {
+      if (requestId.current !== current) return;
+      setFailed(true);
+    } finally {
+      if (requestId.current === current) setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    void request<ActivityCaseListItemDto[]>("/api/client/cases").then(setItems);
-  }, []);
+    void load();
+  }, [category]);
+
+  useDidShow(() => {
+    const pendingFilter = consumePendingCaseMenuFilter();
+    if (!pendingFilter) return;
+    setCategory(pendingFilter.category?.trim() ?? "");
+    setQuery("");
+  });
+
   return (
     <View className="page" data-testid="case-list-page">
       <Text className="home-title">活动案例</Text>
-      {items.length === 0 ? (
-        <EmptyState text="暂无案例" />
+      <View className="case-search" data-testid="case-search-box">
+        <Input
+          className="case-search__input"
+          data-testid="case-search-input"
+          placeholder=""
+          value={query}
+          onInput={(event) => setQuery(String(event.detail.value ?? ""))}
+        />
+        {!query && <Text className="case-search__placeholder">搜索标题、类型、地点</Text>}
+      </View>
+      {loading ? (
+        <LoadingState />
+      ) : failed ? (
+        <View className="case-list-state" data-testid="case-list-error-state">
+          <Text>案例加载失败</Text>
+          <Text className="primary-button" data-testid="case-list-reload" onClick={() => load()}>重新加载</Text>
+        </View>
+      ) : visibleItems.length === 0 ? (
+        <EmptyState text={query.trim() ? "没有匹配的案例" : "暂无案例"} />
       ) : (
-        items.map((item) => {
-          const clickable = Boolean(item.detailPageId);
-          return (
-            <View
-              key={item.id}
-              className={`case-card card ${clickable ? "case-card--clickable" : "case-card--static"}`}
-              data-testid="case-list-card"
-              onClick={clickable ? () => navigateToDetailPage(item.detailPageId) : undefined}
-            >
-              <AppImage className="case-card__image" testid="case-list-image" src={item.coverUrl} fallback={generatedAssets.placeholderCase} />
-              <Text className="case-card__title">{item.title}</Text>
-              <Text>{item.summary}</Text>
-            </View>
-          );
-        })
+        <View className="case-list-results">
+          {visibleItems.map((item: ActivityCaseListItemDto) => (
+            <CaseCard key={item.id} item={item} variant="list" />
+          ))}
+        </View>
       )}
     </View>
   );

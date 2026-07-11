@@ -75,10 +75,10 @@ export const adminMenuConfig: AdminMenuItem[] = [
       },
       {
         key: "menu-items",
-        label: "首页菜单",
+        label: "分类菜单",
         path: "/menu-items",
         matchPaths: ["/menu-items"],
-        breadcrumb: "首页菜单",
+        breadcrumb: "分类菜单",
         testid: "sidebar-menu-items"
       }
     ]

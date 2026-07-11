@@ -385,12 +385,35 @@ describe("client home aggregation", () => {
 describe("client case search", () => {
   it("filters enabled cases by keyword across public card fields", async () => {
     const byLocation = await app.inject({ method: "GET", url: "/api/client/cases?q=%E6%B5%A6%E4%B8%9C" });
+    const byCategory = await app.inject({ method: "GET", url: "/api/client/cases?category=%E6%AD%8C%E6%89%8B%E6%BC%94%E5%87%BA" });
+    const byCategoryAndKeyword = await app.inject({ method: "GET", url: "/api/client/cases?category=%E5%A9%9A%E7%A4%BC%E4%B8%BB%E6%8C%81&q=%E4%BC%81%E4%B8%9A" });
     const blank = await app.inject({ method: "GET", url: "/api/client/cases?q=%20%20" });
 
     expect(byLocation.statusCode).toBe(200);
     expect((byLocation.json().data as Array<{ title: string }>).map((item) => item.title)).toEqual(["企业年会歌手演出"]);
+    expect(byCategory.statusCode).toBe(200);
+    expect((byCategory.json().data as Array<{ title: string }>).map((item) => item.title)).toEqual(["企业年会歌手演出"]);
+    expect(byCategoryAndKeyword.statusCode).toBe(200);
+    expect(byCategoryAndKeyword.json().data).toEqual([]);
     expect(blank.statusCode).toBe(200);
     expect(blank.json().data).toHaveLength(3);
+  });
+});
+
+describe("admin case category options", () => {
+  it("requires admin auth and returns distinct existing case categories", async () => {
+    const unauthorized = await app.inject({ method: "GET", url: "/api/admin/case-categories" });
+    const token = await login();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/case-categories",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.items).toEqual(expect.arrayContaining(["婚礼主持", "歌手演出", "杂技表演"]));
+    expect(new Set(response.json().data.items).size).toBe(response.json().data.items.length);
   });
 });
 

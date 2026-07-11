@@ -180,7 +180,8 @@ export const artistListQuerySchema = z.object({
 });
 
 export const caseListQuerySchema = z.object({
-  q: optionalQueryTextSchema
+  q: optionalQueryTextSchema,
+  category: optionalQueryTextSchema
 });
 
 const activityCaseFields = {
@@ -477,7 +478,7 @@ export const menuConfigSchemaByType = {
     pageSize: z.number().int().positive().default(10)
   }),
   activity_case: z.object({
-    category: z.string().optional(),
+    category: optionalQueryTextSchema,
     onlyFeatured: z.boolean().default(false),
     pageSize: z.number().int().positive().default(10)
   }),

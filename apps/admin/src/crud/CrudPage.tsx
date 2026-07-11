@@ -91,7 +91,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     hydrating.current = true;
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ status: "enabled", sortOrder: 1 });
+    form.setFieldsValue({ status: "enabled", sortOrder: 1, ...config.defaultValues });
     setDrawerOpen(true);
     setDirty(false);
     window.setTimeout(() => {

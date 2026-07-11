@@ -66,6 +66,32 @@ describe("人员/案例详情页后台接入", () => {
     });
   });
 
+  it("活动案例菜单分类为空时保存为未配置筛选", () => {
+    const request = buildCrudSaveRequest(configs["menu-items"], { id: 4 }, {
+      text: "活动案例",
+      iconAssetId: 17,
+      type: "activity_case",
+      configJson: {
+        category: "   ",
+        onlyFeatured: false,
+        pageSize: 10
+      },
+      showOnHome: true,
+      sortOrder: 4,
+      status: "enabled"
+    });
+
+    expect(request.body).toEqual({
+      text: "活动案例",
+      iconAssetId: 17,
+      type: "activity_case",
+      configJson: { category: undefined, onlyFeatured: false, pageSize: 10 },
+      showOnHome: true,
+      sortOrder: 4,
+      status: "enabled"
+    });
+  });
+
   it("创建人员只提交规范化后的 detailPageId，并保留人员列表字段", () => {
     const request = buildCrudSaveRequest(configs.artists, null, {
       name: "林然",

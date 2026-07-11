@@ -1,5 +1,5 @@
 import Taro from "@tarojs/taro";
-import type { ApiResponse, ClientHomeResponse } from "@event-arts/shared";
+import type { ActivityCaseListItemDto, ApiResponse, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
 
 declare const __TARO_API_BASE_URL__: string;
 
@@ -52,6 +52,20 @@ export async function request<T>(url: string, options: Partial<Taro.request.Opti
 
 export function getHome() {
   return request<ClientHomeResponse>("/api/client/home");
+}
+
+export function getMenuItems() {
+  return request<MenuItemDto[]>("/api/client/menu-items");
+}
+
+export function getCases(filters: { q?: string; category?: string } = {}) {
+  const params: string[] = [];
+  const query = filters.q?.trim();
+  const category = filters.category?.trim();
+  if (query) params.push(`q=${encodeURIComponent(query)}`);
+  if (category) params.push(`category=${encodeURIComponent(category)}`);
+  const search = params.join("&");
+  return request<ActivityCaseListItemDto[]>(`/api/client/cases${search ? `?${search}` : ""}`);
 }
 
 export function trackPageView(pagePath: string, scene: string) {

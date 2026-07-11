@@ -181,12 +181,24 @@ test("新增 Banner", async ({ page, request }) => {
   await expect(page.getByRole("row", { name: /E2E Banner/ })).toBeVisible();
 });
 
-test("新增菜单项并验证五种类型和动态配置", async ({ page }) => {
+test("新增菜单项并验证五种类型、首页显示和动态配置", async ({ page, request }) => {
+  const existing = await adminApi<{ items: Array<{ id: number; text: string }> }>(request, "GET", "/api/admin/menu-items");
+  for (const menu of existing.items.filter((item) => item.text === "E2E 联系我们")) {
+    await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
+  }
   await loginAdminUi(page);
   await page.getByTestId("sidebar-menu-items").click();
+  await expect(page.getByText("分类菜单").first()).toBeVisible();
+  const seededRow = page.getByRole("row", { name: /主持人/ }).first();
+  await seededRow.getByTestId("menu-items-edit").click();
+  await expect(page.getByTestId("menu-text")).toHaveValue("主持人");
+  await page.getByTestId("menu-items-save").click();
+  await waitForToast(page, "保存成功");
+
   await page.getByTestId("menu-items-create").click();
   await page.getByTestId("menu-text").fill("E2E 联系我们");
   await chooseMediaFromLibrary(page, "menu-icon-select", /icon-contact\.png/);
+  await expect(page.getByTestId("menu-show-on-home")).toHaveAttribute("aria-checked", "true");
 
   await page.getByTestId("menu-type-select").click();
   for (const label of ["主持人", "歌手", "演员", "活动案例", "联系我们"]) {
@@ -205,9 +217,25 @@ test("新增菜单项并验证五种类型和动态配置", async ({ page }) => 
   await page.getByTestId("menu-config-phone").fill("13800001111");
   await fillNumber(page, "sort-order", 99);
   await selectOption(page, "status-select", "启用");
+  await page.getByTestId("menu-show-on-home").click();
+  await expect(page.getByTestId("menu-show-on-home")).toHaveAttribute("aria-checked", "false");
   await page.getByTestId("menu-items-save").click();
   await waitForToast(page, "保存成功");
-  await expect(page.getByRole("row", { name: /E2E 联系我们/ })).toBeVisible();
+  const row = page.getByRole("row", { name: /E2E 联系我们/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("隐藏");
+
+  const savedList = await adminApi<{ items: Array<{ id: number; text: string; showOnHome: boolean }> }>(request, "GET", "/api/admin/menu-items");
+  const saved = savedList.items.find((item) => item.text === "E2E 联系我们");
+  expect(saved?.showOnHome).toBe(false);
+
+  await row.getByTestId("menu-items-edit").click();
+  await expect(page.getByTestId("menu-show-on-home")).toHaveAttribute("aria-checked", "false");
+  await page.getByTestId("menu-show-on-home").click();
+  await page.getByTestId("menu-items-save").click();
+  await waitForToast(page, "保存成功");
+  const updated = await adminApi<{ showOnHome: boolean }>(request, "GET", `/api/admin/menu-items/${saved?.id}`);
+  expect(updated.showOnHome).toBe(true);
 });
 
 test("人员管理保留列表字段并只选择详情页引用", async ({ page }) => {

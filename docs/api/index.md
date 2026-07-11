@@ -15,13 +15,16 @@
 - `GET /api/client/home`
 - `GET /api/client/announcements/:id`
 - `GET /api/client/detail-pages/:id`
-- `GET /api/client/cases`
+- `GET /api/client/menu-items`
+- `GET /api/client/cases?q=&category=`
 - `GET /api/client/cases/:id`
 - `GET /api/client/artists?type=host|singer|actor&q=&location=&tag=`（`type` 省略时默认为 `host`）
 - `GET /api/client/artists/:id`
 - `POST /api/client/track/page-view`
 
 案例详情的兼容 `media` 从独立详情页派生；小程序以公共 `/api/client/detail-pages/:id` 返回的 `blocks` 为准，不直接渲染兼容列表。
+
+`GET /api/client/home` 只返回 `status=enabled` 且 `showOnHome=true` 的菜单；`GET /api/client/menu-items` 返回全部启用菜单，供分类页展示。菜单字段包含 `showOnHome`，后台仍使用 `/api/admin/menu-items` 管理。`GET /api/client/cases?q=&category=` 的 `q` 会 trim，空白等同未传，并在标题、分类、标签、简介和地点中做大小写不敏感匹配；`category` 会按案例分类精确筛选。
 
 ### Common detail-page response
 
@@ -135,6 +138,7 @@
 - `GET|POST|PUT|DELETE /api/admin/announcements`
 - `GET|POST|PUT|DELETE /api/admin/banners`
 - `GET|POST|PUT|DELETE /api/admin/menu-items`
+- `GET /api/admin/case-categories`
 - `GET|POST|PUT|DELETE /api/admin/cases`
 - `GET|POST|PUT|DELETE /api/admin/artists`
 - `GET /api/admin/detail-pages`
@@ -143,7 +147,7 @@
 - `GET /api/admin/detail-pages/:id/references`
 - `POST /api/admin/detail-pages/preview`
 
-公告、首页 BANNER、人员和案例创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。
+公告、首页 BANNER、人员和案例创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。
 
 ### Detail-page admin input and preview
 

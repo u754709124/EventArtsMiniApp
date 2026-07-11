@@ -5,41 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnnouncementDto, BannerDto, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
+import { CaseCard } from "../../components/CaseCard";
 import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
+import { openMenu } from "../../utils/menu-navigation";
 import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
-
-const menuRoutes: Record<string, string> = {
-  host: "/pages/artists/list?type=host",
-  singer: "/pages/artists/list?type=singer",
-  actor: "/pages/artists/list?type=actor",
-  activity_case: "/pages/cases/list",
-  contact: "/pages/contact/index"
-};
-
-function ignoreNavigationError(result: Promise<unknown> | void) {
-  if (result && typeof result.catch === "function") {
-    result.catch(() => undefined);
-  }
-}
-
-function openMenu(type: string) {
-  const url = menuRoutes[type];
-  if (!url) return;
-  if (type === "activity_case") {
-    ignoreNavigationError(Taro.switchTab({ url }));
-    return;
-  }
-  ignoreNavigationError(Taro.navigateTo({ url }));
-}
-
-function getCaseCity(location: string) {
-  const trimmed = location.trim();
-  if (!trimmed) return "";
-  return trimmed.split(/[・·｜|,，\s/／-]+/)[0] || trimmed;
-}
 
 function useSafeTop() {
   return useMemo(() => {
@@ -355,7 +327,7 @@ function MenuSection({ menus, site }: { menus: MenuItemDto[]; site: ClientHomeRe
             key={menu.id}
             className="menu-item"
             data-testid={`home-menu-${menu.type}`}
-            onClick={() => openMenu(menu.type)}
+            onClick={() => openMenu(menu)}
           >
             <AppImage className="menu-item__icon" src={menu.iconUrl} fallback={site.placeholderIconUrl || generatedAssets.placeholderIcon} />
             <Text>{menu.text}</Text>
@@ -408,61 +380,17 @@ export default function HomePage() {
       <MenuSection menus={data.menus} site={data.site} />
       <View className="section-heading">
         <Text className="section-heading__title">精选案例</Text>
-        <Text className="section-heading__more" onClick={() => ignoreNavigationError(Taro.switchTab({ url: "/pages/cases/list" }))}>
+        <Text className="section-heading__more" onClick={() => openMenu("activity_case")}>
           更多案例 ›
         </Text>
       </View>
       {data.featuredCases.length === 0 ? (
         <View className="case-empty card">暂无精选案例</View>
       ) : (
-        <View className="case-list" data-testid="home-featured-cases">
-          {data.featuredCases.map((item) => {
-            const clickable = Boolean(item.detailPageId);
-            const city = getCaseCity(item.location);
-            return (
-              <View
-                key={item.id}
-                className={`case-card ${clickable ? "case-card--clickable" : "case-card--static"}`}
-                data-testid="home-case-card"
-                onClick={clickable ? () => navigateToDetailPage(item.detailPageId) : undefined}
-              >
-                <View className="case-card__image-wrap">
-                  <AppImage
-                    className="case-card__image"
-                    testid="home-case-image"
-                    src={item.coverUrl}
-                    fallback={data.site.placeholderCaseUrl || generatedAssets.placeholderCase}
-                  />
-                  <Text className="case-card__tag">{item.tag}</Text>
-                </View>
-                <View className="case-card__body">
-                  <Text className="case-card__title">{item.title}</Text>
-                  <Text className="case-card__summary">{item.summary}</Text>
-                  <View className="case-card__meta-row" data-testid="home-case-meta">
-                    <View className="case-card__meta-group case-card__meta-group--date">
-                      <Image
-                        className="case-card__meta-icon"
-                        data-testid="home-case-date-icon"
-                        mode="aspectFit"
-                        src={generatedAssets.iconCaseDate}
-                      />
-                      <Text className="case-card__meta case-card__meta-date">{item.eventDate}</Text>
-                    </View>
-                    <View className="case-card__meta-group case-card__meta-group--location">
-                      <Image
-                        className="case-card__meta-icon"
-                        data-testid="home-case-location-icon"
-                        mode="aspectFit"
-                        src={generatedAssets.iconCaseLocation}
-                      />
-                      <Text className="case-card__meta case-card__meta-location">{city}</Text>
-                    </View>
-                  </View>
-                  <Text className="case-card__button">查看详情 ›</Text>
-                </View>
-              </View>
-            );
-          })}
+        <View className="home-case-list" data-testid="home-featured-cases">
+          {data.featuredCases.map((item: ClientHomeResponse["featuredCases"][number]) => (
+            <CaseCard key={item.id} item={item} variant="compact" sitePlaceholderCaseUrl={data.site.placeholderCaseUrl} />
+          ))}
         </View>
       )}
     </View>

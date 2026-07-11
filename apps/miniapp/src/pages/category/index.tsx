@@ -1,37 +1,64 @@
-import Taro from "@tarojs/taro";
 import { Text, View } from "@tarojs/components";
+import { useEffect, useState } from "react";
+import type { MenuItemDto } from "@event-arts/shared";
+import { generatedAssets } from "../../assets";
+import { AppImage } from "../../components/AppImage";
+import { EmptyState, LoadingState } from "../../components/PageState";
+import { getMenuItems } from "../../services/api";
+import { menuSummaries, openMenu } from "../../utils/menu-navigation";
 import "./index.scss";
 
-const artistEntries = [
-  { type: "host", title: "主持人", summary: "寻找适合活动风格的专业主持人" },
-  { type: "singer", title: "歌手", summary: "发现适合现场氛围的实力歌手" },
-  { type: "actor", title: "演员", summary: "挑选丰富活动体验的演艺人员" }
-] as const;
-
-function openArtist(type: (typeof artistEntries)[number]["type"]) {
-  Taro.navigateTo({ url: `/pages/artists/list?type=${type}` }).catch(() => undefined);
-}
-
 export default function CategoryPage() {
+  const [menus, setMenus] = useState<MenuItemDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setFailed(false);
+    try {
+      setMenus(await getMenuItems());
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
   return (
     <View className="page" data-testid="category-page">
       <Text className="home-title">分类</Text>
-      <View className="category-artist-list">
-        {artistEntries.map((entry) => (
-          <View
-            key={entry.type}
-            className="category-artist-entry"
-            data-testid={`category-artist-${entry.type}`}
-            onClick={() => openArtist(entry.type)}
-          >
-            <View>
-              <Text className="category-artist-entry__title">{entry.title}</Text>
-              <Text className="category-artist-entry__summary">{entry.summary}</Text>
+      {loading ? <LoadingState /> : failed ? (
+        <View className="category-state" data-testid="category-error-state">
+          <Text>分类加载失败</Text>
+          <Text className="primary-button" data-testid="category-reload" onClick={load}>重新加载</Text>
+        </View>
+      ) : menus.length === 0 ? (
+        <EmptyState text="暂无分类" />
+      ) : (
+        <View className="category-artist-list">
+          {menus.map((menu: MenuItemDto) => (
+            <View
+              key={menu.id}
+              className="category-artist-entry"
+              data-testid={`category-menu-${menu.id}`}
+              data-menu-type={menu.type}
+              onClick={() => openMenu(menu)}
+            >
+              <AppImage className="category-artist-entry__icon" src={menu.iconUrl} fallback={generatedAssets.placeholderIcon} />
+              <View className="category-artist-entry__content" data-testid={`category-artist-${menu.type}`}>
+                <Text className="category-artist-entry__title">{menu.text}</Text>
+                <Text className="category-artist-entry__summary">{menuSummaries[menu.type]}</Text>
+              </View>
+              <Text className="category-artist-entry__arrow">›</Text>
             </View>
-            <Text className="category-artist-entry__arrow">›</Text>
-          </View>
-        ))}
-      </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

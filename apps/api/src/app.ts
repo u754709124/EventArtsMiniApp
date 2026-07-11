@@ -335,6 +335,13 @@ function matchesCaseQuery(item: { title: string; category: string; tag: string; 
     .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
 }
 
+function uniqueCaseCategories(items: Array<{ category: string | null }>) {
+  return [...new Set(items
+    .map((item) => item.category?.trim())
+    .filter((category): category is string => Boolean(category)))]
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
 function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
   include: { coverAsset: true; media: { include: { mediaAsset: true } } };
 }>) {
@@ -590,8 +597,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/client/cases", async (request, reply) => {
     const parsed = caseListQuerySchema.safeParse(request.query);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "案例列表查询参数错误");
+    const where: Prisma.ActivityCaseWhereInput = {
+      status: "enabled",
+      ...(parsed.data.category ? { category: parsed.data.category } : {})
+    };
     const items = await prisma.activityCase.findMany({
-      where: { status: "enabled" },
+      where,
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } },
       orderBy: { sortOrder: "asc" }
     });
@@ -1120,6 +1131,14 @@ function registerCrud(
   app.delete("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     await prisma.menuItem.delete({ where: { id: Number((request.params as { id: string }).id) } });
     return reply.send(ok({}));
+  });
+
+  app.get("/api/admin/case-categories", { preHandler: requireAdmin }, async (_request, reply) => {
+    const items = await prisma.activityCase.findMany({
+      select: { category: true },
+      orderBy: { category: "asc" }
+    });
+    return reply.send(ok({ items: uniqueCaseCategories(items) }));
   });
 
   app.get("/api/admin/cases", { preHandler: requireAdmin }, async (_request, reply) => {

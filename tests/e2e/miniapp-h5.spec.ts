@@ -16,7 +16,7 @@ type Announcement = {
 };
 type Banner = { id: number; status: string; detailPageId: number | null };
 type MediaAsset = { id: number; resourceName: string };
-type Menu = { id: number; text: string; status: string };
+type Menu = { id: number; text: string; type: string; status: string; showOnHome: boolean; configJson?: Record<string, unknown> };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
 type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor"; detailPageId: number | null };
 type CaseListItem = { id: number; title: string; detailPageId: number | null };
@@ -820,6 +820,36 @@ test("分类页三个人员入口复用对应的列表路由", async ({ page }) 
   }
 });
 
+test("分类页使用后端菜单，首页隐藏项仍在分类页展示，停用项两处隐藏", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const homeHidden = menus.items.find((item) => item.type === "host");
+  const disabled = menus.items.find((item) => item.type === "actor");
+  if (!homeHidden || !disabled) throw new Error("菜单种子数据缺失");
+
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${homeHidden.id}`, { status: "enabled", showOnHome: false });
+    await adminApi(request, "PUT", `/api/admin/menu-items/${disabled.id}`, { status: "disabled" });
+
+    await openHome(page);
+    await expect(page.getByTestId(`home-menu-${homeHidden.type}`)).toHaveCount(0);
+    await expect(page.getByTestId(`home-menu-${disabled.type}`)).toHaveCount(0);
+    await tap(page, page.getByText("分类").last());
+    await expect(page.getByTestId("category-page")).toBeVisible();
+    await expect(page.getByTestId(`category-menu-${homeHidden.id}`)).toBeVisible();
+    await expect(page.getByTestId(`category-artist-${homeHidden.type}`)).toBeVisible();
+    await expect(page.getByTestId(`category-artist-${disabled.type}`)).toHaveCount(0);
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${homeHidden.id}`, {
+      status: homeHidden.status,
+      showOnHome: homeHidden.showOnHome
+    });
+    await adminApi(request, "PUT", `/api/admin/menu-items/${disabled.id}`, {
+      status: disabled.status,
+      showOnHome: disabled.showOnHome
+    });
+  }
+});
+
 test("人员页作为子页面不渲染底部菜单", async ({ page }) => {
   for (const type of ["host", "singer", "actor"] as const) {
     await openHome(page);
@@ -862,6 +892,50 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
 
   await tap(page, cards.first());
   await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+});
+
+test("案例页支持菜单分类、关键词搜索、单列卡片和详情跳转", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const caseMenu = menus.items.find((item) => item.type === "activity_case");
+  if (!caseMenu) throw new Error("活动案例菜单种子数据缺失");
+
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${caseMenu.id}`, {
+      configJson: { ...(caseMenu.configJson ?? {}), category: "歌手演出" },
+      status: "enabled",
+      showOnHome: true
+    });
+    await openHome(page);
+    await tap(page, page.getByTestId("home-menu-activity_case").first());
+    await expect(page.getByTestId("case-list-page")).toBeVisible();
+    await expect(page.getByTestId("case-search-input")).toBeVisible();
+
+    await expect(page.getByTestId("case-list-card")).toHaveCount(1);
+    await expect(page.getByTestId("case-list-card").first()).toContainText("企业年会歌手演出");
+
+    const searchInput = page.getByTestId("case-search-input").locator("input");
+    await searchInput.fill("浦东");
+    await expect(page.getByTestId("case-list-card")).toHaveCount(1);
+    await expect(page.getByTestId("case-list-card").first()).toContainText("企业年会歌手演出");
+    await searchInput.fill("婚礼");
+    await expect(page.getByText("没有匹配的案例")).toBeVisible();
+    await searchInput.fill("");
+    await expect(page.getByTestId("case-list-card")).toHaveCount(1);
+    await expect(page.getByTestId("case-list-card").first().locator(".case-card__button")).toHaveCount(0);
+    const cardWidth = await page.getByTestId("case-list-card").first().evaluate((node) => node.getBoundingClientRect().width);
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+    expect(cardWidth).toBeGreaterThan(viewportWidth * 0.9);
+    await expect(page.getByTestId("case-list-meta").first()).toBeVisible();
+
+    await tap(page, page.getByTestId("case-list-card").first());
+    await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${caseMenu.id}`, {
+      configJson: caseMenu.configJson ?? {},
+      status: caseMenu.status,
+      showOnHome: caseMenu.showOnHome
+    });
+  }
 });
 
 test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", async ({ page, request }) => {

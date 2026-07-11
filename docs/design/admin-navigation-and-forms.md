@@ -7,7 +7,7 @@ breadcrumbs, page titles, and sidebar `data-testid` values.
 ## Navigation
 
 - 数据看板
-- 首页运营: 首页配置, 公告管理, 首页轮播, 首页菜单
+- 首页运营: 首页配置, 公告管理, 首页轮播, 分类菜单
 - 内容管理: 人员管理, 案例管理, 详情页管理
 - 素材管理: 素材库
 
@@ -25,3 +25,6 @@ admin endpoints.
 
 Status fields show Chinese enabled/disabled labels. Duration fields are entered
 in seconds in the admin UI while API payloads continue to use milliseconds.
+The category menu form keeps the `/menu-items` route and adds a home-display
+switch backed by `showOnHome`; disabling the switch hides the item only from
+the home page, while status disabled hides it from all client pages.

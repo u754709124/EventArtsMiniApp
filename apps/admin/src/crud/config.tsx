@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import type React from "react";
-import { DatePicker, Form, Input, InputNumber, Select, Switch, Tag } from "antd";
+import { useEffect, useState } from "react";
+import { AutoComplete, DatePicker, Form, Input, InputNumber, Select, Switch, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   artistTypeLabels,
@@ -12,6 +13,7 @@ import { MediaField } from "../media/MediaField";
 import { DetailPageReferenceField } from "../detail-pages/DetailPageReferenceField";
 import { DurationSecondsField, SortField, StatusSwitchField } from "../forms/common-fields";
 import { normalizeArtistFormTags, omitBusinessDetailFields, type AnyRecord } from "../forms/form-utils";
+import { request } from "../api";
 
 export type CrudConfig = {
   title: string;
@@ -74,6 +76,62 @@ function detailSummaryColumn(): ColumnsType<AnyRecord>[number] {
   };
 }
 
+type CaseCategoryListResponse = {
+  items: string[];
+};
+
+function useCaseCategoryOptions() {
+  const [options, setOptions] = useState<Array<{ value: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void request<CaseCategoryListResponse>("/api/admin/case-categories")
+      .then((data) => {
+        if (!active) return;
+        const categories = [...new Set(data.items
+          .map((item) => item.trim())
+          .filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "zh-CN"));
+        setOptions(categories.map((value) => ({ value })));
+      })
+      .catch(() => {
+        if (active) setOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return options;
+}
+
+function MenuCaseCategorySelect({ testid }: { testid: string }) {
+  const options = useCaseCategoryOptions();
+  return (
+    <Select
+      allowClear
+      showSearch
+      data-testid={testid}
+      options={options}
+      optionFilterProp="value"
+      placeholder="选择已有案例分类"
+    />
+  );
+}
+
+function CaseCategoryAutoComplete({ testid }: { testid: string }) {
+  const options = useCaseCategoryOptions();
+  return (
+    <AutoComplete
+      allowClear
+      options={options}
+      filterOption={(inputValue, option) =>
+        String(option?.value ?? "").toLocaleLowerCase("zh-CN").includes(inputValue.trim().toLocaleLowerCase("zh-CN"))
+      }
+    >
+      <Input data-testid={testid} />
+    </AutoComplete>
+  );
+}
+
 function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
   const type = Form.useWatch("type", form) as MenuType | undefined;
   if (!type) return null;
@@ -99,7 +157,7 @@ function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }
     return (
       <>
         <Form.Item label="分类" name={["configJson", "category"]}>
-          <Input data-testid="menu-config-category" />
+          <MenuCaseCategorySelect testid="menu-config-category" />
         </Form.Item>
         <Form.Item label="只看精选" name={["configJson", "onlyFeatured"]} valuePropName="checked" initialValue={false}>
           <Switch data-testid="menu-config-only-featured" />
@@ -168,7 +226,7 @@ function CaseBasicFields() {
         <Input data-testid="case-title" />
       </Form.Item>
       <Form.Item label="分类" name="category" rules={[{ required: true, message: "请输入分类" }]}>
-        <Input data-testid="case-category" />
+        <CaseCategoryAutoComplete testid="case-category" />
       </Form.Item>
       <Form.Item label="标签" name="tag" rules={[{ required: true, message: "请输入标签" }]}>
         <Input data-testid="case-tag" />

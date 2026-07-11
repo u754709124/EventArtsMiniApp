@@ -9,14 +9,26 @@
   display: flex;
   width: 710rpx;
   min-height: 116rpx;
-  padding: 24rpx;
+  padding: 22rpx 24rpx;
   align-items: center;
-  justify-content: space-between;
+  gap: 18rpx;
   border: 1rpx solid #f0ebe5;
   border-radius: 16rpx;
   background: #fff;
   box-shadow: 0 8rpx 20rpx rgba(92, 64, 35, 0.06);
   box-sizing: border-box;
+}
+
+.category-artist-entry__icon {
+  width: 68rpx;
+  height: 68rpx;
+  flex: 0 0 68rpx;
+  border-radius: 50%;
+}
+
+.category-artist-entry__content {
+  min-width: 0;
+  flex: 1;
 }
 
 .category-artist-entry__title,
@@ -40,4 +52,17 @@
   color: #c77b38;
   font-size: 42rpx;
   line-height: 1;
+  flex: 0 0 auto;
+}
+
+.category-state {
+  width: 710rpx;
+  min-height: 180rpx;
+  margin-top: 28rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20rpx;
+  color: #8a7f73;
 }

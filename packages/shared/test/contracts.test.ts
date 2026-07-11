@@ -10,6 +10,7 @@ import {
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
+  menuConfigSchemaByType,
   menuTypeValues,
   normalizeArtistTags,
   normalizeResourceName,
@@ -48,6 +49,10 @@ describe("shared contracts", () => {
     expect(MenuItemUpdateRequestSchema.parse({ text: "主持人" })).toEqual({ text: "主持人" });
     expect(() => MenuItemUpdateRequestSchema.parse({ type: "bad" })).toThrow();
     expect(() => MenuItemUpdateRequestSchema.parse({ text: "主持人", iconUrl: "/uploads/icon.png" })).toThrow();
+    expect(menuConfigSchemaByType.activity_case.parse({ category: " 婚礼主持 ", onlyFeatured: true, pageSize: 6 }))
+      .toEqual({ category: "婚礼主持", onlyFeatured: true, pageSize: 6 });
+    expect(menuConfigSchemaByType.activity_case.parse({ category: "   ", onlyFeatured: false, pageSize: 6 }))
+      .toEqual({ category: undefined, onlyFeatured: false, pageSize: 6 });
   });
 
   it("normalizes resource names for global case-insensitive uniqueness", () => {
@@ -184,8 +189,8 @@ describe("shared contracts", () => {
       q: "林",
       tag: "婚礼主持"
     });
-    expect(caseListQuerySchema.parse({ q: " 年会 " })).toEqual({ q: "年会" });
-    expect(caseListQuerySchema.parse({ q: "   " })).toEqual({ q: undefined });
+    expect(caseListQuerySchema.parse({ q: " 年会 ", category: " 歌手演出 " })).toEqual({ q: "年会", category: "歌手演出" });
+    expect(caseListQuerySchema.parse({ q: "   ", category: "   " })).toEqual({ q: undefined, category: undefined });
     expect(() => artistListQuerySchema.parse({ type: "invalid" })).toThrow();
   });
 });
