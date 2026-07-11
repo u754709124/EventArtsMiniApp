@@ -4,6 +4,9 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 2000
+  },
   resolve: {
     alias: {
       "@event-arts/shared": fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url))

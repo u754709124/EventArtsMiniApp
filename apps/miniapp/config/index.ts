@@ -1,6 +1,11 @@
 import { defineConfig } from "@tarojs/cli";
 import { fileURLToPath, URL } from "node:url";
 
+const h5PerformanceBudget = {
+  maxAssetSize: 620 * 1024,
+  maxEntrypointSize: 380 * 1024
+};
+
 export default defineConfig({
   projectName: "EventArtsMiniApp",
   date: "2026-07-09",
@@ -27,6 +32,9 @@ export default defineConfig({
     "@event-arts/shared": fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url))
   },
   mini: {
+    webpackChain(chain) {
+      chain.performance.hints(false);
+    },
     postcss: {
       pxtransform: {
         enable: true,
@@ -40,6 +48,10 @@ export default defineConfig({
   h5: {
     publicPath: "/",
     staticDirectory: "static",
+    webpackChain(chain) {
+      chain.performance.maxAssetSize(h5PerformanceBudget.maxAssetSize);
+      chain.performance.maxEntrypointSize(h5PerformanceBudget.maxEntrypointSize);
+    },
     devServer: {
       host: "127.0.0.1",
       port: 10086

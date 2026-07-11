@@ -88,9 +88,9 @@
 - `pnpm test`：通过；shared 2 files / 22 tests，miniapp 1 file / 13 tests，admin 9 files / 36 tests，api 9 files / 83 tests。
 - `pnpm e2e`：通过；35/35 Playwright tests passed，其中 admin 12/12，miniapp-h5 23/23。
 - `pnpm --filter api build`：通过，Prisma generate + `tsc --noEmit`。
-- `pnpm --filter admin build`：通过；仅 Vite 大 chunk warning。
-- `pnpm --filter miniapp build:h5`：通过；仅既有 Webpack asset/entrypoint size warnings。
-- `pnpm build:weapp`：通过；仅既有大图 size warning 与 no async chunks warning。
+- `pnpm --filter admin build`：通过，已无 Vite 大 chunk warning。
+- `pnpm --filter miniapp build:h5`：通过，已无 Webpack asset/entrypoint size warnings。
+- `pnpm build:weapp`：通过，已无大图 size warning 与 no async chunks warning。
 - `pnpm release:check`：通过；串行完成 lint、test、E2E 35/35、API build、Admin build、H5 build、WeApp build。
 - focused admin E2E：`pnpm e2e --project=admin --grep "人员 BANNER 富文本"`、`pnpm e2e --project=admin --grep "表单本地上传"`、`pnpm e2e --project=admin --grep "资源库上传"` 均通过。
 - focused miniapp E2E：`pnpm e2e --project=miniapp-h5 --grep "人员 BANNER 富文本详情"` 与 `pnpm e2e --project=miniapp-h5 --grep "人员单富文本详情"` 均通过。

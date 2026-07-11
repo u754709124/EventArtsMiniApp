@@ -46,8 +46,8 @@ pnpm build:weapp
 - `pnpm test`：通过；sandbox 内 Prisma engine cache 写入 `~/.cache/prisma` 被拒，使用提升权限运行后通过，shared 6 个测试、admin 3 个测试、api 34 个测试全部通过。
 - `pnpm e2e`：通过；Admin 与 Miniapp H5 共 21 个 Playwright 场景全部通过，包含统一资源库、MD5 复用、内容寻址 seed、首页顶部/Banner 几何与精选案例卡片高度回归。
 - `pnpm --filter api build`：通过；包含 Prisma Client 生成和 TypeScript noEmit。
-- `pnpm --filter admin build`：通过；Vite 构建成功，有 Ant Design 后台首包大 chunk 警告。
-- `pnpm --filter miniapp build:h5`：通过；Taro H5 构建成功，有参考图生成大图资源体积警告。
+- `pnpm --filter admin build`：通过；后续已配置 chunk warning budget，当前 Vite 构建无 warning 输出。
+- `pnpm --filter miniapp build:h5`：通过；后续已压缩参考图生成资源并配置 performance budget，当前 Taro H5 构建无 warning 输出。
 - `pnpm build:weapp`：通过；微信小程序端产物已生成到 `apps/miniapp/dist`。
 - 首页视觉校准后复跑：`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 均通过；H5 截图已更新，Playwright 总数为 20。
 - `.env.example` 已修正为 `VITE_API_BASE_URL` 与 `TARO_APP_API_BASE_URL`。
@@ -104,6 +104,6 @@ bc22e21
 - 生产构建脚本使用 Taro 官方 `--no-check`，避免原生 doctor 依赖远程配置 schema；项目配置继续由 TypeScript、lint、自动化测试及实际 H5/weapp 编译验证。
 - Codex sandbox 不能写 Prisma 默认用户缓存目录，涉及 `prisma generate` 的命令在本环境使用提升权限运行；普通本机开发环境通常不需要。
 - 本轮在受限 sandbox 内直接执行 Taro H5 构建时，macOS `SystemConfiguration` 服务访问被拒，依赖运行时输出 `Attempted to create a NULL object` 后不再推进。以提升权限重跑同一构建及 `pnpm e2e` 后均通过；这是当前自动化宿主限制，不影响项目代码或本机开发命令。
-- Taro H5/weapp 构建提示 `banner-default.png` 和 `placeholder-banner.png` 超过推荐体积；这些图片来自参考图切图，适合一期测试和视觉还原，生产建议替换为压缩后的正式素材或 CDN 资源。
+- Taro H5/weapp 早期曾提示 `banner-default.png` 和 `placeholder-banner.png` 超过推荐体积；后续已将切图脚本输出改为 palette PNG，保留尺寸与资源名，同时消除构建 warning。
 - Admin 构建提示首包 chunk 超过 Vite 默认建议值；一期后台页面集中在单入口，后续可按路由拆分 dynamic import。
 - 微信端已完成构建产物生成，仍需在微信开发者工具中进行真实设备预览和合法域名校验。

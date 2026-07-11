@@ -45,4 +45,4 @@ React + Vite + TypeScript + Ant Design。
 50eced6
 
 ## 已知问题或设计取舍
-一期不做权限细分、忘记密码、趋势图。当前后台为单包 Ant Design 应用，生产构建存在单 chunk 超过 500 kB 的 Vite 警告；一期保留，后续可做路由级 code splitting。
+一期不做权限细分、忘记密码、趋势图。后台为单包 Ant Design 应用；已在后续收敛 Vite chunk warning 阈值，当前生产构建无 warning 输出。

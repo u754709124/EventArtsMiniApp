@@ -210,7 +210,11 @@ async function renderAsset(spec: AssetSpec): Promise<ManifestEntry> {
   }
 
   const outputPath = path.join(outputDir, spec.filename);
-  await image.png({ compressionLevel: 9 }).toFile(outputPath);
+  const pngOptions =
+    spec.kind === "photo" || spec.kind === "placeholder"
+      ? { compressionLevel: 9 as const, palette: true, colors: 128, effort: 10 }
+      : { compressionLevel: 9 as const };
+  await image.png(pngOptions).toFile(outputPath);
 
   const metadata = await sharp(outputPath).metadata();
   const actual = { width: metadata.width ?? 0, height: metadata.height ?? 0 };

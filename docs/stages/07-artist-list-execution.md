@@ -79,8 +79,8 @@ pnpm assets:slice:artists
 - `pnpm lint`：退出码 `0`。
 - `pnpm test`：退出码 `0`；Shared `8`、API `41`、Admin `3` 个 Vitest 用例全部通过，Miniapp package 没有本地 Vitest 文件。
 - `pnpm e2e`：退出码 `0`，28 项 Playwright 用例全部通过；其中覆盖后台人员新增/编辑回填、三类入口、搜索、筛选、详情、无页面级底栏和截图/diff。
-- `pnpm --filter api build`、`pnpm --filter admin build`：退出码均为 `0`。Admin 仍有既有 bundle size 警告。
-- `pnpm --filter miniapp build:h5`、`pnpm build:weapp`：退出码均为 `0`。两端仅报告资源体积及异步分包建议警告。
+- `pnpm --filter api build`、`pnpm --filter admin build`：退出码均为 `0`。后续已配置 Admin chunk warning budget，当前无 warning 输出。
+- `pnpm --filter miniapp build:h5`、`pnpm build:weapp`：退出码均为 `0`。后续已压缩生成资源并配置 Taro performance budget，当前无 warning 输出。
 - `pnpm release:check`：退出码 `0`，依次执行 lint、unit、E2E、API/Admin/H5/微信构建。
 - 为兼容首次切出的旧截图资源，动态徽标已改为完整覆盖该资源中旧徽标的投影范围，且背景不透明；不会把旧标签文字透到实时徽标下方。
 - 微信构建曾因页面运行时导入共享 TypeScript 源码而报 `ModuleParseError`；根因确认后将小程序改为仅导入共享类型、在页面定义等价的只读文案映射，随后微信构建退出码为 `0`。
