@@ -1,5 +1,5 @@
 import { Image } from "@tarojs/components";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   src: string;
@@ -11,6 +11,7 @@ type Props = {
 
 export function AppImage({ src, fallback, className, mode = "aspectFill", testid }: Props) {
   const [current, setCurrent] = useState(src || fallback);
+  useEffect(() => setCurrent(src || fallback), [fallback, src]);
   return (
     <Image
       className={className}
@@ -18,6 +19,7 @@ export function AppImage({ src, fallback, className, mode = "aspectFill", testid
       data-testid={testid}
       mode={mode}
       src={current || fallback}
+      aria-label="详情图片"
       onError={() => setCurrent(fallback)}
     />
   );
