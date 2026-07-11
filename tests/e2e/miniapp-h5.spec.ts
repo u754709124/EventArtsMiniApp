@@ -14,6 +14,7 @@ type Announcement = {
   status: string;
 };
 type Banner = { id: number; status: string };
+type MediaAsset = { id: number; resourceName: string };
 type Menu = { id: number; text: string; status: string };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
 type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor" };
@@ -74,14 +75,37 @@ async function setBannerStatus(request: APIRequestContext, status: "enabled" | "
   );
 }
 
-async function createAnnouncement(request: APIRequestContext, summary: string, sortOrder: number) {
+async function createAnnouncement(request: APIRequestContext, summary: string, sortOrder: number, displayDurationMs = 300) {
   return adminApi<Announcement>(request, "POST", "/api/admin/announcements", {
     summary,
     content: `${summary} 内容`,
-    displayDurationMs: 300,
+    displayDurationMs,
     sortOrder,
     status: "enabled"
   });
+}
+
+async function createBanner(
+  request: APIRequestContext,
+  input: { title: string; imageAssetId: number; sortOrder: number; switchDurationMs: number; linkTarget?: string }
+) {
+  return adminApi<Banner>(request, "POST", "/api/admin/banners", {
+    title: input.title,
+    imageAssetId: input.imageAssetId,
+    linkType: input.linkTarget ? "announcement" : "none",
+    linkTarget: input.linkTarget ?? null,
+    switchDurationMs: input.switchDurationMs,
+    sortOrder: input.sortOrder,
+    status: "enabled"
+  });
+}
+
+async function resolveHomeBannerAssets(request: APIRequestContext) {
+  const data = await adminApi<AdminList<MediaAsset>>(request, "GET", "/api/admin/media-assets?mediaType=image&pageSize=100");
+  const names = ["banner-default.png", "placeholder-banner.png"];
+  const assets = names.map((name) => data.items.find((item) => item.resourceName === name));
+  if (assets.some((asset) => !asset)) throw new Error("首页 BANNER 种子资源缺失");
+  return assets as [MediaAsset, MediaAsset];
 }
 
 async function prepareDesignReviewData(request: APIRequestContext) {
@@ -140,6 +164,28 @@ async function clearDevOverlay(page: Page) {
 async function tap(page: Page, locator: Locator) {
   await clearDevOverlay(page);
   await locator.click({ force: true });
+}
+
+async function swipeHorizontally(page: Page, locator: Locator, direction: "left" | "right") {
+  await clearDevOverlay(page);
+  const box = await locator.boundingBox();
+  if (!box) throw new Error("待滑动元素不可见");
+  const client = await page.context().newCDPSession(page);
+  const startX = box.x + box.width * (direction === "left" ? 0.78 : 0.22);
+  const endX = box.x + box.width * (direction === "left" ? 0.22 : 0.78);
+  const y = box.y + box.height / 2;
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: startX, y }]
+  });
+  for (let step = 1; step <= 6; step += 1) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: startX + ((endX - startX) * step) / 6, y }]
+    });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await client.detach();
 }
 
 async function resolveDetailFixtures(request: APIRequestContext): Promise<DetailFixtures> {
@@ -378,16 +424,76 @@ test("无公告时公告栏隐藏", async ({ page, request }) => {
   await expect(page.getByTestId("home-announcement")).toHaveCount(0);
 });
 
-test("有公告时展示公告栏，多公告有切换动画类名", async ({ page, request }) => {
+test("多条公告按相同时长持续自动循环切换", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
-  await createAnnouncement(request, "E2E 第一条公告", 100);
-  await createAnnouncement(request, "E2E 第二条公告", 101);
+  await createAnnouncement(request, "E2E 第一条公告", 100, 700);
+  await createAnnouncement(request, "E2E 第二条公告", 101, 700);
   await openHome(page);
   await expect(page.getByTestId("home-announcement")).toBeVisible();
-  await expect(page.getByTestId("home-announcement")).toContainText(
-    /E2E 第一条公告|E2E 第二条公告/
-  );
-  await expect(page.getByTestId("home-announcement")).toHaveClass(/notice--flip/);
+  await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "0");
+  await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "1", { timeout: 2500 });
+  await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "0", { timeout: 2500 });
+});
+
+test("公告与 BANNER 支持双向手动滑动且不会误触跳转", async ({ page, request }) => {
+  await setAnnouncementStatus(request, "disabled");
+  await setBannerStatus(request, "disabled");
+  const firstAnnouncement = await createAnnouncement(request, "E2E 手滑公告一", 700, 60_000);
+  await createAnnouncement(request, "E2E 手滑公告二", 701, 60_000);
+  const [firstAsset, secondAsset] = await resolveHomeBannerAssets(request);
+  await createBanner(request, {
+    title: "E2E 手滑 BANNER 一",
+    imageAssetId: firstAsset.id,
+    sortOrder: 700,
+    switchDurationMs: 60_000,
+    linkTarget: String(firstAnnouncement.id)
+  });
+  await createBanner(request, {
+    title: "E2E 手滑 BANNER 二",
+    imageAssetId: secondAsset.id,
+    sortOrder: 701,
+    switchDurationMs: 60_000,
+    linkTarget: String(firstAnnouncement.id)
+  });
+  await openHome(page);
+
+  const announcement = page.getByTestId("home-announcement");
+  await swipeHorizontally(page, announcement, "left");
+  await expect(announcement).toHaveAttribute("data-current-index", "1");
+  await expect(page).toHaveURL(/#\/pages\/index\/index$/);
+  await swipeHorizontally(page, announcement, "right");
+  await expect(announcement).toHaveAttribute("data-current-index", "0");
+  await expect(page).toHaveURL(/#\/pages\/index\/index$/);
+
+  const banner = page.getByTestId("home-banner");
+  const bannerState = page.getByTestId("home-banner-state");
+  await expect(banner.locator(".swiper-pagination-bullet")).toHaveCount(2);
+  await swipeHorizontally(page, banner, "left");
+  await expect(bannerState).toHaveAttribute("data-current-index", "1");
+  await expect(banner.locator(".swiper-pagination-bullet-active")).toHaveCount(1);
+  await expect(page).toHaveURL(/#\/pages\/index\/index$/);
+  await swipeHorizontally(page, banner, "right");
+  await expect(bannerState).toHaveAttribute("data-current-index", "0");
+  await expect(page).toHaveURL(/#\/pages\/index\/index$/);
+});
+
+test("单条公告和 BANNER 保持静止且公告点击仍可进入详情", async ({ page, request }) => {
+  await setAnnouncementStatus(request, "disabled");
+  await setBannerStatus(request, "disabled");
+  const announcement = await createAnnouncement(request, "E2E 单条公告", 800, 400);
+  const [bannerAsset] = await resolveHomeBannerAssets(request);
+  await createBanner(request, {
+    title: "E2E 单条 BANNER",
+    imageAssetId: bannerAsset.id,
+    sortOrder: 800,
+    switchDurationMs: 400
+  });
+  await openHome(page);
+  await page.waitForTimeout(1200);
+  await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "0");
+  await expect(page.getByTestId("home-banner-state")).toHaveAttribute("data-current-index", "0");
+  await tap(page, page.locator(".notice__slide").first());
+  await expect(page).toHaveURL(new RegExp(`/pages/announcement/detail\\?id=${announcement.id}$`));
 });
 
 test("无 Banner 时显示默认图且有指示点", async ({ page, request }) => {
@@ -398,7 +504,7 @@ test("无 Banner 时显示默认图且有指示点", async ({ page, request }) =
     "data-current-src",
     /\/uploads\/seed\/[a-f\d]{32}\.png$/
   );
-  await expect(page.getByTestId("home-banner-dots")).toContainText("•");
+  await expect(page.getByTestId("home-banner").locator(".swiper-pagination-bullet")).toHaveCount(1);
 });
 
 test("人员菜单进入统一列表页，并按类型展示固定双列卡片", async ({ page }) => {

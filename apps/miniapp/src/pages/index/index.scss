@@ -19,27 +19,24 @@
 }
 
 .notice {
-  min-height: 56rpx;
-  padding: 0 22rpx;
+  height: 56rpx;
   margin-bottom: 12rpx;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
   background: #fff3e8;
   overflow: hidden;
 }
 
-.notice--flip {
-  animation: flipNotice 280ms ease-out;
+.notice__swiper {
+  width: 710rpx;
+  height: 56rpx;
 }
 
-@keyframes flipNotice {
-  from {
-    transform: rotateX(90deg);
-  }
-  to {
-    transform: rotateX(0);
-  }
+.notice__slide {
+  box-sizing: border-box;
+  height: 56rpx;
+  padding: 0 22rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
 }
 
 .notice__icon {
@@ -56,11 +53,13 @@
 
 .notice__content {
   flex: 1;
+  min-width: 0;
   color: #1f1f1f;
   font-size: 24rpx;
   line-height: 1.35;
   white-space: nowrap;
-  overflow-x: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .notice__arrow {
@@ -87,25 +86,9 @@
   height: 290rpx;
 }
 
-.banner-dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 12rpx;
-  display: flex;
-  justify-content: center;
-  gap: 8rpx;
-  pointer-events: none;
-}
-
-.banner-dot {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 30rpx;
-  line-height: 1;
-}
-
-.banner-dot--active {
-  color: #ffffff;
+.banner__slide {
+  width: 710rpx;
+  height: 290rpx;
 }
 
 .menu-card {

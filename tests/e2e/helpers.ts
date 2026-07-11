@@ -102,7 +102,11 @@ export async function chooseMediaFromLibrary(
   const search = modal.getByLabel("搜索资源");
   await search.fill(mediaSearchText(resourceName));
   await search.press("Enter");
-  await modal.getByRole("button", { name: resourceName }).click();
+  const option = modal.getByRole("button", { name: resourceName });
+  if (mediaType === "image") {
+    await expect(option.locator("img")).toHaveCSS("object-fit", "contain");
+  }
+  await option.click();
   if (multiple) await expect(modal).toBeHidden();
   else await expect(page.getByTestId(`${testid}-preview`)).toBeVisible();
 }

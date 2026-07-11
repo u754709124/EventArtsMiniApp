@@ -76,7 +76,8 @@
   display: none;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #cbb9a8;
 }
 
 .detail-preview-banner.is-current {

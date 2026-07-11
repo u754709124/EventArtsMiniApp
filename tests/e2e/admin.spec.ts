@@ -63,12 +63,17 @@ test("新增公告并修改状态", async ({ page }) => {
   await expect(page.getByRole("row", { name: /E2E 公告/ })).toContainText("disabled");
 });
 
-test("新增 Banner", async ({ page }) => {
+test("新增 Banner", async ({ page, request }) => {
+  const existing = await adminApi<{ items: Array<{ id: number; title: string }> }>(request, "GET", "/api/admin/banners");
+  for (const banner of existing.items.filter((item) => item.title === "E2E Banner")) {
+    await adminApi(request, "DELETE", `/api/admin/banners/${banner.id}`);
+  }
   await loginAdminUi(page);
   await page.getByTestId("sidebar-banners").click();
   await page.getByTestId("banners-create").click();
   await page.getByTestId("banner-title").fill("E2E Banner");
   await chooseMediaFromLibrary(page, "banner-image-select", /banner-default\.png/);
+  await expect(page.getByTestId("banner-image-select-preview").locator("img")).toHaveCSS("object-fit", "contain");
   await page.getByTestId("banner-image-select-preview").hover();
   await expect(page.getByText("banner-default.png").last()).toBeVisible();
   await selectOption(page, "banner-link-type", "none");
@@ -164,6 +169,7 @@ test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换
   await page.getByRole("button", { name: "将 banner-linran-wide.png 上移" }).click();
   await expect(page.getByTestId(`detail-banner-order-${wide.id}`)).toHaveText("第 2 张");
   await expect(page.getByTestId(`detail-banner-order-${close.id}`)).toHaveText("第 3 张");
+  await expect(page.getByTestId(`detail-banner-item-${balanced.id}`).locator("img")).toHaveCSS("object-fit", "contain");
 
   const editor = page.getByRole("textbox", { name: "详情页富文本内容" });
   await editor.fill("E2E 人员详情正文");
@@ -176,6 +182,7 @@ test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换
   const preview = page.getByRole("dialog", { name: "移动端安全预览" });
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("E2E 共享详情演员");
+  await expect(preview.locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "contain");
   await expect(preview.locator("video")).toHaveCount(1);
   await preview.getByRole("button", { name: "关闭预览" }).click();
 
@@ -195,6 +202,7 @@ test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换
   await expect(row).toContainText("杭州 E2E");
   await expect(row).toContainText("测试主持");
   await expect(row).toContainText("BANNER + 富文本");
+  await expect(row.locator("img.artist-cover-thumb")).toHaveCSS("object-fit", "contain");
   await row.getByTestId("artists-edit").click();
   await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(3);
   await expect(page.getByTestId(`detail-banner-order-${balanced.id}`)).toHaveText("第 1 张");
@@ -310,6 +318,7 @@ test("表单本地上传在客户端拦截错误尺寸，引用资源不可删�
   const mediaSearch = page.getByTestId("media-search").locator("input");
   await mediaSearch.fill("placeholder-icon.png");
   await mediaSearch.press("Enter");
+  await expect(page.getByRole("row", { name: /placeholder-icon\.png/ }).locator("img.media-thumb")).toHaveCSS("object-fit", "contain");
   await expect(page.getByTestId(`media-delete-${referencedAssetId}`)).toBeDisabled();
 });
 

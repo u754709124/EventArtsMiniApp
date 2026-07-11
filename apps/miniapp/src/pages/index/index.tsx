@@ -1,6 +1,7 @@
 import Taro from "@tarojs/taro";
 import { Swiper, SwiperItem, Text, View } from "@tarojs/components";
-import { useEffect, useMemo, useState } from "react";
+import type { ITouchEvent } from "@tarojs/components/types";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnnouncementDto, BannerDto, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
@@ -45,34 +46,86 @@ function useSafeTop() {
   }, []);
 }
 
+const swipeThreshold = 8;
+
+function useSwipeClickGuard() {
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+
+  function onTouchStart(event: ITouchEvent) {
+    const touch = event.touches[0];
+    start.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    suppressClick.current = false;
+  }
+
+  function onTouchMove(event: ITouchEvent) {
+    const touch = event.touches[0];
+    if (!touch || !start.current) return;
+    const deltaX = Math.abs(touch.clientX - start.current.x);
+    const deltaY = Math.abs(touch.clientY - start.current.y);
+    if (deltaX > swipeThreshold && deltaX > deltaY) suppressClick.current = true;
+  }
+
+  function onTouchEnd() {
+    start.current = null;
+  }
+
+  function allowClick() {
+    if (!suppressClick.current) return true;
+    suppressClick.current = false;
+    return false;
+  }
+
+  return { allowClick, onTouchEnd, onTouchMove, onTouchStart };
+}
+
 function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }) {
-  const [index, setIndex] = useState(0);
-  const current = announcements[index];
+  const [current, setCurrent] = useState(0);
+  const swipeGuard = useSwipeClickGuard();
+  const multiple = announcements.length > 1;
+  const currentAnnouncement = announcements[current] ?? announcements[0];
 
-  useEffect(() => {
-    if (announcements.length <= 1) return;
-    const duration = current?.displayDurationMs || 3000;
-    const timer = setTimeout(() => setIndex((value) => (value + 1) % announcements.length), duration);
-    return () => clearTimeout(timer);
-  }, [announcements.length, current?.displayDurationMs]);
-
-  if (!current) return null;
+  if (!currentAnnouncement) return null;
   return (
-    <View
-      className={`notice card ${announcements.length > 1 ? "notice--flip" : ""}`}
-      data-testid="home-announcement"
-      onClick={() => ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${current.id}` }))}
-    >
-      <Text className="notice__icon">▶</Text>
-      <Text className="notice__summary">{current.summary}</Text>
-      <Text className="notice__content">{current.content}</Text>
-      <Text className="notice__arrow">›</Text>
+    <View className="notice card" data-testid="home-announcement" data-current-index={current}>
+      <Swiper
+        className="notice__swiper"
+        current={current}
+        autoplay={multiple}
+        circular={multiple}
+        disableTouch={false}
+        duration={280}
+        interval={currentAnnouncement.displayDurationMs || 3000}
+        onChange={(event) => setCurrent(Number(event.detail.current || 0))}
+      >
+        {announcements.map((announcement) => (
+          <SwiperItem key={announcement.id}>
+            <View
+              className="notice__slide"
+              onTouchStart={swipeGuard.onTouchStart}
+              onTouchMove={swipeGuard.onTouchMove}
+              onTouchEnd={swipeGuard.onTouchEnd}
+              onTouchCancel={swipeGuard.onTouchEnd}
+              onClick={() => {
+                if (!swipeGuard.allowClick()) return;
+                ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${announcement.id}` }));
+              }}
+            >
+              <Text className="notice__icon">▶</Text>
+              <Text className="notice__summary">{announcement.summary}</Text>
+              <Text className="notice__content">{announcement.content}</Text>
+              <Text className="notice__arrow">›</Text>
+            </View>
+          </SwiperItem>
+        ))}
+      </Swiper>
     </View>
   );
 }
 
 function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHomeResponse["site"] }) {
   const [current, setCurrent] = useState(0);
+  const swipeGuard = useSwipeClickGuard();
   const list = banners.length
     ? banners
     : [
@@ -87,6 +140,8 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
           status: "enabled"
         } as BannerDto
       ];
+  const multiple = list.length > 1;
+  const currentBanner = list[current] ?? list[0];
 
   function open(banner: BannerDto) {
     if (banner.linkType === "announcement" && banner.linkTarget) {
@@ -101,34 +156,44 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
   }
 
   return (
-    <View className="banner-wrap">
+    <View className="banner-wrap" data-testid="home-banner-state" data-current-index={current}>
       <Swiper
         className="banner"
+        current={current}
         indicatorDots
-        autoplay={list.length > 1}
-        interval={list[0]?.switchDurationMs || 3500}
-        circular
+        indicatorColor="rgba(255, 255, 255, 0.7)"
+        indicatorActiveColor="#ffffff"
+        autoplay={multiple}
+        interval={currentBanner?.switchDurationMs || 3500}
+        circular={multiple}
+        disableTouch={false}
+        duration={280}
         data-testid="home-banner"
+        data-current-index={current}
         onChange={(event) => setCurrent(Number(event.detail.current || 0))}
       >
         {list.map((banner) => (
-          <SwiperItem key={banner.id} onClick={() => open(banner)}>
-            <AppImage
-              className="banner__image"
-              testid="home-banner-image"
-              src={banner.imageUrl}
-              fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
-            />
+          <SwiperItem key={banner.id}>
+            <View
+              className="banner__slide"
+              onTouchStart={swipeGuard.onTouchStart}
+              onTouchMove={swipeGuard.onTouchMove}
+              onTouchEnd={swipeGuard.onTouchEnd}
+              onTouchCancel={swipeGuard.onTouchEnd}
+              onClick={() => {
+                if (swipeGuard.allowClick()) open(banner);
+              }}
+            >
+              <AppImage
+                className="banner__image"
+                testid="home-banner-image"
+                src={banner.imageUrl}
+                fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
+              />
+            </View>
           </SwiperItem>
         ))}
       </Swiper>
-      <View className="banner-dots" data-testid="home-banner-dots">
-        {list.map((banner, index) => (
-          <Text key={banner.id} className={`banner-dot ${index === current ? "banner-dot--active" : ""}`}>
-            •
-          </Text>
-        ))}
-      </View>
     </View>
   );
 }

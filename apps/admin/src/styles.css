@@ -65,8 +65,16 @@ body {
 .media-thumb {
   width: 96px;
   height: 64px;
-  object-fit: cover;
   border-radius: 6px;
+  background: #f6f3ef;
+}
+
+img.media-thumb {
+  object-fit: contain;
+}
+
+video.media-thumb {
+  object-fit: cover;
 }
 
 .media-field-list {
@@ -106,6 +114,14 @@ body {
 .media-field-preview img,
 .media-field-preview video {
   display: block;
+  background: #f6f3ef;
+}
+
+.media-field-preview img {
+  object-fit: contain;
+}
+
+.media-field-preview video {
   object-fit: cover;
 }
 
@@ -153,8 +169,8 @@ body {
   width: 64px;
   height: 44px;
   border-radius: 6px;
-  background: #fff7ed;
-  object-fit: cover;
+  background: #f6f3ef;
+  object-fit: contain;
 }
 
 .media-library-filters {
@@ -183,8 +199,16 @@ body {
 .media-library-option video {
   width: 100%;
   height: 104px;
-  object-fit: cover;
   border-radius: 5px;
+  background: #f6f3ef;
+}
+
+.media-library-option img {
+  object-fit: contain;
+}
+
+.media-library-option video {
+  object-fit: cover;
 }
 
 .media-library-option small {
