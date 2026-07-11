@@ -1,17 +1,28 @@
-$detail-background: #f8f7f3;
+$detail-background: #fdfcfa;
 $detail-surface: #fff;
 $detail-text: #1d1915;
 $detail-body: #5d5650;
 $detail-muted: #81786f;
-$detail-gold: #df8733;
-$detail-tag-background: #fff9ed;
+$detail-gold: #e5893d;
+$detail-tag-background: #fdf6ed;
 $detail-tag-text: #6c5743;
 $detail-border: #eee8df;
 $detail-shadow: 0 8rpx 30rpx rgba(71, 51, 31, 0.07);
+$detail-counter-background: rgba(25, 18, 13, 0.64);
+$detail-back-background: rgba(255, 255, 255, 0.94);
+$detail-banner-height: 404rpx;
 $detail-card-radius: 20rpx;
+$detail-card-padding: 24rpx;
+$detail-card-gap: 8rpx;
 $detail-media-radius: 14rpx;
-$detail-gutter: 20rpx;
-$detail-overlap: 36rpx;
+$detail-gutter: 24rpx;
+$detail-overlap: 42rpx;
+$detail-name-size: 50rpx;
+$detail-type-size: 30rpx;
+$detail-subtitle-size: 27rpx;
+$detail-section-title-size: 32rpx;
+$detail-body-size: 28rpx;
+$detail-body-line-height: 1.72;
 
 .detail-page {
   box-sizing: border-box;
@@ -21,6 +32,11 @@ $detail-overlap: 36rpx;
   overflow-x: hidden;
   color: $detail-text;
   background: $detail-background;
+}
+
+.detail-page--banner,
+.detail-page--rich-only {
+  min-height: 0;
 }
 
 .detail-navigation {
@@ -62,7 +78,7 @@ $detail-overlap: 36rpx;
     min-height: 44px;
     border: 1rpx solid rgba(64, 48, 35, 0.08);
     border-radius: 999rpx;
-    background: rgba(255, 255, 255, 0.94);
+    background: $detail-back-background;
     box-shadow: 0 4rpx 18rpx rgba(31, 23, 17, 0.1);
     transform: translateY(-50%);
 
@@ -101,7 +117,7 @@ $detail-overlap: 36rpx;
   position: relative;
   width: 750rpx;
   max-width: 100%;
-  height: 404rpx;
+  height: $detail-banner-height;
   overflow: hidden;
   background: #2d2118;
 
@@ -133,7 +149,7 @@ $detail-overlap: 36rpx;
     padding: 8rpx 18rpx;
     border-radius: 999rpx;
     color: #fff;
-    background: rgba(25, 18, 13, 0.64);
+    background: $detail-counter-background;
     font-size: 22rpx;
     line-height: 30rpx;
     text-align: center;
@@ -159,7 +175,7 @@ $detail-overlap: 36rpx;
   }
 
   &__title {
-    font-size: 50rpx;
+    font-size: $detail-name-size;
     font-weight: 650;
     line-height: 1.16;
     text-shadow: 0 3rpx 10rpx rgba(0, 0, 0, 0.32);
@@ -167,14 +183,14 @@ $detail-overlap: 36rpx;
 
   &__type {
     color: #f2a052;
-    font-size: 30rpx;
+    font-size: $detail-type-size;
     font-weight: 500;
     line-height: 1.3;
   }
 
   &__subtitle {
     margin-top: 10rpx;
-    font-size: 27rpx;
+    font-size: $detail-subtitle-size;
     line-height: 1.45;
     text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.32);
   }
@@ -251,9 +267,9 @@ $detail-overlap: 36rpx;
 .detail-rich-content {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: $detail-card-gap;
   box-sizing: border-box;
-  width: 710rpx;
+  width: calc(750rpx - #{$detail-gutter * 2});
   max-width: 100%;
 }
 
@@ -263,8 +279,8 @@ $detail-overlap: 36rpx;
   width: 100%;
   max-width: 100%;
   color: $detail-body;
-  font-size: 28rpx;
-  line-height: 1.72;
+  font-size: $detail-body-size;
+  line-height: $detail-body-line-height;
   overflow-wrap: anywhere;
 
   .ea-detail-card {
@@ -272,8 +288,8 @@ $detail-overlap: 36rpx;
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
-    margin: 0 0 18rpx;
-    padding: 24rpx;
+    margin: 0 0 $detail-card-gap;
+    padding: $detail-card-padding;
     overflow: hidden;
     border: 1rpx solid $detail-border;
     border-radius: $detail-card-radius;
@@ -291,7 +307,7 @@ $detail-overlap: 36rpx;
     padding-left: 18rpx;
     border-left: 7rpx solid $detail-gold;
     color: $detail-text;
-    font-size: 32rpx;
+    font-size: $detail-section-title-size;
     font-weight: 650;
     line-height: 1.35;
   }
@@ -366,7 +382,7 @@ $detail-overlap: 36rpx;
 .detail-video-wrap {
   position: relative;
   box-sizing: border-box;
-  width: 710rpx;
+  width: calc(750rpx - #{$detail-gutter * 2});
   max-width: 100%;
   height: 0;
   overflow: hidden;
@@ -394,8 +410,8 @@ $detail-overlap: 36rpx;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 710rpx;
-  max-width: calc(100% - 40rpx);
+  width: calc(750rpx - #{$detail-gutter * 2});
+  max-width: calc(100% - #{$detail-gutter * 2});
   min-height: 300rpx;
   margin: 24rpx auto;
   padding: 36rpx;
@@ -438,7 +454,7 @@ $detail-overlap: 36rpx;
 .detail-banner-media-error,
 .detail-image-health-error {
   min-height: 176rpx;
-  margin: 0 0 18rpx;
+  margin: 0 0 $detail-card-gap;
   color: #7c3f16;
   background: #fff9ed;
 }
@@ -449,7 +465,7 @@ $detail-overlap: 36rpx;
 
 .detail-skeleton__banner {
   position: relative;
-  height: 404rpx;
+  height: $detail-banner-height;
   overflow: hidden;
   background: linear-gradient(100deg, #ded8d0 20%, #eeeae4 42%, #ded8d0 64%);
   background-size: 240% 100%;
@@ -474,7 +490,7 @@ $detail-overlap: 36rpx;
 
 .detail-skeleton__card {
   box-sizing: border-box;
-  width: 710rpx;
+  width: calc(750rpx - #{$detail-gutter * 2});
   min-height: 190rpx;
   padding: 28rpx;
   border: 1rpx solid $detail-border;

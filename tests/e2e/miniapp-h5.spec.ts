@@ -1,12 +1,29 @@
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { adminApi, apiBase, clientApi } from "./helpers";
 
 type AdminList<T> = { items: T[] };
-type Announcement = { id: number; summary: string; content: string; displayDurationMs: number; sortOrder: number; status: string };
+type Announcement = {
+  id: number;
+  summary: string;
+  content: string;
+  displayDurationMs: number;
+  sortOrder: number;
+  status: string;
+};
 type Banner = { id: number; status: string };
 type Menu = { id: number; text: string; status: string };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
+type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor" };
+type CaseListItem = { id: number; title: string };
+type DetailFixtures = {
+  artistBanner: ArtistListItem;
+  artistRich: ArtistListItem;
+  caseBanner: CaseListItem;
+  caseRich: CaseListItem;
+};
 type HomeResponse = {
   site: {
     appName: string;
@@ -21,6 +38,9 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    (
+      globalThis as typeof globalThis & { __TARO_DETAIL_E2E_FIXED__?: boolean }
+    ).__TARO_DETAIL_E2E_FIXED__ = true;
     const style = document.createElement("style");
     style.textContent =
       "#react-refresh-overlay,#webpack-dev-server-client-overlay{display:none!important;pointer-events:none!important;}";
@@ -40,12 +60,18 @@ test.beforeEach(async ({ page }) => {
 
 async function setAnnouncementStatus(request: APIRequestContext, status: "enabled" | "disabled") {
   const data = await adminApi<AdminList<Announcement>>(request, "GET", "/api/admin/announcements");
-  await Promise.all(data.items.map((item) => adminApi(request, "PUT", `/api/admin/announcements/${item.id}`, { status })));
+  await Promise.all(
+    data.items.map((item) =>
+      adminApi(request, "PUT", `/api/admin/announcements/${item.id}`, { status })
+    )
+  );
 }
 
 async function setBannerStatus(request: APIRequestContext, status: "enabled" | "disabled") {
   const data = await adminApi<AdminList<Banner>>(request, "GET", "/api/admin/banners");
-  await Promise.all(data.items.map((item) => adminApi(request, "PUT", `/api/admin/banners/${item.id}`, { status })));
+  await Promise.all(
+    data.items.map((item) => adminApi(request, "PUT", `/api/admin/banners/${item.id}`, { status }))
+  );
 }
 
 async function createAnnouncement(request: APIRequestContext, summary: string, sortOrder: number) {
@@ -70,17 +96,28 @@ async function prepareDesignReviewData(request: APIRequestContext) {
   await Promise.all(
     menus.items
       .filter((item) => item.text.startsWith("E2E"))
-      .map((item) => adminApi(request, "PUT", `/api/admin/menu-items/${item.id}`, { status: "disabled" }))
+      .map((item) =>
+        adminApi(request, "PUT", `/api/admin/menu-items/${item.id}`, { status: "disabled" })
+      )
   );
 
   const cases = await adminApi<AdminList<CaseItem>>(request, "GET", "/api/admin/cases");
   await Promise.all(
     cases.items
       .filter((item) => item.title.startsWith("E2E"))
-      .map((item) => adminApi(request, "PUT", `/api/admin/cases/${item.id}`, { status: "disabled", isFeatured: false }))
+      .map((item) =>
+        adminApi(request, "PUT", `/api/admin/cases/${item.id}`, {
+          status: "disabled",
+          isFeatured: false
+        })
+      )
   );
 
-  const artists = await adminApi<AdminList<{ id: number; name: string }>>(request, "GET", "/api/admin/artists?pageSize=100");
+  const artists = await adminApi<AdminList<{ id: number; name: string }>>(
+    request,
+    "GET",
+    "/api/admin/artists?pageSize=100"
+  );
   await Promise.all(
     artists.items
       .filter((item) => item.name === "E2E 人员管理演员")
@@ -103,6 +140,191 @@ async function clearDevOverlay(page: Page) {
 async function tap(page: Page, locator: Locator) {
   await clearDevOverlay(page);
   await locator.click({ force: true });
+}
+
+async function resolveDetailFixtures(request: APIRequestContext): Promise<DetailFixtures> {
+  const artists = await clientApi<ArtistListItem[]>(request, "/api/client/artists?type=host");
+  const cases = await clientApi<CaseListItem[]>(request, "/api/client/cases");
+  const artistBanner = artists.find((item) => item.name === "林然");
+  const artistRich = artists.find((item) => item.name === "Jessica");
+  const caseBanner = cases.find((item) => item.title === "浪漫粉色系户外婚礼");
+  const caseRich = cases.find((item) => item.title === "企业年会歌手演出");
+  if (!artistBanner || !artistRich || !caseBanner || !caseRich) {
+    throw new Error("详情页 E2E seed 不完整；请先运行 pnpm db:seed");
+  }
+  return { artistBanner, artistRich, caseBanner, caseRich };
+}
+
+async function openDetail(page: Page, owner: "artists" | "cases", id: number) {
+  await page.goto(`/pages/${owner}/detail?id=${id}`);
+  await expect(
+    page.getByTestId(owner === "artists" ? "artist-detail-page" : "case-detail-page")
+  ).toBeVisible();
+  await clearDevOverlay(page);
+}
+
+async function waitForDetailVisuals(page: Page) {
+  await expect(page.getByTestId("detail-rich-content")).toBeVisible();
+  await page.evaluate(async () => {
+    await document.fonts?.ready;
+    await Promise.all(
+      Array.from(document.images).map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            if (image.complete) return resolve();
+            image.addEventListener("load", () => resolve(), { once: true });
+            image.addEventListener("error", () => resolve(), { once: true });
+          })
+      )
+    );
+  });
+}
+
+async function expectCommonDetailQuality(page: Page) {
+  const geometry = await page.evaluate(() => ({
+    viewportWidth: document.documentElement.clientWidth,
+    documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
+  }));
+  expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  await expect(page.getByText(/收藏|分享|在线咨询|立即预约/)).toHaveCount(0);
+  await expect(
+    page.locator('[class*="fixed-bottom"], [class*="business-action"], [class*="booking-bar"]')
+  ).toHaveCount(0);
+
+  const bottom = await page.evaluate(() => {
+    const content = document.querySelector('[data-testid="detail-rich-content"]');
+    const pageRoot = document.querySelector(".detail-page");
+    if (!content || !pageRoot) throw new Error("详情页内容节点不存在");
+    return {
+      trailingSpace:
+        pageRoot.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom,
+      contentPaddingBottom: Number.parseFloat(
+        getComputedStyle(content.parentElement!).paddingBottom
+      )
+    };
+  });
+  expect(bottom.trailingSpace).toBeGreaterThanOrEqual(8);
+  expect(bottom.trailingSpace).toBeLessThanOrEqual(44);
+  expect(bottom.contentPaddingBottom).toBeLessThanOrEqual(32);
+}
+
+async function expectBannerDetail(page: Page, expectedTitle: string, expectedType: string) {
+  await expect(page.getByTestId("detail-layout-banner")).toBeVisible();
+  await expect(page.getByTestId("detail-banner")).toBeVisible();
+  await expect(page.getByTestId("detail-hero")).toContainText(expectedTitle);
+  await expect(page.getByTestId("detail-hero")).toContainText(expectedType);
+  await expect(page.getByTestId("detail-banner-counter")).toHaveText(/^1\/\d+$/);
+  const overlap = await page.evaluate(() => {
+    const banner = document.querySelector('[data-testid="detail-banner"]')!.getBoundingClientRect();
+    const content = document
+      .querySelector('[data-testid="detail-content-overlap"]')!
+      .getBoundingClientRect();
+    const firstCard = document.querySelector(".ea-detail-card")!.getBoundingClientRect();
+    return {
+      amount: banner.bottom - content.top,
+      firstCardVisible: firstCard.top >= content.top - 1
+    };
+  });
+  expect(overlap.amount).toBeGreaterThanOrEqual(18);
+  expect(overlap.amount).toBeLessThanOrEqual(28);
+  expect(overlap.firstCardVisible).toBeTruthy();
+}
+
+async function expectRichOnlyDetail(page: Page, expectedTitle: string) {
+  await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
+  await expect(page.getByTestId("detail-navigation")).toContainText(expectedTitle);
+  await expect(page.getByTestId("detail-banner")).toHaveCount(0);
+  await expect(page.getByTestId("detail-hero")).toHaveCount(0);
+  await expect(page.getByTestId("detail-banner-counter")).toHaveCount(0);
+  await expect(page.getByTestId("detail-content-overlap")).toHaveCount(0);
+  await expect(page.locator(".detail-skeleton__banner")).toHaveCount(0);
+  const geometry = await page.evaluate(() => {
+    const navigation = document
+      .querySelector('[data-testid="detail-navigation"]')!
+      .getBoundingClientRect();
+    const content = document.querySelector('[data-testid="detail-content-normal"]')!;
+    const rect = content.getBoundingClientRect();
+    return {
+      gap: rect.top - navigation.bottom,
+      marginTop: Number.parseFloat(getComputedStyle(content).marginTop)
+    };
+  });
+  expect(geometry.marginTop).toBe(0);
+  expect(geometry.gap).toBeGreaterThanOrEqual(10);
+  expect(geometry.gap).toBeLessThanOrEqual(24);
+}
+
+async function expectDetailBackFallback(page: Page, fallbackTestId: string) {
+  await tap(page, page.getByTestId("detail-back-button"));
+  await expect(page.getByTestId(fallbackTestId)).toBeVisible();
+}
+
+async function createDetailComparison(actualPath: string) {
+  const referencePath = "docs/design/reference-artist-detail-original.png";
+  const actualMetadata = await sharp(actualPath).metadata();
+  const referenceMetadata = await sharp(referencePath).metadata();
+  if (
+    !actualMetadata.width ||
+    !actualMetadata.height ||
+    !referenceMetadata.width ||
+    !referenceMetadata.height
+  ) {
+    throw new Error("详情页视觉对比图片尺寸无效");
+  }
+  const alignedReferenceHeight = Math.round(
+    (referenceMetadata.height * actualMetadata.width) / referenceMetadata.width
+  );
+  const comparisonHeight = Math.min(actualMetadata.height, alignedReferenceHeight);
+  const reference = await sharp(referencePath)
+    .resize({ width: actualMetadata.width })
+    .extract({ left: 0, top: 0, width: actualMetadata.width, height: comparisonHeight })
+    .png()
+    .toBuffer();
+  const actual = await sharp(actualPath)
+    .extract({ left: 0, top: 0, width: actualMetadata.width, height: comparisonHeight })
+    .png()
+    .toBuffer();
+  const halfOpacityActual = await sharp(actual).removeAlpha().ensureAlpha(0.5).png().toBuffer();
+  await sharp(reference)
+    .composite([{ input: halfOpacityActual, blend: "over" }])
+    .png()
+    .toFile("docs/design/overlay-artist-detail.png");
+  await sharp(reference)
+    .composite([{ input: actual, blend: "difference" }])
+    .png()
+    .toFile("docs/design/diff-artist-detail.png");
+
+  const artifacts = [
+    "docs/design/actual-artist-banner-rich-text.png",
+    "docs/design/actual-artist-rich-text.png",
+    "docs/design/actual-case-banner-rich-text.png",
+    "docs/design/actual-case-rich-text.png",
+    "docs/design/overlay-artist-detail.png",
+    "docs/design/diff-artist-detail.png"
+  ];
+  const hashes = Object.fromEntries(
+    await Promise.all(
+      artifacts.map(async (path) => [
+        path,
+        createHash("sha256")
+          .update(await readFile(path))
+          .digest("hex")
+      ])
+    )
+  );
+  await writeFile(
+    "docs/design/detail-page-visual-evidence.json",
+    `${JSON.stringify(
+      {
+        viewport: { width: 427, height: 922, deviceScaleFactor: 2 },
+        alignment:
+          "Reference resized proportionally to actual width; both images top-aligned and cropped to the shorter height; no region masked.",
+        hashes
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 test("首页成功加载，小程序名和副标题来自接口", async ({ page, request }) => {
@@ -137,7 +359,10 @@ test("首页 H5 顶部留白接近参考图", async ({ page }) => {
 
 test("首页案例卡片高度接近参考图", async ({ page }) => {
   await openHome(page);
-  const firstCaseHeight = await page.getByTestId("home-case-card").first().evaluate((node) => node.getBoundingClientRect().height);
+  const firstCaseHeight = await page
+    .getByTestId("home-case-card")
+    .first()
+    .evaluate((node) => node.getBoundingClientRect().height);
 
   expect(firstCaseHeight).toBeLessThanOrEqual(220);
 });
@@ -154,7 +379,9 @@ test("有公告时展示公告栏，多公告有切换动画类名", async ({ pa
   await createAnnouncement(request, "E2E 第二条公告", 101);
   await openHome(page);
   await expect(page.getByTestId("home-announcement")).toBeVisible();
-  await expect(page.getByTestId("home-announcement")).toContainText(/E2E 第一条公告|E2E 第二条公告/);
+  await expect(page.getByTestId("home-announcement")).toContainText(
+    /E2E 第一条公告|E2E 第二条公告/
+  );
   await expect(page.getByTestId("home-announcement")).toHaveClass(/notice--flip/);
 });
 
@@ -162,7 +389,10 @@ test("无 Banner 时显示默认图且有指示点", async ({ page, request }) =
   await setBannerStatus(request, "disabled");
   await openHome(page);
   await expect(page.getByTestId("home-banner")).toBeVisible();
-  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", /\/uploads\/seed\/[a-f\d]{32}\.png$/);
+  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute(
+    "data-current-src",
+    /\/uploads\/seed\/[a-f\d]{32}\.png$/
+  );
   await expect(page.getByTestId("home-banner-dots")).toContainText("•");
 });
 
@@ -260,6 +490,120 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
   await expect(page.getByTestId("artist-detail-page")).toBeVisible();
 });
 
+test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", async ({ page, request }) => {
+  const { artistBanner } = await resolveDetailFixtures(request);
+  await openDetail(page, "artists", artistBanner.id);
+  await waitForDetailVisuals(page);
+  await expectBannerDetail(page, artistBanner.name, "主持人");
+  await expect(page.getByTestId("detail-banner-image")).toHaveCount(3);
+  await expect(page.getByTestId("detail-hero")).toContainText("温暖・专业・掌控全场");
+  await expect(page.getByTestId("detail-hero")).toContainText("金牌主持");
+  await expect(page.getByTestId("detail-hero")).toContainText("10年经验");
+  await expect(page.getByTestId("detail-hero")).toContainText("杭州");
+  await expect(
+    page.getByTestId("detail-rich-text-block").first().locator("img").first()
+  ).toBeVisible();
+  await expectCommonDetailQuality(page);
+  await expectDetailBackFallback(page, "category-page");
+});
+
+test("人员单富文本详情完全移除 BANNER DOM、占高和负重叠", async ({ page, request }) => {
+  const { artistRich } = await resolveDetailFixtures(request);
+  await openDetail(page, "artists", artistRich.id);
+  await waitForDetailVisuals(page);
+  await expectRichOnlyDetail(page, artistRich.name);
+  await expectCommonDetailQuality(page);
+  await expectDetailBackFallback(page, "category-page");
+});
+
+test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节点", async ({ page, request }) => {
+  const { caseBanner } = await resolveDetailFixtures(request);
+  await openDetail(page, "cases", caseBanner.id);
+  await waitForDetailVisuals(page);
+  await expectBannerDetail(page, caseBanner.title, "婚礼主持");
+  await expect(page.getByTestId("detail-hero")).toContainText("杭州・西湖区");
+  await expect(page.getByTestId("detail-hero")).toContainText("日期：2024-05-18");
+  const video = page.getByTestId("detail-video").locator("video");
+  await expect(video).toHaveCount(1);
+  await expect(video).not.toHaveAttribute("autoplay");
+  await expect(video).not.toHaveAttribute("loop");
+  await expect(page.getByTestId("detail-rich-text-block").locator("video")).toHaveCount(0);
+  await expectCommonDetailQuality(page);
+  await expectDetailBackFallback(page, "case-list-page");
+});
+
+test("案例单富文本详情从导航后正常起始且没有轮播残留", async ({ page, request }) => {
+  const { caseRich } = await resolveDetailFixtures(request);
+  await openDetail(page, "cases", caseRich.id);
+  await waitForDetailVisuals(page);
+  await expectRichOnlyDetail(page, caseRich.title);
+  await expect(
+    page.getByTestId("detail-rich-text-block").first().locator("img").first()
+  ).toBeVisible();
+  await expectCommonDetailQuality(page);
+  await expectDetailBackFallback(page, "case-list-page");
+});
+
+test("详情路由切换 ID 不显示上一条数据", async ({ page, request }) => {
+  const { artistBanner, artistRich } = await resolveDetailFixtures(request);
+  await page.route(`**/api/client/artists/${artistBanner.id}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await route.continue();
+  });
+  await openDetail(page, "artists", artistBanner.id);
+  await page.goto(`/pages/artists/detail?id=${artistRich.id}`);
+  await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
+  await expect(page.getByTestId("detail-navigation")).toContainText(artistRich.name);
+  await expect(page.getByText(artistBanner.name)).toHaveCount(0);
+  await expect(page.getByTestId("detail-banner")).toHaveCount(0);
+});
+
+test("详情接口错误展示重试并可恢复", async ({ page, request }) => {
+  const { artistRich } = await resolveDetailFixtures(request);
+  let failed = false;
+  await page.route(`**/api/client/artists/${artistRich.id}`, async (route) => {
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: false,
+          error: { code: "E2E_DETAIL_FAIL", message: "E2E 详情失败" }
+        })
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await openDetail(page, "artists", artistRich.id);
+  await expect(page.getByTestId("detail-state-error")).toBeVisible();
+  await expect(page.getByText("页面加载失败")).toBeVisible();
+  await tap(page, page.getByTestId("detail-retry"));
+  await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
+  await expect(page.getByTestId("detail-navigation")).toContainText(artistRich.name);
+});
+
+test("四种详情页视觉截图与人员详情对齐差异图", async ({ page, request }) => {
+  const fixtures = await resolveDetailFixtures(request);
+  const captures = [
+    ["artists", fixtures.artistBanner.id, "actual-artist-banner-rich-text.png"],
+    ["artists", fixtures.artistRich.id, "actual-artist-rich-text.png"],
+    ["cases", fixtures.caseBanner.id, "actual-case-banner-rich-text.png"],
+    ["cases", fixtures.caseRich.id, "actual-case-rich-text.png"]
+  ] as const;
+  for (const [owner, id, filename] of captures) {
+    await openDetail(page, owner, id);
+    await waitForDetailVisuals(page);
+    await page.screenshot({
+      path: `docs/design/${filename}`,
+      fullPage: true,
+      animations: "disabled"
+    });
+  }
+  await createDetailComparison("docs/design/actual-artist-banner-rich-text.png");
+});
+
 test("分类页的人员入口复用同一类型化列表", async ({ page }) => {
   await openHome(page);
   await tap(page, page.getByText("分类").last());
@@ -301,7 +645,9 @@ test("人员列表设计复核截图与参考差异图", async ({ page, request 
 
 test("精选案例展示并可进入详情页", async ({ page }) => {
   await openHome(page);
-  await expect(page.locator(".section-heading__title").filter({ hasText: "精选案例" })).toBeVisible();
+  await expect(
+    page.locator(".section-heading__title").filter({ hasText: "精选案例" })
+  ).toBeVisible();
   await expect(page.getByTestId("home-featured-cases")).toBeVisible();
   await expect(page.getByTestId("home-case-card").first()).toBeVisible();
   await tap(page, page.getByTestId("home-case-card").first());
@@ -329,7 +675,10 @@ test("图片失败时使用占位图", async ({ page, request }) => {
   const home = await clientApi<HomeResponse>(request, "/api/client/home");
   await page.route(home.site.defaultBannerUrl, (route) => route.abort());
   await openHome(page);
-  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute("data-current-src", home.site.placeholderBannerUrl);
+  await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute(
+    "data-current-src",
+    home.site.placeholderBannerUrl
+  );
   await page.unroute(home.site.defaultBannerUrl);
 });
 
