@@ -35,6 +35,12 @@ function openMenu(type: string) {
   ignoreNavigationError(Taro.navigateTo({ url }));
 }
 
+function getCaseCity(location: string) {
+  const trimmed = location.trim();
+  if (!trimmed) return "";
+  return trimmed.split(/[・·｜|,，\s/／-]+/)[0] || trimmed;
+}
+
 function useSafeTop() {
   return useMemo(() => {
     if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return 36;
@@ -412,6 +418,7 @@ export default function HomePage() {
         <View className="case-list" data-testid="home-featured-cases">
           {data.featuredCases.map((item) => {
             const clickable = Boolean(item.detailPageId);
+            const city = getCaseCity(item.location);
             return (
               <View
                 key={item.id}
@@ -431,13 +438,27 @@ export default function HomePage() {
                 <View className="case-card__body">
                   <Text className="case-card__title">{item.title}</Text>
                   <Text className="case-card__summary">{item.summary}</Text>
-                  <View className="case-card__meta-list">
-                    <Text className="case-card__meta">📅 {item.eventDate}</Text>
-                    <Text className="case-card__meta">⌖ {item.location}</Text>
+                  <View className="case-card__meta-row" data-testid="home-case-meta">
+                    <View className="case-card__meta-group case-card__meta-group--date">
+                      <Image
+                        className="case-card__meta-icon"
+                        data-testid="home-case-date-icon"
+                        mode="aspectFit"
+                        src={generatedAssets.iconCaseDate}
+                      />
+                      <Text className="case-card__meta case-card__meta-date">{item.eventDate}</Text>
+                    </View>
+                    <View className="case-card__meta-group case-card__meta-group--location">
+                      <Image
+                        className="case-card__meta-icon"
+                        data-testid="home-case-location-icon"
+                        mode="aspectFit"
+                        src={generatedAssets.iconCaseLocation}
+                      />
+                      <Text className="case-card__meta case-card__meta-location">{city}</Text>
+                    </View>
                   </View>
-                  <Text className={clickable ? "case-card__button" : "case-card__button case-card__button--placeholder"}>
-                    查看详情 ›
-                  </Text>
+                  <Text className="case-card__button">查看详情 ›</Text>
                 </View>
               </View>
             );

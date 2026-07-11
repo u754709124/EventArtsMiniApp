@@ -512,7 +512,7 @@ test("首页案例卡片高度接近参考图", async ({ page }) => {
   expect(firstCaseHeight).toBeLessThanOrEqual(220);
 });
 
-test("首页精选案例标题简介截断且按钮底部对齐", async ({ page }) => {
+test("首页精选案例字段完整且日期地点靠近按钮底部对齐", async ({ page }) => {
   await openHome(page);
   const metrics = await page.evaluate(() => {
     const cards = Array.from(document.querySelectorAll('[data-testid="home-case-card"]'));
@@ -527,20 +527,53 @@ test("首页精选案例标题简介截断且按钮底部对齐", async ({ page 
     const spread = (values: number[]) => (values.length > 1 ? Math.max(...values) - Math.min(...values) : 0);
 
     const rows = cards.map((card) => {
+      const image = card.querySelector('[data-testid="home-case-image"]');
       const title = card.querySelector(".case-card__title");
       const summary = card.querySelector(".case-card__summary");
-      const metaList = card.querySelector(".case-card__meta-list");
+      const metaRow = card.querySelector(".case-card__meta-row");
+      const dateGroup = card.querySelector(".case-card__meta-group--date");
+      const locationGroup = card.querySelector(".case-card__meta-group--location");
+      const dateIcon = card.querySelector('[data-testid="home-case-date-icon"]');
+      const locationIcon = card.querySelector('[data-testid="home-case-location-icon"]');
+      const date = card.querySelector(".case-card__meta-date");
+      const location = card.querySelector(".case-card__meta-location");
       const button = card.querySelector(".case-card__button");
-      if (!title || !summary || !metaList || !button) throw new Error("Missing case card layout nodes");
+      if (
+        !image ||
+        !title ||
+        !summary ||
+        !metaRow ||
+        !dateGroup ||
+        !locationGroup ||
+        !dateIcon ||
+        !locationIcon ||
+        !date ||
+        !location ||
+        !button
+      ) {
+        throw new Error("Missing case card layout nodes");
+      }
 
       const cardRect = card.getBoundingClientRect();
       const titleRect = title.getBoundingClientRect();
       const summaryRect = summary.getBoundingClientRect();
-      const metaRect = metaList.getBoundingClientRect();
+      const metaRect = metaRow.getBoundingClientRect();
+      const dateGroupRect = dateGroup.getBoundingClientRect();
+      const locationGroupRect = locationGroup.getBoundingClientRect();
       const buttonRect = button.getBoundingClientRect();
 
       return {
         cardHeight: cardRect.height,
+        imageHeight: image.getBoundingClientRect().height,
+        dateIconHeight: dateIcon.getBoundingClientRect().height,
+        locationIconHeight: locationIcon.getBoundingClientRect().height,
+        titleText: title.textContent?.trim() ?? "",
+        summaryText: summary.textContent?.trim() ?? "",
+        metaText: metaRow.textContent?.trim() ?? "",
+        dateText: date.textContent?.trim() ?? "",
+        locationText: location.textContent?.trim() ?? "",
+        buttonText: button.textContent?.trim() ?? "",
+        buttonVisibility: window.getComputedStyle(button).visibility,
         titleHeight: titleRect.height,
         titleLineHeight: parseLineHeight(title),
         summaryHeight: summaryRect.height,
@@ -548,12 +581,31 @@ test("首页精选案例标题简介截断且按钮底部对齐", async ({ page 
         titleTop: titleRect.top,
         summaryTop: summaryRect.top,
         metaTop: metaRect.top,
+        metaHeight: metaRect.height,
+        dateLeftOffset: dateGroupRect.left - metaRect.left,
+        locationRightOffset: metaRect.right - locationGroupRect.right,
+        dateLocationGap: locationGroupRect.left - dateGroupRect.right,
         buttonTop: buttonRect.top,
+        metaButtonGap: buttonRect.top - metaRect.bottom,
         buttonBottomOffset: cardRect.bottom - buttonRect.bottom
       };
     });
 
     return {
+      fieldCompleteness: rows.every(
+        (row) =>
+          row.imageHeight > 0 &&
+          row.dateIconHeight > 0 &&
+          row.locationIconHeight > 0 &&
+          row.titleText.length > 0 &&
+          row.summaryText.length > 0 &&
+          !row.metaText.includes("|") &&
+          /^\d{4}-\d{2}-\d{2}$/.test(row.dateText) &&
+          row.locationText.length > 0 &&
+          row.buttonText === "查看详情 ›" &&
+          row.buttonVisibility !== "hidden"
+      ),
+      locationTexts: rows.map((row) => row.locationText),
       cardHeightSpread: spread(rows.map((row) => row.cardHeight)),
       maxTitleHeight: Math.max(...rows.map((row) => row.titleHeight)),
       titleLineHeight: rows[0].titleLineHeight,
@@ -562,18 +614,33 @@ test("首页精选案例标题简介截断且按钮底部对齐", async ({ page 
       titleTopSpread: spread(rows.map((row) => row.titleTop)),
       summaryTopSpread: spread(rows.map((row) => row.summaryTop)),
       metaTopSpread: spread(rows.map((row) => row.metaTop)),
+      metaHeightSpread: spread(rows.map((row) => row.metaHeight)),
+      maxDateLeftOffset: Math.max(...rows.map((row) => Math.abs(row.dateLeftOffset))),
+      maxLocationRightOffset: Math.max(...rows.map((row) => Math.abs(row.locationRightOffset))),
+      minDateLocationGap: Math.min(...rows.map((row) => row.dateLocationGap)),
       buttonTopSpread: spread(rows.map((row) => row.buttonTop)),
+      maxMetaButtonGap: Math.max(...rows.map((row) => row.metaButtonGap)),
+      minMetaButtonGap: Math.min(...rows.map((row) => row.metaButtonGap)),
       buttonBottomOffsetSpread: spread(rows.map((row) => row.buttonBottomOffset))
     };
   });
 
+  expect(metrics.fieldCompleteness).toBeTruthy();
+  expect(metrics.locationTexts.slice(0, 3)).toEqual(["杭州", "上海", "宁波"]);
+  expect(metrics.locationTexts.every((text) => !/[・·｜|,，\s/／-]/.test(text))).toBeTruthy();
   expect(metrics.cardHeightSpread).toBeLessThanOrEqual(1);
   expect(metrics.maxTitleHeight).toBeLessThanOrEqual(metrics.titleLineHeight + 1);
   expect(metrics.maxSummaryHeight).toBeLessThanOrEqual(metrics.summaryLineHeight * 2 + 1);
   expect(metrics.titleTopSpread).toBeLessThanOrEqual(1);
   expect(metrics.summaryTopSpread).toBeLessThanOrEqual(1);
   expect(metrics.metaTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.metaHeightSpread).toBeLessThanOrEqual(1);
+  expect(metrics.maxDateLeftOffset).toBeLessThanOrEqual(1);
+  expect(metrics.maxLocationRightOffset).toBeLessThanOrEqual(1);
+  expect(metrics.minDateLocationGap).toBeGreaterThanOrEqual(0);
   expect(metrics.buttonTopSpread).toBeLessThanOrEqual(1);
+  expect(metrics.minMetaButtonGap).toBeGreaterThanOrEqual(0);
+  expect(metrics.maxMetaButtonGap).toBeLessThanOrEqual(8);
   expect(metrics.buttonBottomOffsetSpread).toBeLessThanOrEqual(1);
 });
 
