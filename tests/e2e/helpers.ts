@@ -99,9 +99,36 @@ export async function chooseMediaFromLibrary(
   const modal = page.locator('[data-testid="media-library-modal"]:visible');
   await expect(modal).toBeVisible();
   if (mediaType === "video") await modal.getByRole("tab", { name: "视频" }).click();
+  const search = modal.getByLabel("搜索资源");
+  await search.fill(mediaSearchText(resourceName));
+  await search.press("Enter");
   await modal.getByRole("button", { name: resourceName }).click();
   if (multiple) await expect(modal).toBeHidden();
   else await expect(page.getByTestId(`${testid}-preview`)).toBeVisible();
+}
+
+function mediaSearchText(resourceName: string | RegExp) {
+  return typeof resourceName === "string" ? resourceName : resourceName.source.replace(/\\(.)/g, "$1");
+}
+
+export async function chooseDetailMediaFromLibrary(
+  page: Page,
+  trigger: Locator,
+  resourceName: string | RegExp
+) {
+  await trigger.click();
+  const modal = page.locator('[data-testid="media-library-modal"]:visible');
+  await expect(modal).toBeVisible();
+  const search = modal.getByLabel("搜索资源");
+  await search.fill(mediaSearchText(resourceName));
+  await search.press("Enter");
+  const optionName = typeof resourceName === "string"
+    ? `选择 ${resourceName}`
+    : new RegExp(`选择 .*${resourceName.source}`);
+  const option = modal.getByRole("button", { name: optionName }).first();
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(modal).toBeHidden();
 }
 
 export async function waitForToast(page: Page, text: string | RegExp) {

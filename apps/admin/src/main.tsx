@@ -42,9 +42,15 @@ import {
   bannerLinkTypeValues,
   statusValues,
   type DashboardOverviewResponse,
+  type DetailPageConfigDto,
   type MenuType
 } from "@event-arts/shared";
 import { clearToken, getToken, request, setToken } from "./api";
+import { DetailPageConfigFields } from "./detail-pages/DetailPageConfigFields";
+import {
+  detailPageConfigDtoToFormValue,
+  normalizeDetailPageFormValue
+} from "./detail-pages/detail-page-form-utils";
 import { MediaField } from "./media/MediaField";
 import { MediaPage } from "./media/MediaPage";
 import "./styles.css";
@@ -252,15 +258,37 @@ type CrudConfig = {
   path: string;
   testid: string;
   columns: ColumnsType<AnyRecord>;
-  fields: (form: ReturnType<typeof Form.useForm>[0]) => React.ReactNode;
+  fields: (form: ReturnType<typeof Form.useForm>[0], editing: AnyRecord | null) => React.ReactNode;
   normalize?: (values: AnyRecord) => AnyRecord;
+  drawerWidth?: number;
 };
 
-function CrudPage({ config }: { config: CrudConfig }) {
+export function prepareCrudEditValues(record: AnyRecord): AnyRecord {
+  const detailPage = record.detailPage as DetailPageConfigDto | null | undefined;
+  return {
+    ...record,
+    eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
+    configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson,
+    tags: normalizeArtistFormTags(record.tags ?? record.tagsJson),
+    detailPage: detailPage ? detailPageConfigDtoToFormValue(detailPage) : undefined
+  };
+}
+
+export function buildCrudSaveRequest(config: CrudConfig, editing: AnyRecord | null, values: AnyRecord) {
+  const body = config.normalize ? config.normalize(values) : values;
+  return {
+    path: editing ? `${config.path}/${editing.id}` : config.path,
+    method: editing ? "PUT" as const : "POST" as const,
+    body
+  };
+}
+
+export function CrudPage({ config }: { config: CrudConfig }) {
   const [items, setItems] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<AnyRecord | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
   async function load() {
@@ -287,27 +315,26 @@ function CrudPage({ config }: { config: CrudConfig }) {
 
   function openEdit(record: AnyRecord) {
     setEditing(record);
-    form.setFieldsValue({
-      ...record,
-      eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
-      configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson,
-      tags: normalizeArtistFormTags(record.tags ?? record.tagsJson)
-    });
+    form.setFieldsValue(prepareCrudEditValues(record));
     setDrawerOpen(true);
   }
 
   async function save(values: AnyRecord) {
-    const normalized = config.normalize ? config.normalize(values) : values;
+    if (saving) return;
+    setSaving(true);
     try {
-      await request(editing ? `${config.path}/${editing.id}` : config.path, {
-        method: editing ? "PUT" : "POST",
-        body: JSON.stringify(normalized)
+      const saveRequest = buildCrudSaveRequest(config, editing, values);
+      await request(saveRequest.path, {
+        method: saveRequest.method,
+        body: JSON.stringify(saveRequest.body)
       });
       message.success("保存成功");
       setDrawerOpen(false);
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -366,17 +393,20 @@ function CrudPage({ config }: { config: CrudConfig }) {
         columns={columns}
         locale={{ emptyText: <Empty description="暂无数据" /> }}
         pagination={{ pageSize: 10 }}
+        onRow={(record) => ({
+          "data-testid": `${config.testid}-row-${record.id}`
+        } as unknown as React.HTMLAttributes<HTMLTableRowElement>)}
       />
       <Drawer
         data-testid={`${config.testid}-drawer`}
         title={editing ? `编辑${config.title}` : `新增${config.title}`}
         open={drawerOpen}
-        size={560}
+        width={config.drawerWidth ?? 560}
         onClose={() => setDrawerOpen(false)}
       >
         <Form data-testid={`${config.testid}-form`} form={form} layout="vertical" onFinish={save} initialValues={{ status: "enabled", sortOrder: 1 }}>
-          {config.fields(form)}
-          <Button data-testid={`${config.testid}-save`} type="primary" htmlType="submit">
+          {config.fields(form, editing)}
+          <Button data-testid={`${config.testid}-save`} type="primary" htmlType="submit" loading={saving} disabled={saving}>
             保存
           </Button>
         </Form>
@@ -386,6 +416,26 @@ function CrudPage({ config }: { config: CrudConfig }) {
 }
 
 const statusOptions = statusValues.map((value) => ({ value, label: value === "enabled" ? "启用" : "停用" }));
+
+function detailTypeColumn(): ColumnsType<AnyRecord>[number] {
+  return {
+    title: "详情页类型",
+    dataIndex: "detailPageTypeLabel",
+    width: 150,
+    render: (value) => typeof value === "string" && value ? value : "详情待补充"
+  };
+}
+
+function detailSummaryColumn(): ColumnsType<AnyRecord>[number] {
+  return {
+    title: "详情摘要",
+    key: "detailPageSummary",
+    width: 210,
+    render: (_, record) => record.detailPageType
+      ? `BANNER ${Number(record.bannerCount ?? 0)} · 正文媒体 ${Number(record.detailMediaCount ?? 0)} · ${record.hasRichText ? "有富文本" : "无富文本"}`
+      : "详情待补充"
+  };
+}
 
 function StatusField() {
   return (
@@ -457,7 +507,124 @@ function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }
   );
 }
 
-const configs: Record<string, CrudConfig> = {
+function detailBusinessFields(values: AnyRecord) {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key]) => !["detail", "detailMediaAssetIds", "detailPage"].includes(key))
+  );
+}
+
+function normalizeArtistPayload(values: AnyRecord) {
+  return {
+    ...detailBusinessFields(values),
+    tags: normalizeArtistFormTags(values.tags),
+    detailPage: normalizeDetailPageFormValue(values.detailPage)
+  };
+}
+
+function normalizeCasePayload(values: AnyRecord) {
+  return {
+    ...detailBusinessFields(values),
+    eventDate: values.eventDate ? dayjs(values.eventDate as string).toISOString() : new Date().toISOString(),
+    detailPage: normalizeDetailPageFormValue(values.detailPage)
+  };
+}
+
+function CaseCrudFields({ form, editing }: { form: ReturnType<typeof Form.useForm>[0]; editing: AnyRecord | null }) {
+  const title = Form.useWatch("title", form) as string | undefined;
+  const coverAssetId = Form.useWatch("coverAssetId", form) as number | null | undefined;
+  return (
+    <>
+      <Form.Item label="标题" name="title" rules={[{ required: true }]}>
+        <Input data-testid="case-title" />
+      </Form.Item>
+      <Form.Item label="分类" name="category" rules={[{ required: true }]}>
+        <Input data-testid="case-category" />
+      </Form.Item>
+      <Form.Item label="标签" name="tag" rules={[{ required: true }]}>
+        <Input data-testid="case-tag" />
+      </Form.Item>
+      <Form.Item label="封面图" name="coverAssetId" rules={[{ required: true }]}>
+        <MediaField testid="case-cover-select" fieldKey="case.cover" />
+      </Form.Item>
+      <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
+        <Input.TextArea data-testid="case-summary" />
+      </Form.Item>
+      <Form.Item label="活动日期" name="eventDate" rules={[{ required: true }]}>
+        <DatePicker data-testid="case-event-date" />
+      </Form.Item>
+      <Form.Item label="地点" name="location" rules={[{ required: true }]}>
+        <Input data-testid="case-location" />
+      </Form.Item>
+      <Form.Item label="是否精选" name="isFeatured" valuePropName="checked" initialValue={false}>
+        <Switch data-testid="case-featured" />
+      </Form.Item>
+      <Form.Item label="首页排序" name="featuredSortOrder" initialValue={1}>
+        <InputNumber data-testid="case-featured-sort-order" min={0} />
+      </Form.Item>
+      <SortField />
+      <StatusField />
+      <DetailPageConfigFields
+        form={form}
+        ownerType="activity_case"
+        ownerPreviewData={{ title, coverAssetId }}
+        initialDetailPage={editing ? (editing.detailPage as DetailPageConfigDto | null | undefined) ?? null : undefined}
+      />
+    </>
+  );
+}
+
+function ArtistCrudFields({ form, editing }: { form: ReturnType<typeof Form.useForm>[0]; editing: AnyRecord | null }) {
+  const title = Form.useWatch("name", form) as string | undefined;
+  const avatarAssetId = Form.useWatch("avatarAssetId", form) as number | null | undefined;
+  return (
+    <>
+      <Form.Item label="姓名/艺名" name="name" rules={[{ required: true }]}>
+        <Input data-testid="artist-name" />
+      </Form.Item>
+      <Form.Item label="类型" name="type" rules={[{ required: true }]}>
+        <Select data-testid="artist-type" options={artistTypeValues.map((value) => ({ value, label: artistTypeLabels[value] }))} />
+      </Form.Item>
+      <Form.Item label="列表封面图" name="avatarAssetId" rules={[{ required: true, message: "请选择列表封面图" }]} extra="推荐尺寸 690×480，前台将以 aspectFill 裁切显示">
+        <MediaField testid="artist-cover-select" fieldKey="artist.avatar" />
+      </Form.Item>
+      <Form.Item label="演绎地点" name="location" rules={[{ required: true, message: "请输入演绎地点" }, { max: 30 }]}>
+        <Input data-testid="artist-location" maxLength={30} showCount />
+      </Form.Item>
+      <Form.Item label="左上角标签" name="badge" rules={[{ required: true, message: "请输入左上角标签" }, { max: 12 }]}>
+        <Input data-testid="artist-badge" maxLength={12} showCount />
+      </Form.Item>
+      <Form.Item
+        label="下方多个标签"
+        name="tags"
+        getValueFromEvent={(value) => normalizeArtistFormTags(value).slice(0, 4)}
+        rules={[
+          { required: true, message: "请至少填写一个标签" },
+          {
+            validator: (_, value) => {
+              const tags = normalizeArtistFormTags(value);
+              return tags.length >= 1 && tags.length <= 4 ? Promise.resolve() : Promise.reject(new Error("请填写 1 至 4 个标签"));
+            }
+          }
+        ]}
+      >
+        <Select data-testid="artist-tags" mode="tags" tokenSeparators={[",", "，"]} />
+      </Form.Item>
+      <Form.Item label="演职人员描述" name="summary" rules={[{ required: true, message: "请输入演职人员描述" }, { max: 120 }]}>
+        <Input.TextArea data-testid="artist-summary" maxLength={120} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
+      </Form.Item>
+      <SortField />
+      <StatusField />
+      <DetailPageConfigFields
+        form={form}
+        ownerType="artist"
+        ownerPreviewData={{ title, avatarAssetId }}
+        initialDetailPage={editing ? (editing.detailPage as DetailPageConfigDto | null | undefined) ?? null : undefined}
+      />
+    </>
+  );
+}
+
+export const configs: Record<string, CrudConfig> = {
   announcements: {
     title: "公告管理",
     path: "/api/admin/announcements",
@@ -559,48 +726,13 @@ const configs: Record<string, CrudConfig> = {
       { title: "标题", dataIndex: "title" },
       { title: "分类", dataIndex: "category" },
       { title: "精选", dataIndex: "isFeatured", render: (value) => (value ? "是" : "否") },
-      { title: "排序", dataIndex: "sortOrder" }
+      { title: "排序", dataIndex: "sortOrder" },
+      detailTypeColumn(),
+      detailSummaryColumn()
     ],
-    normalize: (values) => ({ ...values, eventDate: values.eventDate ? dayjs(values.eventDate as string).toISOString() : new Date().toISOString() }),
-    fields: () => (
-      <>
-        <Form.Item label="标题" name="title" rules={[{ required: true }]}>
-          <Input data-testid="case-title" />
-        </Form.Item>
-        <Form.Item label="分类" name="category" rules={[{ required: true }]}>
-          <Input data-testid="case-category" />
-        </Form.Item>
-        <Form.Item label="标签" name="tag" rules={[{ required: true }]}>
-          <Input data-testid="case-tag" />
-        </Form.Item>
-        <Form.Item label="封面图" name="coverAssetId" rules={[{ required: true }]}>
-          <MediaField testid="case-cover-select" fieldKey="case.cover" />
-        </Form.Item>
-        <Form.Item label="简介" name="summary" rules={[{ required: true }]}>
-          <Input.TextArea data-testid="case-summary" />
-        </Form.Item>
-        <Form.Item label="活动日期" name="eventDate" rules={[{ required: true }]}>
-          <DatePicker data-testid="case-event-date" />
-        </Form.Item>
-        <Form.Item label="地点" name="location" rules={[{ required: true }]}>
-          <Input data-testid="case-location" />
-        </Form.Item>
-        <Form.Item label="详情内容" name="detail" rules={[{ required: true }]}>
-          <Input.TextArea data-testid="case-detail" />
-        </Form.Item>
-        <Form.Item label="详情图片/视频" name="detailMediaAssetIds" initialValue={[]}>
-          <MediaField testid="case-detail-media" fieldKey="case.detail" multiple />
-        </Form.Item>
-        <Form.Item label="是否精选" name="isFeatured" valuePropName="checked" initialValue={false}>
-          <Switch data-testid="case-featured" />
-        </Form.Item>
-        <Form.Item label="首页排序" name="featuredSortOrder" initialValue={1}>
-          <InputNumber data-testid="case-featured-sort-order" min={0} />
-        </Form.Item>
-        <SortField />
-        <StatusField />
-      </>
-    )
+    drawerWidth: 1040,
+    normalize: normalizeCasePayload,
+    fields: (form, editing) => <CaseCrudFields form={form} editing={editing} />
   },
   artists: {
     title: "人员管理",
@@ -622,52 +754,13 @@ const configs: Record<string, CrudConfig> = {
         dataIndex: "tags",
         render: (value, record) => normalizeArtistFormTags(value ?? record.tagsJson).map((tag) => <Tag key={tag}>{tag}</Tag>)
       },
-      { title: "排序", dataIndex: "sortOrder" }
+      { title: "排序", dataIndex: "sortOrder" },
+      detailTypeColumn(),
+      detailSummaryColumn()
     ],
-    normalize: (values) => ({ ...values, tags: normalizeArtistFormTags(values.tags) }),
-    fields: () => (
-      <>
-        <Form.Item label="姓名/艺名" name="name" rules={[{ required: true }]}>
-          <Input data-testid="artist-name" />
-        </Form.Item>
-        <Form.Item label="类型" name="type" rules={[{ required: true }]}>
-          <Select data-testid="artist-type" options={artistTypeValues.map((value) => ({ value, label: artistTypeLabels[value] }))} />
-        </Form.Item>
-        <Form.Item label="列表封面图" name="avatarAssetId" rules={[{ required: true, message: "请选择列表封面图" }]} extra="推荐尺寸 690×480，前台将以 aspectFill 裁切显示">
-          <MediaField testid="artist-cover-select" fieldKey="artist.avatar" />
-        </Form.Item>
-        <Form.Item label="演绎地点" name="location" rules={[{ required: true, message: "请输入演绎地点" }, { max: 30 }]}>
-          <Input data-testid="artist-location" maxLength={30} showCount />
-        </Form.Item>
-        <Form.Item label="左上角标签" name="badge" rules={[{ required: true, message: "请输入左上角标签" }, { max: 12 }]}>
-          <Input data-testid="artist-badge" maxLength={12} showCount />
-        </Form.Item>
-        <Form.Item
-          label="下方多个标签"
-          name="tags"
-          getValueFromEvent={(value) => normalizeArtistFormTags(value).slice(0, 4)}
-          rules={[
-            { required: true, message: "请至少填写一个标签" },
-            {
-              validator: (_, value) => {
-                const tags = normalizeArtistFormTags(value);
-                return tags.length >= 1 && tags.length <= 4 ? Promise.resolve() : Promise.reject(new Error("请填写 1 至 4 个标签"));
-              }
-            }
-          ]}
-        >
-          <Select data-testid="artist-tags" mode="tags" tokenSeparators={[",", "，"]} />
-        </Form.Item>
-        <Form.Item label="演职人员描述" name="summary" rules={[{ required: true, message: "请输入演职人员描述" }, { max: 120 }]}>
-          <Input.TextArea data-testid="artist-summary" maxLength={120} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
-        </Form.Item>
-        <Form.Item label="详情内容" name="detail" rules={[{ required: true }]}>
-          <Input.TextArea data-testid="artist-detail" autoSize={{ minRows: 4, maxRows: 8 }} />
-        </Form.Item>
-        <SortField />
-        <StatusField />
-      </>
-    )
+    drawerWidth: 1040,
+    normalize: normalizeArtistPayload,
+    fields: (form, editing) => <ArtistCrudFields form={form} editing={editing} />
   }
 };
 
@@ -698,14 +791,17 @@ function AppRoutes() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <ConfigProvider locale={zhCN}>
-      <AntApp>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AntApp>
-    </ConfigProvider>
-  </React.StrictMode>
-);
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  createRoot(rootElement).render(
+    <React.StrictMode>
+      <ConfigProvider locale={zhCN}>
+        <AntApp>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </AntApp>
+      </ConfigProvider>
+    </React.StrictMode>
+  );
+}
