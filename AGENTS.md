@@ -91,9 +91,13 @@ through application code or CI configuration. Classify the task first, then use
 the lowest sufficient route. The parent agent remains responsible for task
 classification, final review, validation, and acceptance.
 
+All agents must conduct task analysis, planning, and reasoning in Chinese.
+Use Chinese for internal working notes and agent handoffs unless code, command
+output, or a user requirement makes another language necessary.
+
 | Task class | Route | Model / reasoning | Use when |
 | --- | --- | --- | --- |
-| Planning | `planner` (read-only) | `gpt-5.6-sol` / `xhigh` | A long-term goal is being defined or decomposed, or requirements, architecture, acceptance criteria, data flow, or implementation choices need to be clarified before consequential work. Long-term goals must enter through this route. |
+| Planning | `planner` (read-only) | `gpt-5.6-sol` / `medium` | A long-term goal is being defined or decomposed, or requirements, architecture, acceptance criteria, data flow, or implementation choices need to be clarified before consequential work. Long-term goals must enter through this route. |
 | Routine work | Parent agent | `gpt-5.6-terra` / `high` | The edit is clear, bounded, follows an established pattern, and has low regression risk. The parent also owns ordinary debugging, tests, and validation. |
 | Complex work | `complex_implementer_high` | `gpt-5.5` / `high` | Multiple modules or interacting code paths require non-trivial state, compatibility, performance, or concurrency reasoning. Use one implementation agent at a time, then return validation to the parent. |
 | High-risk work | `complex_implementer_xhigh` | `gpt-5.5` / `xhigh` | Security or authorization boundaries, destructive migrations, data-integrity risk, consequential public API compatibility, distributed consistency, or difficult rollback are central. |
