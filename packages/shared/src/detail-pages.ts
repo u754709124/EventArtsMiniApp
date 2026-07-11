@@ -88,10 +88,14 @@ export const detailPageInputSchemas = {
   rich_text: RichTextDetailPageInputSchema
 } as const satisfies Record<DetailPageType, z.ZodType>;
 
-export const DetailPageInputSchema = z.discriminatedUnion("type", [
-  detailPageInputSchemas.banner_rich_text,
-  detailPageInputSchemas.rich_text
-]);
+type DetailPageInputSchemaOption = (typeof detailPageInputSchemas)[DetailPageType];
+
+export const detailPageInputSchemaOptions = Object.values(detailPageInputSchemas) as [
+  DetailPageInputSchemaOption,
+  ...DetailPageInputSchemaOption[]
+];
+
+export const DetailPageInputSchema = z.discriminatedUnion("type", detailPageInputSchemaOptions);
 
 export type BannerRichTextDetailPageInput = z.infer<typeof BannerRichTextDetailPageInputSchema>;
 export type RichTextDetailPageInput = z.infer<typeof RichTextDetailPageInputSchema>;

@@ -3,6 +3,7 @@ import {
   ActivityCaseCreateRequestSchema,
   ArtistCreateRequestSchema,
   DetailPageInputSchema,
+  detailPageInputSchemaOptions,
   detailPageInputSchemas,
   detailOwnerTypeValues,
   detailPageTypeDefinitions,
@@ -56,6 +57,17 @@ describe("detail page registry", () => {
 });
 
 describe("detail page input union", () => {
+  it("derives all discriminated-union options from the complete schema registry", () => {
+    const registryOptions = Object.values(detailPageInputSchemas);
+    const registryTypes = registryOptions.map((schema) => schema.shape.type.value);
+    const unionTypes = DetailPageInputSchema.options.map((schema) => schema.shape.type.value);
+
+    expect(detailPageInputSchemaOptions).toEqual(registryOptions);
+    expect(unionTypes).toEqual(registryTypes);
+    expect(new Set(unionTypes)).toEqual(new Set(detailPageTypeValues));
+    expect(unionTypes).toHaveLength(detailPageTypeValues.length);
+  });
+
   it("normalizes a valid banner and rich-text request", () => {
     expect(
       DetailPageInputSchema.parse({
