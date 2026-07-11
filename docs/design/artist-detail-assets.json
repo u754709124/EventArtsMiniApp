@@ -22,7 +22,7 @@
         "width": 1420,
         "height": 580
       },
-      "md5": "3a5b7be4c0ac9b4e871be27af28e4fe6",
+      "md5": "6c28ea24091b8ecb388b7b2cf97d4835",
       "note": "Full host and microphone with rebuilt dark-left focal area.",
       "uiTextExcluded": true,
       "excludedOverlayRegions": [
@@ -35,14 +35,45 @@
         {
           "left": 730,
           "top": 15,
-          "width": 145,
-          "height": 38
-        },
-        {
-          "left": 730,
-          "top": 57,
           "width": 148,
-          "height": 64
+          "height": 106
+        }
+      ],
+      "patches": [
+        {
+          "sourceCrop": {
+            "left": 760,
+            "top": 122,
+            "width": 138,
+            "height": 170
+          },
+          "targetRegion": {
+            "left": 680,
+            "top": 0,
+            "width": 218,
+            "height": 170
+          },
+          "blend": "over",
+          "sourceTransform": {
+            "type": "mirror-extend",
+            "left": 80,
+            "top": 0,
+            "right": 0,
+            "bottom": 0
+          },
+          "mask": {
+            "type": "feather",
+            "left": 55,
+            "top": 0,
+            "right": 0,
+            "bottom": 35
+          },
+          "outputTargetRegion": {
+            "left": 1075,
+            "top": 0,
+            "width": 345,
+            "height": 234
+          }
         }
       ]
     },
@@ -59,7 +90,7 @@
         "width": 1420,
         "height": 580
       },
-      "md5": "9ba858690c18365ad355bed5d3038c3e",
+      "md5": "7ca477c2e9d31ca178692663381f2b0e",
       "note": "Closer right-side host focal crop; head and microphone retained.",
       "uiTextExcluded": true,
       "excludedOverlayRegions": [
@@ -72,14 +103,45 @@
         {
           "left": 730,
           "top": 15,
-          "width": 145,
-          "height": 38
-        },
-        {
-          "left": 730,
-          "top": 57,
           "width": 148,
-          "height": 64
+          "height": 106
+        }
+      ],
+      "patches": [
+        {
+          "sourceCrop": {
+            "left": 760,
+            "top": 122,
+            "width": 138,
+            "height": 170
+          },
+          "targetRegion": {
+            "left": 680,
+            "top": 0,
+            "width": 218,
+            "height": 170
+          },
+          "blend": "over",
+          "sourceTransform": {
+            "type": "mirror-extend",
+            "left": 80,
+            "top": 0,
+            "right": 0,
+            "bottom": 0
+          },
+          "mask": {
+            "type": "feather",
+            "left": 55,
+            "top": 0,
+            "right": 0,
+            "bottom": 35
+          },
+          "outputTargetRegion": {
+            "left": 1002,
+            "top": 0,
+            "width": 418,
+            "height": 246
+          }
         }
       ]
     },
@@ -96,7 +158,7 @@
         "width": 1420,
         "height": 580
       },
-      "md5": "059c5a8887cd4420b58e0835e65344b6",
+      "md5": "6da1dc146009f8860f6e4f9753bb39fc",
       "note": "Wider activity scene with a deterministic dark extension at left.",
       "uiTextExcluded": true,
       "excludedOverlayRegions": [
@@ -109,14 +171,45 @@
         {
           "left": 730,
           "top": 15,
-          "width": 145,
-          "height": 38
-        },
-        {
-          "left": 730,
-          "top": 57,
           "width": 148,
-          "height": 64
+          "height": 106
+        }
+      ],
+      "patches": [
+        {
+          "sourceCrop": {
+            "left": 760,
+            "top": 122,
+            "width": 138,
+            "height": 170
+          },
+          "targetRegion": {
+            "left": 680,
+            "top": 0,
+            "width": 218,
+            "height": 170
+          },
+          "blend": "over",
+          "sourceTransform": {
+            "type": "mirror-extend",
+            "left": 80,
+            "top": 0,
+            "right": 0,
+            "bottom": 0
+          },
+          "mask": {
+            "type": "feather",
+            "left": 55,
+            "top": 0,
+            "right": 0,
+            "bottom": 35
+          },
+          "outputTargetRegion": {
+            "left": 1126,
+            "top": 0,
+            "width": 294,
+            "height": 229
+          }
         }
       ]
     },

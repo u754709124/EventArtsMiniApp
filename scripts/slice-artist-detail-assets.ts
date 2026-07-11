@@ -3,6 +3,9 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
+sharp.cache(false);
+sharp.concurrency(1);
+
 type Crop = { left: number; top: number; width: number; height: number };
 type ImageAssetSpec = {
   filename: string;
@@ -21,12 +24,19 @@ type GeneratedAsset = {
   note: string;
   uiTextExcluded?: boolean;
   excludedOverlayRegions?: Crop[];
+  patches?: Array<{
+    sourceCrop: Crop;
+    targetRegion: Crop;
+    outputTargetRegion: Crop;
+    blend: "over";
+    sourceTransform: { type: "mirror-extend"; left: number; top: number; right: number; bottom: number };
+    mask: { type: "feather"; left: number; top: number; right: number; bottom: number };
+  }>;
 };
 
 const root = process.cwd();
-const referenceSource = process.env.ARTIST_DETAIL_REFERENCE_SOURCE ??
-  "/private/var/folders/c2/2x76090s30vbtc2sg0fyxsj00000gn/T/codex-clipboard-19ddfc0d-299a-4ec2-99b2-a74b1dc36e5d.png";
 const referenceCopy = process.env.ARTIST_DETAIL_REFERENCE_COPY ?? path.join(root, "docs/design/reference-artist-detail-original.png");
+const referenceSource = process.env.ARTIST_DETAIL_REFERENCE_SOURCE ?? referenceCopy;
 const outputDir = process.env.ARTIST_DETAIL_OUTPUT_DIR ?? path.join(root, "apps/miniapp/src/assets/generated/artist-detail");
 const manifestPath = process.env.ARTIST_DETAIL_MANIFEST_PATH ?? path.join(root, "docs/design/artist-detail-assets.json");
 const gridPath = process.env.ARTIST_DETAIL_GRID_PATH ?? path.join(root, "docs/design/artist-detail-coordinate-grid.png");
@@ -39,9 +49,15 @@ const expectedReference = {
 };
 const bannerUiRegions: Crop[] = [
   { left: 0, top: 0, width: 520, height: 430 },
-  { left: 730, top: 15, width: 145, height: 38 },
-  { left: 730, top: 57, width: 148, height: 64 }
+  { left: 730, top: 15, width: 148, height: 106 }
 ];
+const curtainPatch = {
+  sourceCrop: { left: 760, top: 122, width: 138, height: 170 },
+  targetRegion: { left: 680, top: 0, width: 218, height: 170 },
+  blend: "over" as const,
+  sourceTransform: { type: "mirror-extend" as const, left: 80, top: 0, right: 0, bottom: 0 },
+  mask: { type: "feather" as const, left: 55, top: 0, right: 0, bottom: 35 }
+};
 
 const imageSpecs: ImageAssetSpec[] = [
   { filename: "banner-linran-balanced.png", kind: "banner", sourceCrop: { left: 0, top: 22, width: 898, height: 367 }, output: { width: 1420, height: 580 }, bannerMode: "balanced", note: "Full host and microphone with rebuilt dark-left focal area." },
@@ -91,14 +107,61 @@ function inBounds(crop: Crop, width: number, height: number) {
 }
 
 async function cleanedBannerSource() {
-  const statusPatch = await sharp(referenceCopy).extract({ left: 850, top: 130, width: 48, height: 38 }).resize(145, 38, { fit: "fill" }).blur(3).toBuffer();
-  const capsulePatch = await sharp(referenceCopy).extract({ left: 850, top: 168, width: 48, height: 64 }).resize(148, 64, { fit: "fill" }).blur(3).toBuffer();
-  const darkOverlay = Buffer.from(`<svg width="898" height="430" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#170d07" stop-opacity="1"/><stop offset="0.52" stop-color="#24130b" stop-opacity="1"/><stop offset="0.65" stop-color="#2b160c" stop-opacity="0"/></linearGradient></defs><rect width="898" height="430" fill="url(#g)"/></svg>`);
-  return sharp(referenceCopy)
+  const { width, height } = curtainPatch.targetRegion;
+  const base = await sharp(referenceCopy)
     .extract({ left: 0, top: 0, width: 898, height: 430 })
-    .composite([{ input: statusPatch, left: 730, top: 15 }, { input: capsulePatch, left: 730, top: 57 }, { input: darkOverlay, left: 0, top: 0 }])
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  const patch = await sharp(referenceCopy)
+    .extract(curtainPatch.sourceCrop)
+    .extend({ ...curtainPatch.sourceTransform, extendWith: "mirror" })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const leftAlpha = curtainPatch.mask.left === 0 ? 1 : Math.min(1, x / curtainPatch.mask.left);
+      const bottomDistance = height - 1 - y;
+      const bottomAlpha = curtainPatch.mask.bottom === 0 ? 1 : Math.min(1, bottomDistance / curtainPatch.mask.bottom);
+      const feather = Math.min(leftAlpha, bottomAlpha);
+      const smoothFeather = feather * feather * (3 - 2 * feather);
+      const patchOffset = (y * width + x) * 3;
+      const baseOffset = ((curtainPatch.targetRegion.top + y) * 898 + curtainPatch.targetRegion.left + x) * 3;
+      for (let channel = 0; channel < 3; channel += 1) {
+        base[baseOffset + channel] = Math.round(base[baseOffset + channel]! * (1 - smoothFeather) + patch[patchOffset + channel]! * smoothFeather);
+      }
+    }
+  }
+  const darkOverlay = Buffer.from(`<svg width="898" height="430" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#170d07" stop-opacity="1"/><stop offset="0.52" stop-color="#24130b" stop-opacity="1"/><stop offset="0.65" stop-color="#2b160c" stop-opacity="0"/></linearGradient></defs><rect width="898" height="430" fill="url(#g)"/></svg>`);
+  return sharp(base, { raw: { width: 898, height: 430, channels: 3 } })
+    .composite([{ input: darkOverlay, left: 0, top: 0 }])
     .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
     .toBuffer();
+}
+
+function outputPatchRegion(spec: ImageAssetSpec): Crop {
+  if (spec.bannerMode === "wide") {
+    const scaleX = 1212 / 898;
+    const scaleY = 580 / 430;
+    return {
+      left: 208 + Math.round(curtainPatch.targetRegion.left * scaleX),
+      top: Math.round(curtainPatch.targetRegion.top * scaleY),
+      width: Math.round(curtainPatch.targetRegion.width * scaleX),
+      height: Math.round(curtainPatch.targetRegion.height * scaleY)
+    };
+  }
+  const intersection = {
+    left: Math.max(spec.sourceCrop.left, curtainPatch.targetRegion.left),
+    top: Math.max(spec.sourceCrop.top, curtainPatch.targetRegion.top),
+    right: Math.min(spec.sourceCrop.left + spec.sourceCrop.width, curtainPatch.targetRegion.left + curtainPatch.targetRegion.width),
+    bottom: Math.min(spec.sourceCrop.top + spec.sourceCrop.height, curtainPatch.targetRegion.top + curtainPatch.targetRegion.height)
+  };
+  const left = Math.round(((intersection.left - spec.sourceCrop.left) / spec.sourceCrop.width) * spec.output.width);
+  const top = Math.round(((intersection.top - spec.sourceCrop.top) / spec.sourceCrop.height) * spec.output.height);
+  const right = Math.round(((intersection.right - spec.sourceCrop.left) / spec.sourceCrop.width) * spec.output.width);
+  const bottom = Math.round(((intersection.bottom - spec.sourceCrop.top) / spec.sourceCrop.height) * spec.output.height);
+  return { left, top, width: right - left, height: bottom - top };
 }
 
 async function renderImage(spec: ImageAssetSpec, bannerSource: Buffer): Promise<GeneratedAsset> {
@@ -129,7 +192,13 @@ async function renderImage(spec: ImageAssetSpec, bannerSource: Buffer): Promise<
     output: spec.output,
     md5: digest("md5", output),
     note: spec.note,
-    ...(spec.kind === "banner" ? { uiTextExcluded: true, excludedOverlayRegions: bannerUiRegions } : {})
+    ...(spec.kind === "banner"
+      ? {
+          uiTextExcluded: true,
+          excludedOverlayRegions: bannerUiRegions,
+          patches: [{ ...curtainPatch, outputTargetRegion: outputPatchRegion(spec) }]
+        }
+      : {})
   };
 }
 
@@ -162,8 +231,14 @@ async function renderContactSheet(assets: GeneratedAsset[]) {
 
 async function main() {
   await Promise.all([mkdir(outputDir, { recursive: true }), mkdir(path.dirname(manifestPath), { recursive: true }), mkdir(path.dirname(referenceCopy), { recursive: true })]);
-  await copyFile(referenceSource, referenceCopy);
-  const referenceBuffer = await readFile(referenceCopy);
+  const sourceBuffer = await readFile(referenceSource);
+  const sourceMetadata = await sharp(sourceBuffer).metadata();
+  const sourceReference = { width: sourceMetadata.width ?? 0, height: sourceMetadata.height ?? 0, sha256: digest("sha256", sourceBuffer) };
+  if (sourceReference.width !== expectedReference.width || sourceReference.height !== expectedReference.height || sourceReference.sha256 !== expectedReference.sha256) {
+    throw new Error(`Unexpected artist detail reference: ${sourceReference.width}x${sourceReference.height} ${sourceReference.sha256}`);
+  }
+  if (path.resolve(referenceSource) !== path.resolve(referenceCopy)) await copyFile(referenceSource, referenceCopy);
+  const referenceBuffer = path.resolve(referenceSource) === path.resolve(referenceCopy) ? sourceBuffer : await readFile(referenceCopy);
   const metadata = await sharp(referenceBuffer).metadata();
   const reference = { width: metadata.width ?? 0, height: metadata.height ?? 0, sha256: digest("sha256", referenceBuffer) };
   if (reference.width !== expectedReference.width || reference.height !== expectedReference.height || reference.sha256 !== expectedReference.sha256) {

@@ -2,11 +2,12 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
+import { registerSeedAssets, seedAssetSpecs } from "../src/assets";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { seedDatabase } from "../src/seed";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 
-const root = path.join(process.cwd(), ".tmp/detail-page-api-tests");
+const root = path.join(process.cwd(), ".tmp/detail-page-api-tests", String(process.pid));
 const databasePath = path.join(root, "api.db");
 const uploadDir = path.join(root, "uploads");
 let prisma: AppPrismaClient;
@@ -90,7 +91,7 @@ describe("detail page API integration", () => {
     const linran = await prisma.artist.findFirstOrThrow({ where: { name: "林然" } });
     const artistConfig = await prisma.detailPageConfig.findUniqueOrThrow({
       where: { ownerType_ownerId: { ownerType: "artist", ownerId: linran.id } },
-      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: true }
+      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: { include: { mediaAsset: true } } }
     });
     expect(artistConfig).toMatchObject({ pageType: "banner_rich_text", heroSubtitle: "温暖・专业・掌控全场" });
     expect(artistConfig.banners).toHaveLength(3);
@@ -138,16 +139,45 @@ describe("detail page API integration", () => {
         prisma.detailPageContentMedia.count()
       ])
     ).toEqual(before);
+
+    const reseededArtistConfig = await prisma.detailPageConfig.findUniqueOrThrow({
+      where: { ownerType_ownerId: { ownerType: "artist", ownerId: linran.id } },
+      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: { include: { mediaAsset: true } } }
+    });
+    expect(reseededArtistConfig.banners.map((banner) => banner.mediaAsset.originalName)).toEqual([
+      "banner-linran-balanced.png",
+      "banner-linran-close.png",
+      "banner-linran-wide.png"
+    ]);
+    expect(reseededArtistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()).toEqual(
+      artistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()
+    );
   });
 
-  it("reports the exact missing seed asset and the slicing command", async () => {
+  it("reports the core slicing command for a missing core seed asset", async () => {
+    const admin = await prisma.adminUser.findUniqueOrThrow({ where: { username: "admin" } });
     await expect(
-      seedDatabase(prisma, {
+      registerSeedAssets(prisma, {
         uploadDir,
         publicBaseUrl: "http://127.0.0.1:3001",
-        assetRoot: path.join(root, "missing-seed-assets")
+        assetRoot: path.join(root, "missing-seed-assets"),
+        createdBy: admin.id,
+        specs: [seedAssetSpecs.find((spec) => spec.relativePath === "banner-default.png")!]
       })
-    ).rejects.toThrow(/种子资源文件不存在：.*banner-default\.png.*pnpm assets:slice:artist-detail/);
+    ).rejects.toThrow(/种子资源文件不存在：.*banner-default\.png.*pnpm assets:slice(?:\s|$)/);
+  });
+
+  it("reports the detail slicing command for a missing detail seed asset", async () => {
+    const admin = await prisma.adminUser.findUniqueOrThrow({ where: { username: "admin" } });
+    await expect(
+      registerSeedAssets(prisma, {
+        uploadDir,
+        publicBaseUrl: "http://127.0.0.1:3001",
+        assetRoot: path.join(root, "missing-seed-assets"),
+        createdBy: admin.id,
+        specs: [seedAssetSpecs.find((spec) => spec.relativePath === "artist-detail/banner-linran-balanced.png")!]
+      })
+    ).rejects.toThrow(/种子资源文件不存在：.*banner-linran-balanced\.png.*pnpm assets:slice:artist-detail/);
   });
 
   it("previews with production validation without writing config rows", async () => {

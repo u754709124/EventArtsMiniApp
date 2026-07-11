@@ -6,6 +6,9 @@ import { normalizeResourceName } from "@event-arts/shared";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
 
+sharp.cache(false);
+sharp.concurrency(1);
+
 export type SeedAssetSpec = {
   key: string;
   relativePath: string;
@@ -37,12 +40,13 @@ export const seedAssetSpecs: SeedAssetSpec[] = [
   { key: "asset.artist-detail.detail-case-demo.mp4", relativePath: "artist-detail/detail-case-demo.mp4", mediaType: "video", mimeType: "video/mp4", width: 16, height: 16 }
 ];
 
-async function readRequiredSeedAsset(source: string) {
+async function readRequiredSeedAsset(source: string, spec: SeedAssetSpec) {
   try {
     return await readFile(source);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`种子资源文件不存在：${source}。请先运行 pnpm assets:slice:artist-detail`);
+      const command = spec.relativePath.startsWith("artist-detail/") ? "pnpm assets:slice:artist-detail" : "pnpm assets:slice";
+      throw new Error(`种子资源文件不存在：${source}。请先运行 ${command}`);
     }
     throw error;
   }
@@ -66,7 +70,7 @@ export async function registerSeedAssets(
   const assets = new Map<string, { id: number; url: string; mediaType: string }>();
   for (const spec of options.specs ?? seedAssetSpecs) {
     const source = path.join(options.assetRoot, spec.relativePath);
-    const buffer = await readRequiredSeedAsset(source);
+    const buffer = await readRequiredSeedAsset(source, spec);
     const md5 = createHash("md5").update(buffer).digest("hex");
     const identity = await prisma.seedRecord.findUnique({ where: { key: spec.key } });
     let asset = identity?.entityType === "mediaAsset"
