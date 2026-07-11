@@ -21,7 +21,9 @@ export function DetailRouteView<T extends DetailData>({
   retry,
   buildHero,
   fallbackTabUrl,
-  loadingLayout = "bannerRichText",
+  // The renderer is unknown before the DTO arrives. A neutral card skeleton avoids
+  // speculatively creating banner DOM for a route that may resolve to rich-only.
+  loadingLayout = "richText",
   loadingTitle = "详情"
 }: {
   state: DetailResourceState<T>;

@@ -386,6 +386,8 @@ $detail-overlap: 36rpx;
 }
 
 .detail-video-error,
+.detail-banner-media-error,
+.detail-image-health-error,
 .detail-state {
   display: flex;
   flex-direction: column;
@@ -431,6 +433,14 @@ $detail-overlap: 36rpx;
       opacity: 0.7;
     }
   }
+}
+
+.detail-banner-media-error,
+.detail-image-health-error {
+  min-height: 176rpx;
+  margin: 0 0 18rpx;
+  color: #7c3f16;
+  background: #fff9ed;
 }
 
 .detail-page--state .detail-state {

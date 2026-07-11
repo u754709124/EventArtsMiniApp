@@ -21,6 +21,7 @@ export default function CaseDetail() {
         retry={resource.retry}
         buildHero={buildCaseHero}
         fallbackTabUrl="/pages/cases/list"
+        loadingLayout="richText"
         loadingTitle="案例详情"
       />
     </View>

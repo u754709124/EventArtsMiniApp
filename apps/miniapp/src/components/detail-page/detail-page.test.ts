@@ -14,7 +14,14 @@ import {
   hasSemanticDetailContent,
   sortDetailBanners
 } from "./model";
+import {
+  checkDetailImageHealth,
+  previewRichTextImage,
+  resolveRichTextImageTarget,
+  updateFailedMediaIds
+} from "./media-health";
 import { createDetailRequestGate } from "./request-race";
+import { getVideoAspectRatioPadding } from "./video-layout";
 
 const miniappSourceRoot = resolve(import.meta.dirname, "../..");
 
@@ -112,6 +119,26 @@ describe("detail renderer registry and layout contracts", () => {
       }
     );
   });
+
+  it("uses a banner-free neutral skeleton before every route knows its renderer", () => {
+    const routeViewSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailRouteView.tsx"),
+      "utf8"
+    );
+    const skeletonSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailPageSkeleton.tsx"),
+      "utf8"
+    );
+    const routeSources = ["pages/artists/detail.tsx", "pages/cases/detail.tsx"].map((file) =>
+      readFileSync(resolve(miniappSourceRoot, file), "utf8")
+    );
+    expect(routeViewSource).toContain('loadingLayout = "richText"');
+    expect(routeSources.join("\n")).not.toContain('loadingLayout="bannerRichText"');
+    expect(skeletonSource).toContain('const banner = layout === "bannerRichText"');
+    expect(getDetailLayoutContract("richText").createsBannerSkeleton).toBe(false);
+    expect(getDetailLayoutContract("richText").reservesBannerHeight).toBe(false);
+    expect(getDetailLayoutContract("richText").usesNegativeOverlap).toBe(false);
+  });
 });
 
 describe("owner adapters and rich media model", () => {
@@ -177,6 +204,70 @@ describe("detail request race gate", () => {
     gate.dispose();
     expect(aborted).toEqual(["1", "2"]);
     expect(gate.isCurrent(second)).toBe(false);
+  });
+});
+
+describe("recoverable detail media", () => {
+  it("preflights only provided image URLs and reports failed URLs in stable order", async () => {
+    const checked: string[] = [];
+    const failed = await checkDetailImageHealth(
+      ["/one.jpg", "/two.jpg", "/one.jpg"],
+      async (url) => {
+        checked.push(url);
+        if (url === "/two.jpg") throw new Error("broken");
+      }
+    );
+    expect(checked).toEqual(["/one.jpg", "/two.jpg"]);
+    expect(failed).toEqual(["/two.jpg"]);
+
+    let emptyChecks = 0;
+    expect(await checkDetailImageHealth([], async () => void (emptyChecks += 1))).toEqual([]);
+    expect(emptyChecks).toBe(0);
+  });
+
+  it("tracks banner failures explicitly and clears them on retry", () => {
+    expect(updateFailedMediaIds([], 9, true)).toEqual([9]);
+    expect(updateFailedMediaIds([9], 9, true)).toEqual([9]);
+    expect(updateFailedMediaIds([9, 11], 9, false)).toEqual([11]);
+  });
+
+  it("resolves a clicked rich-text image and previews images only", async () => {
+    const urls = ["/one.jpg", "/two.jpg"];
+    expect(resolveRichTextImageTarget({ target: { dataset: { src: "/two.jpg" } } }, urls)).toBe(
+      "/two.jpg"
+    );
+    expect(resolveRichTextImageTarget({ target: { src: "/video.mp4" } }, urls)).toBeUndefined();
+
+    const calls: Array<{ current: string; urls: string[] }> = [];
+    await previewRichTextImage(
+      { target: { src: "/one.jpg" } },
+      urls,
+      async (options) => void calls.push(options)
+    );
+    expect(calls).toEqual([{ current: "/one.jpg", urls }]);
+  });
+
+  it("uses the trusted video ratio exactly and falls back only for invalid dimensions", () => {
+    expect(getVideoAspectRatioPadding({ width: 100, height: 300 })).toBe("300%");
+    expect(getVideoAspectRatioPadding({ width: 1920, height: 1080 })).toBe("56.25%");
+    expect(getVideoAspectRatioPadding({ width: null, height: null })).toBe("56.25%");
+    expect(getVideoAspectRatioPadding({ width: 0, height: 1080 })).toBe("56.25%");
+  });
+
+  it("wires banner image failures to a visible retry and remount key", () => {
+    const appImageSource = readFileSync(
+      resolve(miniappSourceRoot, "components/AppImage.tsx"),
+      "utf8"
+    );
+    const bannerSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/BannerRichTextRenderer.tsx"),
+      "utf8"
+    );
+    expect(appImageSource).toContain("onError?:");
+    expect(appImageSource).toContain("current === src");
+    expect(bannerSource).toContain("detail-banner-media-error");
+    expect(bannerSource).toContain("bannerRetryKey");
+    expect(bannerSource).toContain("重新加载图片");
   });
 });
 

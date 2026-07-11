@@ -1,14 +1,11 @@
 import { Text, Video, View } from "@tarojs/components";
 import { useState } from "react";
 import type { ExtractDetailPageVideoBlock } from "./internal-types";
+import { getVideoAspectRatioPadding } from "./video-layout";
 
 export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock }) {
   const [failed, setFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const ratio =
-    block.width && block.height && block.width > 0 && block.height > 0
-      ? block.height / block.width
-      : 9 / 16;
 
   if (failed) {
     return (
@@ -30,7 +27,7 @@ export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock
   return (
     <View
       className="detail-video-wrap"
-      style={{ paddingBottom: `${Math.min(Math.max(ratio, 0.35), 1.5) * 100}%` }}
+      style={{ paddingBottom: getVideoAspectRatioPadding(block) }}
       data-testid="detail-video"
     >
       <Video

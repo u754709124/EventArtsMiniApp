@@ -21,6 +21,7 @@ export default function ArtistDetail() {
         retry={resource.retry}
         buildHero={buildArtistHero}
         fallbackTabUrl="/pages/category/index"
+        loadingLayout="richText"
         loadingTitle="人员详情"
       />
     </View>

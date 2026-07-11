@@ -5,6 +5,7 @@ import { AppImage } from "../AppImage";
 import { DetailNavigation } from "./DetailNavigation";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
+import { updateFailedMediaIds } from "./media-health";
 import { sortDetailBanners } from "./model";
 import type { DetailRendererProps } from "./types";
 
@@ -14,11 +15,14 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
     [config.banners]
   );
   const [current, setCurrent] = useState(0);
+  const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
+  const [bannerRetryKey, setBannerRetryKey] = useState(0);
   const multiple = banners.length > 1;
   const fixedForE2E =
     process.env.NODE_ENV === "test" ||
     (typeof globalThis !== "undefined" &&
-      (globalThis as typeof globalThis & { __TARO_DETAIL_E2E_FIXED__?: boolean }).__TARO_DETAIL_E2E_FIXED__ === true);
+      (globalThis as typeof globalThis & { __TARO_DETAIL_E2E_FIXED__?: boolean })
+        .__TARO_DETAIL_E2E_FIXED__ === true);
 
   if (!banners.length) {
     return (
@@ -44,11 +48,18 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
           {banners.map((banner) => (
             <SwiperItem key={banner.id}>
               <AppImage
+                key={`${bannerRetryKey}-${banner.id}`}
                 className="detail-banner__image"
                 src={banner.url}
                 fallback={generatedAssets.placeholderBanner}
                 mode="aspectFill"
                 testid="detail-banner-image"
+                onError={() =>
+                  setFailedBannerIds((ids) => updateFailedMediaIds(ids, banner.id, true))
+                }
+                onLoad={() =>
+                  setFailedBannerIds((ids) => updateFailedMediaIds(ids, banner.id, false))
+                }
               />
             </SwiperItem>
           ))}
@@ -61,6 +72,25 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
         </Text>
       </View>
       <View className="detail-content detail-content--overlap" data-testid="detail-content-overlap">
+        {failedBannerIds.length > 0 && (
+          <View
+            className="detail-banner-media-error"
+            data-testid="detail-banner-media-error"
+            role="alert"
+          >
+            <Text>{failedBannerIds.length} 张 BANNER 图片加载失败，已显示占位图</Text>
+            <Text
+              className="detail-state__button"
+              data-testid="detail-banner-media-retry"
+              onClick={() => {
+                setFailedBannerIds([]);
+                setBannerRetryKey((value) => value + 1);
+              }}
+            >
+              重新加载图片
+            </Text>
+          </View>
+        )}
         <DetailRichContent blocks={config.blocks} />
       </View>
     </View>
