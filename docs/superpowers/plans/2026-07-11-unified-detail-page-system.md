@@ -183,11 +183,11 @@ export async function previewDetailPageConfig(db: DetailPageDb, input: DetailPag
 
 **Files:** create `scripts/slice-artist-detail-assets.ts`, generated asset directory, manifest/contact sheet; modify root scripts, `assets.ts`, seed, docs design references.
 
-- [ ] Copy the 898×1751 reference into `docs/design/reference-artist-detail-original.png` without baking status/navigation/text UI into banner assets.
-- [ ] Implement deterministic Sharp manifest cropping, coordinate-grid output, component crops, three banner focal variants, and contact sheet. Record every crop coordinate and output MD5.
-- [ ] Add `assets:slice:artist-detail`; run twice and compare hashes.
-- [ ] Seed 林然 banner-rich-text with three banners and full specified template, another rich-text artist, one banner case with image/video, and one rich-text case with media. Resolve actual media IDs before composing HTML and use stable SeedRecord keys.
-- [ ] Test repeated seed has stable counts/relationships and missing file errors are explicit; commit `feat(seed): add reusable detail page examples`.
+- [x] Copy the 898×1751 reference into `docs/design/reference-artist-detail-original.png` without baking status/navigation/text UI into banner assets.
+- [x] Implement deterministic Sharp manifest cropping, coordinate-grid output, component crops, three banner focal variants, and contact sheet. Record every crop coordinate and output MD5.
+- [x] Add `assets:slice:artist-detail`; run twice and compare hashes.
+- [x] Seed 林然 banner-rich-text with three banners and full specified template, another rich-text artist, one banner case with image/video, and one rich-text case with media. Resolve actual media IDs before composing HTML and use stable SeedRecord keys.
+- [x] Test repeated seed has stable counts/relationships and missing file errors are explicit; commit `feat(seed): add reusable detail page examples`.
 
 ## Task 9: Reusable Admin Media Selection and Banner Field
 

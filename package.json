@@ -20,6 +20,7 @@
     "db:seed": "pnpm --filter api db:seed",
     "assets:slice": "tsx scripts/slice-home-assets.ts",
     "assets:slice:artists": "tsx scripts/slice-artist-assets.ts",
+    "assets:slice:artist-detail": "node --import tsx scripts/slice-artist-detail-assets.ts",
     "release:check": "pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
   },
   "devDependencies": {

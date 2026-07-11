@@ -1,15 +1,11 @@
-import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildActivityCaseTemplate,
   buildArtistProfileTemplate,
-  normalizeResourceName,
   serializeArtistTags,
   type ArtistType
 } from "@event-arts/shared";
-import sharp from "sharp";
+import { registerSeedAssets } from "./assets";
 import type { AppPrismaClient } from "./db";
 import { upsertDetailPageConfig } from "./detail-pages/detail-page-service";
 import { hashPassword } from "./security";
@@ -18,22 +14,10 @@ type SeedOptions = {
   uploadDir: string;
   publicBaseUrl: string;
   reset?: boolean;
+  assetRoot?: string;
 };
 
 const assetRoot = path.resolve(process.cwd(), "../../apps/miniapp/src/assets/generated");
-
-async function ensureSeedAssetFile(source: string, target: string, expectedMd5: string) {
-  await mkdir(path.dirname(target), { recursive: true });
-  try {
-    await copyFile(source, target, constants.COPYFILE_EXCL);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const existingMd5 = createHash("md5").update(await readFile(target)).digest("hex");
-    if (existingMd5 !== expectedMd5) throw new Error(`种子资源目标文件内容冲突：${target}`);
-    return false;
-  }
-}
 
 async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.seedRecord.deleteMany();
@@ -93,68 +77,12 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     }
   });
 
-  const files = [
-    "banner-default.png",
-    "placeholder-banner.png",
-    "placeholder-icon.png",
-    "placeholder-case.png",
-    "icon-host.png",
-    "icon-singer.png",
-    "icon-actor.png",
-    "icon-case.png",
-    "icon-contact.png",
-    "case-1.png",
-    "case-2.png",
-    "case-3.png",
-    "artist-cover-01.png",
-    "artist-cover-02.png",
-    "artist-cover-03.png",
-    "artist-cover-04.png",
-    "artist-cover-05.png",
-    "artist-cover-06.png"
-  ] as const;
-
-  const assets = new Map<string, { id: number; url: string }>();
-  for (const filename of files) {
-    const source = path.join(assetRoot, filename);
-    const buffer = await readFile(source);
-    const metadata = await sharp(buffer).metadata();
-    const md5 = createHash("md5").update(buffer).digest("hex");
-    const normalizedName = normalizeResourceName(filename);
-    let asset = await prisma.mediaAsset.findUnique({ where: { md5 } });
-    if (!asset) {
-      const storageFilename = `seed/${md5}.png`;
-      const target = path.join(options.uploadDir, storageFilename);
-      await ensureSeedAssetFile(source, target, md5);
-      const nameOwner = await prisma.mediaAsset.findUnique({ where: { resourceNameKey: normalizedName.key } });
-      const uniqueName = nameOwner ? normalizeResourceName(`${filename} (${md5.slice(0, 8)})`) : normalizedName;
-      try {
-        asset = await prisma.mediaAsset.create({
-          data: {
-            resourceName: uniqueName.displayName,
-            resourceNameKey: uniqueName.key,
-            originalName: filename,
-            filename: storageFilename,
-            md5,
-            mimeType: "image/png",
-            mediaType: "image",
-            legacyUsage: "legacy",
-            url: `${options.publicBaseUrl}/uploads/${storageFilename}`,
-            width: metadata.width,
-            height: metadata.height,
-            size: buffer.length,
-            storageType: "local",
-            createdBy: admin.id
-          }
-        });
-      } catch (error) {
-        const concurrentAsset = await prisma.mediaAsset.findUnique({ where: { md5 } });
-        if (concurrentAsset) asset = concurrentAsset;
-        else throw new Error(`种子资源写库失败，内容寻址文件已保留供安全重试：${target}`, { cause: error });
-      }
-    }
-    assets.set(filename, asset);
-  }
+  const assets = await registerSeedAssets(prisma, {
+    assetRoot: options.assetRoot ?? assetRoot,
+    uploadDir: options.uploadDir,
+    publicBaseUrl: options.publicBaseUrl,
+    createdBy: admin.id
+  });
 
   await prisma.siteConfig.upsert({
     where: { id: 1 },
@@ -270,7 +198,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     });
     const caseImageIds = [
       assets.get(cover)!.id,
-      assets.get(`case-${((index + 1) % 3) + 1}.png` as (typeof files)[number])!.id
+      assets.get(`case-${((index + 1) % 3) + 1}.png`)!.id
     ];
     await upsertDetailPageConfig(
       prisma,
@@ -280,12 +208,19 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
         ? {
             type: "banner_rich_text",
             heroSubtitle: "专业策划・精彩呈现",
-            bannerAssetIds: caseImageIds,
-            richTextHtml: buildActivityCaseTemplate(caseImageIds)
+            bannerAssetIds: [assets.get("case-shangri-la-wedding.png")!.id, assets.get("case-lawn-wedding.png")!.id],
+            richTextHtml: buildActivityCaseTemplate(
+              [assets.get("case-shangri-la-wedding.png")!.id, assets.get("case-brand-launch.png")!.id, assets.get("case-annual-gala.png")!.id],
+              assets.get("detail-case-demo.mp4")!.id
+            )
           }
         : {
             type: "rich_text",
-            richTextHtml: buildActivityCaseTemplate(caseImageIds)
+            richTextHtml: buildActivityCaseTemplate(
+              index === 1
+                ? [assets.get("case-brand-launch.png")!.id, assets.get("review-conference.png")!.id]
+                : caseImageIds
+            )
           }
     );
   }
@@ -306,7 +241,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
   const artists: Array<{
     name: string;
     type: ArtistType;
-    cover: (typeof files)[number];
+    cover: string;
     location: string;
     badge: string;
     tags: string[];
@@ -538,16 +473,16 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     });
     if (name === "林然") {
       const bannerAssetIds = [
-        assets.get("artist-cover-01.png")!.id,
-        assets.get("artist-cover-02.png")!.id,
-        assets.get("artist-cover-03.png")!.id
+        assets.get("banner-linran-balanced.png")!.id,
+        assets.get("banner-linran-close.png")!.id,
+        assets.get("banner-linran-wide.png")!.id
       ];
       const contentAssetIds = [
-        assets.get("case-1.png")!.id,
-        assets.get("case-2.png")!.id,
-        assets.get("case-3.png")!.id,
-        assets.get("artist-cover-04.png")!.id,
-        assets.get("artist-cover-05.png")!.id
+        assets.get("case-shangri-la-wedding.png")!.id,
+        assets.get("case-brand-launch.png")!.id,
+        assets.get("case-annual-gala.png")!.id,
+        assets.get("case-lawn-wedding.png")!.id,
+        assets.get("case-appreciation-dinner.png")!.id
       ];
       await upsertDetailPageConfig(prisma, "artist", seededArtist.id, {
         type: "banner_rich_text",

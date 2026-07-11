@@ -1,0 +1,488 @@
+{
+  "reference": {
+    "path": "docs/design/reference-artist-detail-original.png",
+    "width": 898,
+    "height": 1751,
+    "sha256": "49f23ba827eb253dec7347672fc49076d6df3ade991624ea7cfef6ded071ff39"
+  },
+  "coordinateGrid": "docs/design/artist-detail-coordinate-grid.png",
+  "contactSheet": "docs/design/artist-detail-assets-contact-sheet.png",
+  "outputDir": "apps/miniapp/src/assets/generated/artist-detail",
+  "assets": [
+    {
+      "filename": "banner-linran-balanced.png",
+      "kind": "banner",
+      "sourceCrop": {
+        "left": 0,
+        "top": 22,
+        "width": 898,
+        "height": 367
+      },
+      "output": {
+        "width": 1420,
+        "height": 580
+      },
+      "md5": "3a5b7be4c0ac9b4e871be27af28e4fe6",
+      "note": "Full host and microphone with rebuilt dark-left focal area.",
+      "uiTextExcluded": true,
+      "excludedOverlayRegions": [
+        {
+          "left": 0,
+          "top": 0,
+          "width": 520,
+          "height": 430
+        },
+        {
+          "left": 730,
+          "top": 15,
+          "width": 145,
+          "height": 38
+        },
+        {
+          "left": 730,
+          "top": 57,
+          "width": 148,
+          "height": 64
+        }
+      ]
+    },
+    {
+      "filename": "banner-linran-close.png",
+      "kind": "banner",
+      "sourceCrop": {
+        "left": 158,
+        "top": 42,
+        "width": 740,
+        "height": 302
+      },
+      "output": {
+        "width": 1420,
+        "height": 580
+      },
+      "md5": "9ba858690c18365ad355bed5d3038c3e",
+      "note": "Closer right-side host focal crop; head and microphone retained.",
+      "uiTextExcluded": true,
+      "excludedOverlayRegions": [
+        {
+          "left": 0,
+          "top": 0,
+          "width": 520,
+          "height": 430
+        },
+        {
+          "left": 730,
+          "top": 15,
+          "width": 145,
+          "height": 38
+        },
+        {
+          "left": 730,
+          "top": 57,
+          "width": 148,
+          "height": 64
+        }
+      ]
+    },
+    {
+      "filename": "banner-linran-wide.png",
+      "kind": "banner",
+      "sourceCrop": {
+        "left": 0,
+        "top": 0,
+        "width": 898,
+        "height": 430
+      },
+      "output": {
+        "width": 1420,
+        "height": 580
+      },
+      "md5": "059c5a8887cd4420b58e0835e65344b6",
+      "note": "Wider activity scene with a deterministic dark extension at left.",
+      "uiTextExcluded": true,
+      "excludedOverlayRegions": [
+        {
+          "left": 0,
+          "top": 0,
+          "width": 520,
+          "height": 430
+        },
+        {
+          "left": 730,
+          "top": 15,
+          "width": 145,
+          "height": 38
+        },
+        {
+          "left": 730,
+          "top": 57,
+          "width": 148,
+          "height": 64
+        }
+      ]
+    },
+    {
+      "filename": "advantage-experience.png",
+      "kind": "advantage",
+      "sourceCrop": {
+        "left": 116,
+        "top": 675,
+        "width": 54,
+        "height": 58
+      },
+      "output": {
+        "width": 120,
+        "height": 120
+      },
+      "md5": "08b95665132b85c6a4760fb5fa63c2cc",
+      "note": "Eight-year experience medal icon."
+    },
+    {
+      "filename": "advantage-scenes.png",
+      "kind": "advantage",
+      "sourceCrop": {
+        "left": 309,
+        "top": 676,
+        "width": 57,
+        "height": 56
+      },
+      "output": {
+        "width": 120,
+        "height": 120
+      },
+      "md5": "88ecd45f924bb8f346b3815126ee5b19",
+      "note": "Wedding and commercial scenes icon."
+    },
+    {
+      "filename": "advantage-control.png",
+      "kind": "advantage",
+      "sourceCrop": {
+        "left": 527,
+        "top": 675,
+        "width": 58,
+        "height": 58
+      },
+      "output": {
+        "width": 120,
+        "height": 120
+      },
+      "md5": "53ce437a80d58492fd73f7f25d518d59",
+      "note": "Microphone control icon."
+    },
+    {
+      "filename": "advantage-mandarin.png",
+      "kind": "advantage",
+      "sourceCrop": {
+        "left": 741,
+        "top": 675,
+        "width": 56,
+        "height": 58
+      },
+      "output": {
+        "width": 120,
+        "height": 120
+      },
+      "md5": "6acc0d7df8ae106b0bb9755742ea5020",
+      "note": "Mandarin qualification icon."
+    },
+    {
+      "filename": "case-shangri-la-wedding.png",
+      "kind": "case",
+      "sourceCrop": {
+        "left": 53,
+        "top": 876,
+        "width": 150,
+        "height": 110
+      },
+      "output": {
+        "width": 600,
+        "height": 440
+      },
+      "md5": "106b501e920bee2a7f22390ac4132c36",
+      "note": "Shangri-La wedding scene photo only."
+    },
+    {
+      "filename": "case-brand-launch.png",
+      "kind": "case",
+      "sourceCrop": {
+        "left": 214,
+        "top": 876,
+        "width": 151,
+        "height": 110
+      },
+      "output": {
+        "width": 604,
+        "height": 440
+      },
+      "md5": "89ae719dd36f76037b2bb6eed028cd43",
+      "note": "Brand launch scene photo only."
+    },
+    {
+      "filename": "case-annual-gala.png",
+      "kind": "case",
+      "sourceCrop": {
+        "left": 375,
+        "top": 876,
+        "width": 151,
+        "height": 110
+      },
+      "output": {
+        "width": 604,
+        "height": 440
+      },
+      "md5": "1a50e0b2fc2c8d0ba14755af4a1111df",
+      "note": "Annual gala scene photo only."
+    },
+    {
+      "filename": "case-lawn-wedding.png",
+      "kind": "case",
+      "sourceCrop": {
+        "left": 538,
+        "top": 876,
+        "width": 151,
+        "height": 110
+      },
+      "output": {
+        "width": 604,
+        "height": 440
+      },
+      "md5": "45679b4439d36998ab7fa7dcbb9883d3",
+      "note": "Outdoor lawn wedding scene photo only."
+    },
+    {
+      "filename": "case-appreciation-dinner.png",
+      "kind": "case",
+      "sourceCrop": {
+        "left": 698,
+        "top": 876,
+        "width": 149,
+        "height": 110
+      },
+      "output": {
+        "width": 596,
+        "height": 440
+      },
+      "md5": "c773a60cfcf7782c5511795ba90acf6c",
+      "note": "Appreciation dinner scene photo only."
+    },
+    {
+      "filename": "process-communication.png",
+      "kind": "process",
+      "sourceCrop": {
+        "left": 93,
+        "top": 1127,
+        "width": 55,
+        "height": 55
+      },
+      "output": {
+        "width": 110,
+        "height": 110
+      },
+      "md5": "eb8f176681d71a62b6dafa2f9601d017",
+      "note": "Requirements communication icon."
+    },
+    {
+      "filename": "process-plan.png",
+      "kind": "process",
+      "sourceCrop": {
+        "left": 259,
+        "top": 1127,
+        "width": 55,
+        "height": 55
+      },
+      "output": {
+        "width": 110,
+        "height": 110
+      },
+      "md5": "56a071ac14f8467e267c2a50bdd768e4",
+      "note": "Plan confirmation icon."
+    },
+    {
+      "filename": "process-schedule.png",
+      "kind": "process",
+      "sourceCrop": {
+        "left": 417,
+        "top": 1127,
+        "width": 55,
+        "height": 55
+      },
+      "output": {
+        "width": 110,
+        "height": 110
+      },
+      "md5": "a1557ea01cda3097537114b676dc4473",
+      "note": "Schedule confirmation icon."
+    },
+    {
+      "filename": "process-execution.png",
+      "kind": "process",
+      "sourceCrop": {
+        "left": 581,
+        "top": 1127,
+        "width": 55,
+        "height": 55
+      },
+      "output": {
+        "width": 110,
+        "height": 110
+      },
+      "md5": "6ddb7bdee30b2848187e58b226961cd8",
+      "note": "On-site execution icon."
+    },
+    {
+      "filename": "process-followup.png",
+      "kind": "process",
+      "sourceCrop": {
+        "left": 747,
+        "top": 1127,
+        "width": 55,
+        "height": 55
+      },
+      "output": {
+        "width": 110,
+        "height": 110
+      },
+      "md5": "82d8ad1e94252abf982b9de9f5e4587b",
+      "note": "After-service follow-up icon."
+    },
+    {
+      "filename": "customer-xiaoquexing.png",
+      "kind": "avatar",
+      "sourceCrop": {
+        "left": 69,
+        "top": 1324,
+        "width": 60,
+        "height": 60
+      },
+      "output": {
+        "width": 180,
+        "height": 180
+      },
+      "md5": "0566c43cb067f723d428c0f7e0bd7fe9",
+      "note": "Customer avatar for 小确幸."
+    },
+    {
+      "filename": "customer-leon.png",
+      "kind": "avatar",
+      "sourceCrop": {
+        "left": 69,
+        "top": 1448,
+        "width": 60,
+        "height": 60
+      },
+      "output": {
+        "width": 180,
+        "height": 180
+      },
+      "md5": "56cb3a1e3acba3213d008c7adeffad78",
+      "note": "Customer avatar for Leon."
+    },
+    {
+      "filename": "review-wedding.png",
+      "kind": "review",
+      "sourceCrop": {
+        "left": 723,
+        "top": 1318,
+        "width": 108,
+        "height": 105
+      },
+      "output": {
+        "width": 432,
+        "height": 420
+      },
+      "md5": "64f19a39249c5f1a9f3c00648099fbd7",
+      "note": "Wedding review image only."
+    },
+    {
+      "filename": "review-conference.png",
+      "kind": "review",
+      "sourceCrop": {
+        "left": 723,
+        "top": 1445,
+        "width": 108,
+        "height": 108
+      },
+      "output": {
+        "width": 432,
+        "height": 432
+      },
+      "md5": "db077f848c8d2adbdfbf5d66dcfa82ad",
+      "note": "Conference review image only."
+    },
+    {
+      "filename": "icon-crown.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 217,
+        "top": 1328,
+        "width": 24,
+        "height": 24
+      },
+      "output": {
+        "width": 96,
+        "height": 96
+      },
+      "md5": "7b0274a56f9f32a19db57057aadf8dad",
+      "note": "Customer crown icon."
+    },
+    {
+      "filename": "icon-location.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 80,
+        "top": 387,
+        "width": 27,
+        "height": 29
+      },
+      "output": {
+        "width": 96,
+        "height": 96
+      },
+      "md5": "c3d532de6bad362d2c5b0afcc918f188",
+      "note": "Location icon."
+    },
+    {
+      "filename": "icon-calendar.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 55,
+        "top": 1588,
+        "width": 25,
+        "height": 27
+      },
+      "output": {
+        "width": 96,
+        "height": 96
+      },
+      "md5": "d7704506e27175bca32acd94cd4b3f06",
+      "note": "Schedule reminder calendar icon."
+    },
+    {
+      "filename": "icon-question.png",
+      "kind": "icon",
+      "sourceCrop": {
+        "left": 469,
+        "top": 1588,
+        "width": 25,
+        "height": 27
+      },
+      "output": {
+        "width": 96,
+        "height": 96
+      },
+      "md5": "127116bc8a9e9ca6afa70a97847cdcc0",
+      "note": "FAQ question icon."
+    },
+    {
+      "filename": "detail-case-demo.mp4",
+      "kind": "video",
+      "sourceCrop": null,
+      "output": {
+        "width": 16,
+        "height": 16
+      },
+      "md5": "446f060680957c648c8172f79f1df233",
+      "note": "Deterministic silent H.264 seed clip for video rendering and relationships."
+    }
+  ],
+  "valid": true
+}

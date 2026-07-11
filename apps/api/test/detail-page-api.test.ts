@@ -80,16 +80,43 @@ afterAll(async () => {
 
 describe("detail page API integration", () => {
   it("seeds both page types for artists and cases without duplicate configs", async () => {
-    const before = await prisma.detailPageConfig.count();
+    const before = await Promise.all([
+      prisma.mediaAsset.count(),
+      prisma.seedRecord.count(),
+      prisma.detailPageConfig.count(),
+      prisma.detailPageBannerMedia.count(),
+      prisma.detailPageContentMedia.count()
+    ]);
     const linran = await prisma.artist.findFirstOrThrow({ where: { name: "林然" } });
     const artistConfig = await prisma.detailPageConfig.findUniqueOrThrow({
       where: { ownerType_ownerId: { ownerType: "artist", ownerId: linran.id } },
-      include: { banners: true, contentMedia: true }
+      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: true }
     });
     expect(artistConfig).toMatchObject({ pageType: "banner_rich_text", heroSubtitle: "温暖・专业・掌控全场" });
     expect(artistConfig.banners).toHaveLength(3);
     expect(artistConfig.richTextHtml).toContain("个人简介");
     expect(artistConfig.richTextHtml).toContain("常见问题");
+    expect(artistConfig.banners.map((banner) => banner.mediaAsset.originalName)).toEqual([
+      "banner-linran-balanced.png",
+      "banner-linran-close.png",
+      "banner-linran-wide.png"
+    ]);
+
+    const bannerCase = await prisma.activityCase.findFirstOrThrow({ where: { title: "浪漫粉色系户外婚礼" } });
+    const bannerCaseConfig = await prisma.detailPageConfig.findUniqueOrThrow({
+      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: bannerCase.id } },
+      include: { banners: true, contentMedia: { include: { mediaAsset: true } } }
+    });
+    expect(bannerCaseConfig.banners).toHaveLength(2);
+    expect(bannerCaseConfig.contentMedia.map((relation) => relation.mediaAsset.mediaType)).toContain("video");
+
+    const richTextCase = await prisma.activityCase.findFirstOrThrow({ where: { title: "企业年会歌手演出" } });
+    const richTextCaseConfig = await prisma.detailPageConfig.findUniqueOrThrow({
+      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: richTextCase.id } },
+      include: { banners: true, contentMedia: true }
+    });
+    expect(richTextCaseConfig).toMatchObject({ pageType: "rich_text", banners: [] });
+    expect(richTextCaseConfig.contentMedia.length).toBeGreaterThan(0);
 
     const ownerTypes = await prisma.detailPageConfig.groupBy({ by: ["ownerType", "pageType"], _count: true });
     expect(ownerTypes).toEqual(
@@ -102,7 +129,25 @@ describe("detail page API integration", () => {
     );
 
     await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001" });
-    expect(await prisma.detailPageConfig.count()).toBe(before);
+    expect(
+      await Promise.all([
+        prisma.mediaAsset.count(),
+        prisma.seedRecord.count(),
+        prisma.detailPageConfig.count(),
+        prisma.detailPageBannerMedia.count(),
+        prisma.detailPageContentMedia.count()
+      ])
+    ).toEqual(before);
+  });
+
+  it("reports the exact missing seed asset and the slicing command", async () => {
+    await expect(
+      seedDatabase(prisma, {
+        uploadDir,
+        publicBaseUrl: "http://127.0.0.1:3001",
+        assetRoot: path.join(root, "missing-seed-assets")
+      })
+    ).rejects.toThrow(/种子资源文件不存在：.*banner-default\.png.*pnpm assets:slice:artist-detail/);
   });
 
   it("previews with production validation without writing config rows", async () => {
