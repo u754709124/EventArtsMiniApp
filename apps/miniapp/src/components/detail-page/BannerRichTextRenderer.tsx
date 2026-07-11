@@ -88,7 +88,7 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
             </Text>
           </View>
         )}
-        <DetailRichContent blocks={config.blocks} />
+        <DetailRichContent cards={config.cards} />
       </View>
     </View>
   );

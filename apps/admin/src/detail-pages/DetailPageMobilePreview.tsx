@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import {
   resolveDetailPagePresentation,
-  type DetailPageBlockDto,
+  type DetailPageCardDto,
+  type DetailPageContentBlockDto,
   type DetailPageConfigDto
 } from "@event-arts/shared";
 import "./detail-page-preview.css";
 
-function videoAspectRatio(block: Extract<DetailPageBlockDto, { type: "video" }>) {
+function videoAspectRatio(block: Extract<DetailPageContentBlockDto, { type: "video" }>) {
   return block.width && block.height && block.width > 0 && block.height > 0
     ? `${block.width} / ${block.height}`
     : "16 / 9";
@@ -14,16 +15,14 @@ function videoAspectRatio(block: Extract<DetailPageBlockDto, { type: "video" }>)
 
 function PreviewBlock({
   block,
-  overlap,
   videoIndex
 }: {
-  block: DetailPageBlockDto;
-  overlap: boolean;
+  block: DetailPageContentBlockDto;
   videoIndex: number;
 }) {
   if (block.type === "video") {
     return (
-      <section className={`detail-preview-video-wrap${overlap ? " detail-preview-first-card-overlap" : ""}`}>
+      <section className="detail-preview-video-wrap">
         <video
           className="detail-preview-video"
           src={block.url}
@@ -38,9 +37,29 @@ function PreviewBlock({
   }
   return (
     <section
-      className={`detail-preview-rich-text${overlap ? " detail-preview-first-card-overlap" : ""}`}
+      className="detail-preview-rich-text"
       dangerouslySetInnerHTML={{ __html: block.html }}
     />
+  );
+}
+
+function PreviewCard({
+  card,
+  overlap,
+  videoStartIndex
+}: {
+  card: DetailPageCardDto;
+  overlap: boolean;
+  videoStartIndex: number;
+}) {
+  let videoIndex = videoStartIndex;
+  return (
+    <section className={`detail-preview-card${overlap ? " detail-preview-first-card-overlap" : ""}`}>
+      {card.blocks.map((block, index) => {
+        if (block.type === "video") videoIndex += 1;
+        return <PreviewBlock key={`${block.type}-${index}`} block={block} videoIndex={videoIndex} />;
+      })}
+    </section>
   );
 }
 
@@ -115,14 +134,15 @@ export function DetailPageMobilePreview({
             <span>当前详情内容为空</span>
           </section>
         ) : (
-          model.blocks.map((block, index) => {
-            if (block.type === "video") videoIndex += 1;
+          model.cards.map((card, index) => {
+            const startIndex = videoIndex;
+            videoIndex += card.blocks.filter((block) => block.type === "video").length;
             return (
-              <PreviewBlock
-                key={`${block.type}-${index}`}
-                block={block}
+              <PreviewCard
+                key={`card-${index}`}
+                card={card}
                 overlap={showBanner && index === 0}
-                videoIndex={videoIndex}
+                videoStartIndex={startIndex}
               />
             );
           })

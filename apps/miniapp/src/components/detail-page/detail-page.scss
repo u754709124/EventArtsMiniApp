@@ -273,6 +273,19 @@ $detail-body-line-height: 1.72;
   max-width: 100%;
 }
 
+.detail-rich-card {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: $detail-card-padding;
+  overflow: hidden;
+  border: 1rpx solid $detail-border;
+  border-radius: $detail-card-radius;
+  background: $detail-surface;
+  box-shadow: $detail-shadow;
+}
+
 .detail-rich-text {
   display: block;
   box-sizing: border-box;
@@ -283,25 +296,7 @@ $detail-body-line-height: 1.72;
   line-height: $detail-body-line-height;
   overflow-wrap: anywhere;
 
-  .ea-detail-card {
-    display: block;
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 100%;
-    margin: 0 0 $detail-card-gap;
-    padding: $detail-card-padding;
-    overflow: hidden;
-    border: 1rpx solid $detail-border;
-    border-radius: $detail-card-radius;
-    background: $detail-surface;
-    box-shadow: $detail-shadow;
-  }
-
-  .ea-detail-card:last-child {
-    margin-bottom: 0;
-  }
-
-  .ea-section-title {
+  h1 {
     display: block;
     margin: 0 0 16rpx;
     padding-left: 18rpx;
@@ -310,6 +305,10 @@ $detail-body-line-height: 1.72;
     font-size: $detail-section-title-size;
     font-weight: 650;
     line-height: 1.35;
+  }
+
+  h1:not(:first-child) {
+    margin-top: 20rpx;
   }
 
   p {
@@ -328,68 +327,18 @@ $detail-body-line-height: 1.72;
     margin: 12rpx auto;
     border-radius: $detail-media-radius;
   }
-
-  .ea-advantage-grid,
-  .ea-case-grid,
-  .ea-process-row,
-  .ea-two-column {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12rpx;
-    max-width: 100%;
-  }
-
-  .ea-advantage-item,
-  .ea-case-item,
-  .ea-process-item,
-  .ea-calendar-card,
-  .ea-faq-card {
-    box-sizing: border-box;
-    flex: 1 1 280rpx;
-    min-width: 0;
-    padding: 16rpx;
-    border: 1rpx solid #f1e8dc;
-    border-radius: 14rpx;
-    background: #fffdfa;
-  }
-
-  .ea-review-item {
-    display: flex;
-    align-items: center;
-    gap: 16rpx;
-    padding: 18rpx 0;
-    border-bottom: 1rpx solid $detail-border;
-  }
-
-  .ea-review-item:last-child {
-    border-bottom: 0;
-  }
-
-  .ea-review-main {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .ea-review-image {
-    flex: none;
-    width: 156rpx !important;
-    height: 110rpx !important;
-    margin: 0;
-    object-fit: cover;
-  }
 }
 
 .detail-video-wrap {
   position: relative;
   box-sizing: border-box;
-  width: calc(750rpx - #{$detail-gutter * 2});
+  width: 100%;
   max-width: 100%;
   height: 0;
+  margin: 16rpx 0;
   overflow: hidden;
-  border: 1rpx solid $detail-border;
   border-radius: $detail-media-radius;
   background: #17130f;
-  box-shadow: $detail-shadow;
 }
 
 .detail-video {

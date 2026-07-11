@@ -85,5 +85,21 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Scope changes require updating this guide, the relevant stage doc, README, and tests.
 
 ## Model and Reasoning Allocation
-- Use `5.6 Sol` with `xhigh` reasoning for plan creation, plan comprehension, plan persistence, and goal formulation.
-- Use `5.5` with `xhigh` reasoning for concrete plan execution and code writing.
+
+Model selection is an orchestration policy: this repository does not enforce it
+through application code or CI configuration. Classify the task first, then use
+the lowest sufficient route. The parent agent remains responsible for task
+classification, final review, validation, and acceptance.
+
+| Task class | Route | Model / reasoning | Use when |
+| --- | --- | --- | --- |
+| Planning | `planner` (read-only) | `gpt-5.6-sol` / `xhigh` | A long-term goal is being defined or decomposed, or requirements, architecture, acceptance criteria, data flow, or implementation choices need to be clarified before consequential work. Long-term goals must enter through this route. |
+| Routine work | Parent agent | `gpt-5.6-terra` / `high` | The edit is clear, bounded, follows an established pattern, and has low regression risk. The parent also owns ordinary debugging, tests, and validation. |
+| Complex work | `complex_implementer_high` | `gpt-5.5` / `high` | Multiple modules or interacting code paths require non-trivial state, compatibility, performance, or concurrency reasoning. Use one implementation agent at a time, then return validation to the parent. |
+| High-risk work | `complex_implementer_xhigh` | `gpt-5.5` / `xhigh` | Security or authorization boundaries, destructive migrations, data-integrity risk, consequential public API compatibility, distributed consistency, or difficult rollback are central. |
+| Mechanical test execution | `test_rerunner` | `gpt-5.6-terra` / `medium` | Only rerunning an already-selected, known command when no code change, test-design choice, or failure diagnosis is expected. |
+
+Do not run parallel write-capable agents. Use at most one planner and one
+implementation agent for a task. A planner recommends a route, but the parent
+agent makes the final routing decision. Do not use `test_rerunner` to select
+tests, diagnose failures, or modify code.

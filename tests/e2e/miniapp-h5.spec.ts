@@ -34,6 +34,9 @@ type DetailPageDto = {
   };
   banners: Array<{ id: number; url: string; sortOrder: number }>;
   blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
+  cards: Array<{
+    blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
+  }>;
 };
 type DetailFixtures = {
   artistBanner: LinkedArtistListItem;
@@ -289,12 +292,21 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
   );
   expect(renderedBannerUrls.map(assetUrl)).toEqual(expectedBannerUrls);
 
-  const renderedBlockTypes = await page.getByTestId("detail-rich-content").evaluate((root) =>
-    Array.from(root.children)
-      .filter((child) => child.getAttribute("data-testid") === "detail-rich-text-block" || child.getAttribute("data-testid") === "detail-video")
-      .map((child) => child.getAttribute("data-testid") === "detail-video" ? "video" : "richText")
+  const renderedCards = await page.getByTestId("detail-rich-content").evaluate((root) =>
+    Array.from(root.querySelectorAll('[data-testid="detail-rich-card"]')).map((card) =>
+      Array.from(card.children)
+        .filter(
+          (child) =>
+            child.getAttribute("data-testid") === "detail-rich-text-block" ||
+            child.getAttribute("data-testid") === "detail-video"
+        )
+        .map((child) => child.getAttribute("data-testid") === "detail-video" ? "video" : "richText")
+    )
   );
-  expect(renderedBlockTypes).toEqual(dto.blocks.map((block) => block.type));
+  const expectedCards = dto.cards.length > 0 ? dto.cards : [{ blocks: dto.blocks }];
+  expect(renderedCards).toEqual(
+    expectedCards.map((card) => card.blocks.map((block) => block.type))
+  );
 
   const geometry = await page.evaluate(() => {
     const banner = document.querySelector('[data-testid="detail-banner"]')!.getBoundingClientRect();
@@ -348,7 +360,7 @@ async function expectBannerDetail(page: Page, expectedTitle: string, expectedTyp
     const content = document
       .querySelector('[data-testid="detail-content-overlap"]')!
       .getBoundingClientRect();
-    const firstCard = document.querySelector(".ea-detail-card")!.getBoundingClientRect();
+    const firstCard = document.querySelector(".detail-rich-card")!.getBoundingClientRect();
     return {
       amount: banner.bottom - content.top,
       bannerRatio: banner.width / banner.height,
@@ -697,7 +709,7 @@ test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", a
   await expect(page.getByTestId("detail-hero")).toContainText("10年经验");
   await expect(page.getByTestId("detail-hero")).toContainText("杭州");
   await expect(
-    page.getByTestId("detail-rich-text-block").first().locator("img").first()
+    page.getByTestId("detail-rich-content").locator("img").first()
   ).toBeVisible();
   await expectCommonDetailQuality(page);
   await expectDetailBackFallback(page, "miniapp-home");
@@ -736,7 +748,7 @@ test("案例单富文本详情从导航后正常起始且没有轮播残留", as
   await waitForDetailVisuals(page);
   await expectRichOnlyDetail(page, caseRich.title);
   await expect(
-    page.getByTestId("detail-rich-text-block").first().locator("img").first()
+    page.getByTestId("detail-rich-content").locator("img").first()
   ).toBeVisible();
   await expectCommonDetailQuality(page);
   await expectDetailBackFallback(page, "miniapp-home");

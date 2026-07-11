@@ -234,6 +234,7 @@ describe("standalone detail page API integration", () => {
     const client = await app.inject({ method: "GET", url: `/api/client/detail-pages/${detailPage.id}` });
     expect(client.statusCode).toBe(200);
     expect(client.json().data.blocks.map((block: { type: string }) => block.type)).toEqual(["richText", "video"]);
+    expect(client.json().data.cards.map((card: { blocks: Array<{ type: string }> }) => card.blocks.map((block) => block.type))).toEqual([["richText", "video"]]);
 
     const artistDetail = await app.inject({ method: "GET", url: `/api/client/artists/${created.id}` });
     expect(artistDetail.json().data.detailPage.id).toBe(detailPage.id);

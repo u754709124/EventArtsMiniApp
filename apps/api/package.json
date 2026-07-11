@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "node --import tsx src/server.ts",
     "prebuild": "prisma generate --schema prisma/schema.prisma",
     "build": "tsc -p tsconfig.json --noEmit",
     "pretest": "prisma generate --schema prisma/schema.prisma",
     "test": "vitest run",
-    "db:push": "prisma generate --schema prisma/schema.prisma && tsx src/bootstrap-db.ts",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:push": "prisma generate --schema prisma/schema.prisma && node --import tsx src/bootstrap-db.ts",
+    "db:seed": "node --import tsx prisma/seed.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma"
   },
   "dependencies": {

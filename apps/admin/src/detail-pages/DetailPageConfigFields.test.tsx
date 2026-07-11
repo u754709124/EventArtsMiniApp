@@ -41,6 +41,16 @@ vi.mock("./DetailPagePreview", () => ({
   DetailPagePreview: () => <button type="button" data-testid="detail-page-preview">移动端预览</button>
 }));
 
+async function findVisibleDialog() {
+  return waitFor(() => {
+    const dialog = screen
+      .getAllByRole("dialog", { hidden: true })
+      .find((element) => element.style.display !== "none");
+    if (!dialog) throw new Error("visible dialog not found");
+    return dialog;
+  });
+}
+
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -180,7 +190,7 @@ describe("DetailPageConfigFields", () => {
     );
 
     await chooseType("单富文本");
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await findVisibleDialog();
     expect(dialog.textContent).toContain("保存后解除 BANNER 资源关联");
     expect(form.getFieldValue(["detailPage", "type"])).toBe("banner_rich_text");
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
@@ -227,7 +237,7 @@ describe("DetailPageConfigFields", () => {
       type: "banner_rich_text",
       typeLabel: "BANNER + 富文本",
       rendererKey: "bannerRichText",
-      schemaVersion: 1,
+      schemaVersion: 2,
       hero: {
         title: "迁移标题",
         typeLabel: "主持人",
@@ -243,6 +253,7 @@ describe("DetailPageConfigFields", () => {
         { id: 1, assetId: 21, url: "/uploads/21.webp", width: 1500, height: 760, sortOrder: 0 }
       ],
       richTextHtml: "<p>迁移正文</p>",
+      cards: [{ blocks: [{ type: "richText", html: "<h1>迁移正文</h1><p>迁移正文</p>" }] }],
       blocks: [{ type: "richText", html: "<p>迁移正文</p>" }]
     };
     const view = render(<Harness initialDetailPage={dto} />);
@@ -309,7 +320,7 @@ describe("DetailPageConfigFields", () => {
     expect(form.getFieldValue(["detailPage", "richTextHtml"])).toBe("<p>已有内容</p>");
 
     fireEvent.click(screen.getByRole("button", { name: "应用人员参考模板" }));
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /应\s*用\s*模\s*板/ }));
+    fireEvent.click(within(await findVisibleDialog()).getByRole("button", { name: /应\s*用\s*模\s*板/ }));
     await waitFor(() => {
       const html = form.getFieldValue(["detailPage", "richTextHtml"]) as string;
       expect(html).toContain('data-media-asset-id="7"');

@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import {
+  DETAIL_PAGE_H1_CARDS_MIGRATION_ID,
   DETAIL_PAGE_MIGRATION_ID,
   auditDetailPageOrphans,
   runDetailPageMigration
@@ -17,6 +18,7 @@ async function createDatabase(name: string) {
   const prisma = createPrismaClient(`file:${path.join(runtime, "legacy.db")}`);
   await ensureDatabaseSchema(prisma, { uploadDir: path.join(runtime, "uploads") });
   await prisma.$executeRawUnsafe("DELETE FROM schema_migrations WHERE id = ?", DETAIL_PAGE_MIGRATION_ID);
+  await prisma.$executeRawUnsafe("DELETE FROM schema_migrations WHERE id = ?", DETAIL_PAGE_H1_CARDS_MIGRATION_ID);
   return prisma;
 }
 
@@ -150,19 +152,19 @@ describe("standalone detail-page migration", () => {
       }
     });
     const beforeBanners = await prisma.detailPageBannerMedia.findMany({ orderBy: { id: "asc" } });
-    const beforeContent = await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } });
+    const beforeContentAssetIds = (await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } })).map((item) => item.mediaAssetId);
 
     await runDetailPageMigration(prisma);
     await runDetailPageMigration(prisma);
 
     expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: config.id } })).toMatchObject({
       id: config.id,
-      richTextHtml: `<p>保留 HTML</p><img data-media-asset-id="${content.id}" src="${content.url}">`,
+      richTextHtml: `<h1>保留 HTML</h1><p>保留 HTML</p><img src="${content.url}" data-media-asset-id="${content.id}" alt="内容图片">`,
       heroTitle: "已有标题",
       heroSubtitle: "已有宣传语"
     });
     expect(await prisma.detailPageBannerMedia.findMany({ orderBy: { id: "asc" } })).toEqual(beforeBanners);
-    expect(await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } })).toEqual(beforeContent);
+    expect((await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } })).map((item) => item.mediaAssetId)).toEqual(beforeContentAssetIds);
     expect((await prisma.activityCase.findUniqueOrThrow({ where: { id: activityCase.id } })).detailPageId).toBe(config.id);
     await prisma.$disconnect();
   });
@@ -223,7 +225,62 @@ describe("standalone detail-page migration", () => {
         DETAIL_PAGE_MIGRATION_ID
       )
     ).toEqual([{ total: 1n }]);
+    expect(
+      await prisma.$queryRawUnsafe<Array<{ total: number }>>(
+        "SELECT COUNT(*) AS total FROM schema_migrations WHERE id = ?",
+        DETAIL_PAGE_H1_CARDS_MIGRATION_ID
+      )
+    ).toEqual([{ total: 1n }]);
     expect(await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>("PRAGMA foreign_key_check")).toEqual([]);
+    await prisma.$disconnect();
+  });
+
+  it("rewrites legacy rich text cards to schema version 2 and rebuilds content media transactionally", async () => {
+    const prisma = await createDatabase("h1-cards-v2");
+    const image = await createAsset(prisma, 60);
+    const video = await createAsset(prisma, 61, "video");
+    const detail = await prisma.detailPageConfig.create({
+      data: {
+        name: "旧模板详情",
+        pageType: "rich_text",
+        richTextHtml:
+          `<section class="ea-detail-card"><h2 class="ea-section-title">项目介绍</h2><div class="ea-case-grid"><p>旧正文</p><img class="ea-review-image" data-media-asset-id="${image.id}"></div></section>` +
+          `<section class="ea-detail-card"><div><video data-media-asset-id="${video.id}"></video><p>视频说明</p></div></section>`,
+        contentMedia: { create: [{ mediaAssetId: image.id }] }
+      }
+    });
+
+    await runDetailPageMigration(prisma);
+
+    const migrated = await prisma.detailPageConfig.findUniqueOrThrow({
+      where: { id: detail.id },
+      include: { contentMedia: { orderBy: { mediaAssetId: "asc" } } }
+    });
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.richTextHtml).toBe(
+      `<h1>项目介绍</h1><p>旧正文</p><img src="${image.url}" data-media-asset-id="${image.id}" alt="内容图片">` +
+      `<h1>视频说明</h1><video src="${video.url}" data-media-asset-id="${video.id}" controls="" preload="metadata"></video><p>视频说明</p>`
+    );
+    expect(migrated.contentMedia.map((item) => item.mediaAssetId)).toEqual([image.id, video.id]);
+    await prisma.$disconnect();
+  });
+
+  it("migrates empty legacy rich text to a valid default H1 card", async () => {
+    const prisma = await createDatabase("h1-cards-empty");
+    const detail = await prisma.detailPageConfig.create({
+      data: {
+        name: "空旧详情",
+        pageType: "rich_text",
+        richTextHtml: ""
+      }
+    });
+
+    await runDetailPageMigration(prisma);
+
+    expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: detail.id } })).toMatchObject({
+      schemaVersion: 2,
+      richTextHtml: "<h1>内容</h1><p>内容</p>"
+    });
     await prisma.$disconnect();
   });
 

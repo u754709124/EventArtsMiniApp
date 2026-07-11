@@ -1,4 +1,4 @@
-import type { DetailPageBannerDto, DetailPageBlockDto, DetailPageConfigDto } from "./detail-pages";
+import type { DetailPageBannerDto, DetailPageCardDto, DetailPageContentBlockDto, DetailPageConfigDto } from "./detail-pages";
 
 export type DetailPageHeroPresentation = {
   title: string;
@@ -16,7 +16,9 @@ export type DetailPageHeroPresentation = {
 export type DetailPagePresentationModel = {
   hero: DetailPageHeroPresentation;
   banners: DetailPageBannerDto[];
-  blocks: DetailPageBlockDto[];
+  cards: DetailPageCardDto[];
+  /** @deprecated Use cards.flatMap((card) => card.blocks). */
+  blocks: DetailPageContentBlockDto[];
   hasSemanticContent: boolean;
 };
 
@@ -45,11 +47,15 @@ export function getDisplayDetailPageBanners(banners: readonly DetailPageBannerDt
     .filter((banner) => Boolean(banner.url));
 }
 
-export function collectDetailPageImageUrls(blocks: readonly DetailPageBlockDto[]) {
+export function collectDetailPageImageUrls(blocks: readonly DetailPageContentBlockDto[]) {
   return blocks.flatMap((block) => (block.type === "richText" ? extractDetailImageUrls(block.html) : []));
 }
 
-export function hasSemanticDetailPageContent(blocks: readonly DetailPageBlockDto[]) {
+export function collectDetailPageCardImageUrls(cards: readonly DetailPageCardDto[]) {
+  return collectDetailPageImageUrls(cards.flatMap((card) => card.blocks));
+}
+
+export function hasSemanticDetailPageContent(blocks: readonly DetailPageContentBlockDto[]) {
   return blocks.some((block) => {
     if (block.type === "video") return Boolean(cleanDetailText(block.url));
     if (extractDetailImageUrls(block.html).length) return true;
@@ -61,8 +67,13 @@ export function hasSemanticDetailPageContent(blocks: readonly DetailPageBlockDto
   });
 }
 
+export function hasSemanticDetailPageCards(cards: readonly DetailPageCardDto[]) {
+  return hasSemanticDetailPageContent(cards.flatMap((card) => card.blocks));
+}
+
 export function resolveDetailPagePresentation(config: DetailPageConfigDto): DetailPagePresentationModel {
   const hero = config.hero;
+  const cards = config.cards?.length ? config.cards : [{ blocks: config.blocks }];
   return {
     hero: {
       title: cleanDetailText(hero.title) || cleanDetailText(config.name),
@@ -79,7 +90,8 @@ export function resolveDetailPagePresentation(config: DetailPageConfigDto): Deta
         .filter((item) => item.label && item.value)
     },
     banners: getDisplayDetailPageBanners(config.banners),
-    blocks: config.blocks,
-    hasSemanticContent: hasSemanticDetailPageContent(config.blocks)
+    cards,
+    blocks: cards.flatMap((card) => card.blocks),
+    hasSemanticContent: hasSemanticDetailPageCards(cards)
   };
 }

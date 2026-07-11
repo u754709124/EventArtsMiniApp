@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { parseFragment, serialize, type DefaultTreeAdapterTypes } from "parse5";
+import { html, parseFragment, serialize, type DefaultTreeAdapterTypes } from "parse5";
 import type { MediaType } from "@event-arts/shared";
 import { DetailPageValidationError, type DetailPageMediaAsset } from "./detail-page-types";
 
@@ -32,33 +32,6 @@ const allowedTags = [
   "img",
   "video",
   "source"
-] as const;
-
-const allowedClasses = [
-  "ea-detail-card",
-  "ea-section-title",
-  "ea-section-body",
-  "ea-intro",
-  "ea-advantage-grid",
-  "ea-advantage-item",
-  "ea-case-grid",
-  "ea-case-item",
-  "ea-process-row",
-  "ea-process-item",
-  "ea-review-list",
-  "ea-review-item",
-  "ea-review-main",
-  "ea-review-image",
-  "ea-two-column",
-  "ea-calendar-card",
-  "ea-faq-card",
-  "ea-media",
-  "ea-image",
-  "ea-video",
-  "ea-media-block",
-  "ea-align-left",
-  "ea-align-center",
-  "ea-align-right"
 ] as const;
 
 const safeStyleValue = /^(?!.*(?:expression|javascript|vbscript|url\s*\())[^{}<>]{1,160}$/i;
@@ -108,6 +81,231 @@ function getAttribute(element: Element, name: string) {
 
 function setAttributes(element: Element, attributes: Array<{ name: string; value: string }>) {
   element.attrs = attributes.map((attribute) => ({ ...attribute, namespace: undefined, prefix: undefined }));
+}
+
+function createText(value: string): DefaultTreeAdapterTypes.TextNode {
+  return { nodeName: "#text", value, parentNode: null };
+}
+
+function createElement(tagName: string, attrs: Array<{ name: string; value: string }> = [], childNodes: ChildNode[] = []): Element {
+  return {
+    nodeName: tagName,
+    tagName,
+    attrs: attrs.map((attribute) => ({ ...attribute, namespace: undefined, prefix: undefined })),
+    namespaceURI: html.NS.HTML,
+    parentNode: null,
+    childNodes
+  };
+}
+
+function serializeNodes(nodes: ChildNode[]) {
+  const fragment: DefaultTreeAdapterTypes.DocumentFragment = {
+    nodeName: "#document-fragment",
+    childNodes: nodes
+  };
+  attachParentNodes(fragment);
+  return serialize(fragment).trim();
+}
+
+function textContent(node: ChildNode): string {
+  if (isTextNode(node)) return node.value;
+  if (!isElement(node)) return "";
+  return node.childNodes.map((child) => textContent(child)).join("");
+}
+
+function compactText(value: string) {
+  return value.replace(/[\s\u3000\u00a0]+/g, " ").trim();
+}
+
+function hasClass(element: Element, className: string) {
+  return (getAttribute(element, "class") ?? "").split(/\s+/).includes(className);
+}
+
+function isHeading(element: Element) {
+  return /^h[1-6]$/i.test(element.tagName);
+}
+
+function cloneInlineNode(node: ChildNode): ChildNode[] {
+  if (isTextNode(node)) return [createText(node.value)];
+  if (!isElement(node)) return [];
+  if (node.tagName === "br") return [createElement("br")];
+  const inlineTags = new Set(["strong", "em", "u", "s", "a", "span"]);
+  if (!inlineTags.has(node.tagName)) return [];
+  const children = node.childNodes.flatMap((child) => cloneInlineNode(child));
+  const attrs: Array<{ name: string; value: string }> = [];
+  if (node.tagName === "a") {
+    const href = getAttribute(node, "href");
+    if (href) {
+      attrs.push({ name: "href", value: href });
+      attrs.push({ name: "rel", value: "noopener noreferrer" });
+      if (getAttribute(node, "target") === "_blank") attrs.push({ name: "target", value: "_blank" });
+      const title = getAttribute(node, "title");
+      if (title) attrs.push({ name: "title", value: title });
+    }
+  }
+  if (node.tagName === "span") {
+    const style = getAttribute(node, "style");
+    if (style) attrs.push({ name: "style", value: style });
+  }
+  return [createElement(node.tagName, attrs, children)];
+}
+
+function inlineChildren(element: Element) {
+  return element.childNodes.flatMap((child) => cloneInlineNode(child));
+}
+
+function hasRenderableInline(nodes: ChildNode[]) {
+  const html = serializeNodes(nodes);
+  return Boolean(
+    html
+      .replace(/<br\s*\/?>/giu, "")
+      .replace(/<[^>]*>/gu, "")
+      .replace(/&(?:nbsp|#160|#xA0);/giu, " ")
+      .replace(/\s/gu, "")
+  );
+}
+
+function appendParagraph(nodes: ChildNode[], output: ChildNode[]) {
+  if (hasRenderableInline(nodes)) output.push(createElement("p", [], nodes));
+}
+
+function canonicalMediaElement(element: Element, assets: ReadonlyMap<number, DetailPageMediaAsset>) {
+  const assetId = mediaAssetId(element);
+  const asset = assets.get(assetId);
+  if (!asset) throw new DetailPageValidationError(`媒体资源 ${assetId} 不存在`);
+  const expectedType: MediaType = element.tagName === "img" ? "image" : "video";
+  if (asset.mediaType !== expectedType) {
+    throw new DetailPageValidationError(
+      `${element.tagName === "img" ? "图片节点只能引用图片资源" : "视频节点只能引用视频资源"}`
+    );
+  }
+  if (element.tagName === "img") {
+    return createElement("img", [
+      { name: "src", value: asset.url },
+      { name: "data-media-asset-id", value: String(assetId) },
+      { name: "alt", value: getAttribute(element, "alt") ?? "内容图片" }
+    ]);
+  }
+  return createElement("video", [
+    { name: "src", value: asset.url },
+    { name: "data-media-asset-id", value: String(assetId) },
+    { name: "controls", value: "" },
+    { name: "preload", value: "metadata" }
+  ]);
+}
+
+function appendCanonicalContent(
+  node: ChildNode,
+  output: ChildNode[],
+  assets: ReadonlyMap<number, DetailPageMediaAsset>,
+  skipNode?: ChildNode
+) {
+  if (node === skipNode) return;
+  if (isTextNode(node)) {
+    appendParagraph([createText(node.value)], output);
+    return;
+  }
+  if (!isElement(node)) return;
+  if (node.tagName === "img" || node.tagName === "video") {
+    output.push(canonicalMediaElement(node, assets));
+    return;
+  }
+  if (node.tagName === "br") {
+    output.push(createElement("br"));
+    return;
+  }
+  const paragraphTags = new Set(["p", "li", "blockquote", "h2", "h3", "h4", "h5", "h6"]);
+  const directInline = inlineChildren(node);
+  if (paragraphTags.has(node.tagName) || directInline.length) appendParagraph(directInline, output);
+  for (const child of node.childNodes) {
+    if (child === skipNode) continue;
+    if (!isElement(child)) continue;
+    if (child.tagName === "img" || child.tagName === "video" || child.tagName === "br") {
+      appendCanonicalContent(child, output, assets, skipNode);
+      continue;
+    }
+    if (["div", "section", "ul", "ol", "li", "blockquote", "p", "h2", "h3", "h4", "h5", "h6"].includes(child.tagName)) {
+      appendCanonicalContent(child, output, assets, skipNode);
+    }
+  }
+}
+
+function readableTitleFrom(nodes: ChildNode[]) {
+  const title = compactText(nodes.map((node) => textContent(node)).join("")).slice(0, 24);
+  return title || "内容";
+}
+
+function legacyCards(parent: { childNodes: ChildNode[] }): Element[] {
+  const cards: Element[] = [];
+  const visit = (node: ChildNode) => {
+    if (!isElement(node)) return;
+    if (hasClass(node, "ea-detail-card")) {
+      cards.push(node);
+      return;
+    }
+    node.childNodes.forEach(visit);
+  };
+  parent.childNodes.forEach(visit);
+  return cards;
+}
+
+function firstHeading(parent: { childNodes: ChildNode[] }) {
+  let found: Element | null = null;
+  const visit = (node: ChildNode) => {
+    if (found || !isElement(node)) return;
+    if (isHeading(node)) {
+      found = node;
+      return;
+    }
+    node.childNodes.forEach(visit);
+  };
+  parent.childNodes.forEach(visit);
+  return found;
+}
+
+function canonicalCard(title: string, nodes: ChildNode[], assets: ReadonlyMap<number, DetailPageMediaAsset>, skipTitle?: Element) {
+  const cardNodes: ChildNode[] = [createElement("h1", [], [createText(compactText(title) || readableTitleFrom(nodes))])];
+  for (const node of nodes) {
+    appendCanonicalContent(node, cardNodes, assets, skipTitle);
+  }
+  return cardNodes;
+}
+
+function normalizeFragmentToCards(
+  fragment: DefaultTreeAdapterTypes.DocumentFragment,
+  assets: ReadonlyMap<number, DetailPageMediaAsset>
+) {
+  const oldCards = legacyCards(fragment);
+  if (oldCards.length) {
+    return oldCards.flatMap((card) => {
+      const heading = firstHeading(card);
+      return canonicalCard(heading ? textContent(heading) : readableTitleFrom(card.childNodes), card.childNodes, assets, heading ?? undefined);
+    });
+  }
+
+  const output: ChildNode[] = [];
+  let title = "";
+  let nodes: ChildNode[] = [];
+  let hasExplicitCard = false;
+  const flush = () => {
+    if (!nodes.length && !title) return;
+    output.push(...canonicalCard(title || readableTitleFrom(nodes), nodes, assets));
+    nodes = [];
+    title = "";
+  };
+
+  for (const child of fragment.childNodes) {
+    if (isElement(child) && isHeading(child)) {
+      flush();
+      title = textContent(child);
+      hasExplicitCard = true;
+      continue;
+    }
+    nodes.push(child);
+  }
+  flush();
+  if (!hasExplicitCard && output.length) return output;
+  return output;
 }
 
 function mediaAssetId(element: Element) {
@@ -200,18 +398,12 @@ function normalizeMediaElements(
       );
     }
 
-    const alignment = (getAttribute(element, "class") ?? "")
-      .split(/\s+/)
-      .find((name) => ["ea-align-left", "ea-align-center", "ea-align-right"].includes(name));
-    const style = getAttribute(element, "style");
     if (element.tagName === "img") {
       const alt = getAttribute(element, "alt") ?? "内容图片";
       setAttributes(element, [
         { name: "src", value: asset.url },
         { name: "data-media-asset-id", value: String(assetId) },
-        { name: "class", value: ["ea-media", "ea-image", alignment].filter(Boolean).join(" ") },
-        { name: "alt", value: alt },
-        ...(style ? [{ name: "style", value: style }] : [])
+        { name: "alt", value: alt }
       ]);
       return;
     }
@@ -219,20 +411,17 @@ function normalizeMediaElements(
     setAttributes(element, [
       { name: "src", value: asset.url },
       { name: "data-media-asset-id", value: String(assetId) },
-      { name: "class", value: ["ea-media", "ea-video", alignment].filter(Boolean).join(" ") },
       { name: "controls", value: "" },
-      { name: "preload", value: "metadata" },
-      ...(style ? [{ name: "style", value: style }] : [])
+      { name: "preload", value: "metadata" }
     ]);
     element.childNodes = element.childNodes.filter((child) => !isElement(child) || child.tagName !== "source");
   });
 }
 
-export function sanitizeAndNormalizeRichText(
+export function normalizeDetailRichTextToH1Cards(
   rawHtml: string,
   assets: ReadonlyMap<number, DetailPageMediaAsset>
 ) {
-  assertNoTemporaryMediaSource(rawHtml);
   const sanitized = sanitizeHtml(rawHtml, {
     allowedTags: [...allowedTags],
     allowedAttributes: {
@@ -242,7 +431,6 @@ export function sanitizeAndNormalizeRichText(
       video: ["src", "poster", "width", "height", "controls", "preload", "data-media-asset-id", "class", "style"],
       source: ["src", "type"]
     },
-    allowedClasses: { "*": [...allowedClasses] },
     allowedStyles,
     allowedSchemes: ["http", "https", "mailto", "tel"],
     allowProtocolRelative: false,
@@ -254,7 +442,21 @@ export function sanitizeAndNormalizeRichText(
   if (!hasMeaningfulNode(fragment, true)) {
     throw new DetailPageValidationError("富文本详情不能为空");
   }
-  return serialize(fragment).trim();
+  const canonicalNodes = normalizeFragmentToCards(fragment, assets);
+  const canonicalHtml = serializeNodes(canonicalNodes);
+  const canonicalFragment = parseFragment(canonicalHtml);
+  if (!hasMeaningfulNode(canonicalFragment, true)) {
+    throw new DetailPageValidationError("富文本内容无法解析");
+  }
+  return canonicalHtml;
+}
+
+export function sanitizeAndNormalizeRichText(
+  rawHtml: string,
+  assets: ReadonlyMap<number, DetailPageMediaAsset>
+) {
+  assertNoTemporaryMediaSource(rawHtml);
+  return normalizeDetailRichTextToH1Cards(rawHtml, assets);
 }
 
 export function extractRichTextMedia(html: string) {

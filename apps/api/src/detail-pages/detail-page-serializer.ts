@@ -6,7 +6,7 @@ import {
   type DetailPageReferenceDto,
   type DetailPageType
 } from "@event-arts/shared";
-import { buildDetailPageBlocks } from "./detail-page-parser";
+import { buildDetailPageCards } from "./detail-page-parser";
 import { DetailPageDomainError, type DetailPageMediaAsset } from "./detail-page-types";
 
 export const detailPageConfigInclude = {
@@ -56,6 +56,7 @@ export function buildDetailPageDto(input: {
           sortOrder: banner.sortOrder
         };
       });
+  const cards = input.richTextHtml ? buildDetailPageCards(input.richTextHtml, input.contentAssets) : [];
   return {
     id: input.id,
     name: input.name,
@@ -69,7 +70,8 @@ export function buildDetailPageDto(input: {
     heroSubtitle: input.type === "rich_text" ? "" : input.hero.subtitle || input.heroSubtitle,
     banners,
     richTextHtml: input.richTextHtml,
-    blocks: input.richTextHtml ? buildDetailPageBlocks(input.richTextHtml, input.contentAssets) : [],
+    cards,
+    blocks: cards.flatMap((card) => card.blocks),
     ...(input.references ? { references: input.references } : {}),
     ...(input.createdAt ? { createdAt: new Date(input.createdAt).toISOString() } : {}),
     ...(input.updatedAt ? { updatedAt: new Date(input.updatedAt).toISOString() } : {})

@@ -47,7 +47,7 @@ function artist(overrides: Partial<ArtistDetailDto> = {}): ArtistDetailDto {
       type: "banner_rich_text",
       typeLabel: "BANNER + 富文本",
       rendererKey: "bannerRichText",
-      schemaVersion: 1,
+      schemaVersion: 2,
       hero: {
         title: "林然",
         typeLabel: "主持人",
@@ -60,6 +60,7 @@ function artist(overrides: Partial<ArtistDetailDto> = {}): ArtistDetailDto {
       heroSubtitle: "温暖 · 专业 · 掌控全场",
       banners: [],
       richTextHtml: "<p>内容</p>",
+      cards: [{ blocks: [{ type: "richText", html: "<h1>内容</h1><p>内容</p>" }] }],
       blocks: [{ type: "richText", html: "<p>内容</p>" }]
     },
     ...overrides
@@ -90,7 +91,7 @@ function activityCase(overrides: Partial<ActivityCaseDetailDto> = {}): ActivityC
       type: "rich_text",
       typeLabel: "单富文本",
       rendererKey: "richText",
-      schemaVersion: 1,
+      schemaVersion: 2,
       hero: {
         title: "",
         typeLabel: "",
@@ -103,6 +104,7 @@ function activityCase(overrides: Partial<ActivityCaseDetailDto> = {}): ActivityC
       heroSubtitle: "",
       banners: [],
       richTextHtml: "<p>内容</p>",
+      cards: [{ blocks: [{ type: "richText", html: "<h1>内容</h1><p>内容</p>" }] }],
       blocks: [{ type: "richText", html: "<p>内容</p>" }]
     },
     ...overrides

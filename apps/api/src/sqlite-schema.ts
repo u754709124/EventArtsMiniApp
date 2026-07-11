@@ -172,7 +172,7 @@ const statements = [
     heroLocation TEXT NOT NULL DEFAULT '',
     heroMetaJson TEXT NOT NULL DEFAULT '[]',
     richTextHtml TEXT NOT NULL DEFAULT '',
-    schemaVersion INTEGER NOT NULL DEFAULT 1,
+    schemaVersion INTEGER NOT NULL DEFAULT 2,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(ownerType, ownerId)

@@ -54,7 +54,7 @@ export const detailPageTypeDefinitions = {
       "banners",
       "richText"
     ],
-    schemaVersion: 1
+    schemaVersion: 2
   },
   rich_text: {
     label: "单富文本",
@@ -67,7 +67,7 @@ export const detailPageTypeDefinitions = {
     maxBannerCount: 0,
     bannerAllowedMediaTypes: [],
     configFields: ["richText"],
-    schemaVersion: 1
+    schemaVersion: 2
   }
 } as const satisfies Record<DetailPageType, DetailPageTypeDefinition>;
 
@@ -197,7 +197,7 @@ export type DetailPageBannerDto = {
   sortOrder: number;
 };
 
-export type DetailPageBlockDto =
+export type DetailPageContentBlockDto =
   | {
       type: "richText";
       html: string;
@@ -210,6 +210,13 @@ export type DetailPageBlockDto =
       width: number | null;
       height: number | null;
     };
+
+/** @deprecated Use DetailPageContentBlockDto. */
+export type DetailPageBlockDto = DetailPageContentBlockDto;
+
+export type DetailPageCardDto = {
+  blocks: DetailPageContentBlockDto[];
+};
 
 export type DetailPageConfigDto = {
   id: number;
@@ -234,6 +241,8 @@ export type DetailPageConfigDto = {
   heroSubtitle: string;
   banners: DetailPageBannerDto[];
   richTextHtml: string;
+  cards: DetailPageCardDto[];
+  /** @deprecated Use cards.flatMap((card) => card.blocks). */
   blocks: DetailPageBlockDto[];
   references?: DetailPageReferenceDto[];
   createdAt?: string;
@@ -282,33 +291,33 @@ export function buildArtistProfileTemplate(mediaAssetIds: number[]) {
     ["答谢晚宴", "2023.09.10｜苏州"]
   ];
   return [
-    `<section class="ea-detail-card"><h2 class="ea-section-title">个人简介</h2><div class="ea-section-body"><p>林然，资深婚礼&amp;商演主持人，8年行业经验，擅长婚礼、发布会、年会、启动仪式等多种风格主持。以真诚的表达、稳健的台风和出色的现场把控力，为每一场活动注入温度与仪式感。</p></div></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">服务优势</h2><div class="ea-advantage-grid">${[
+    `<h1>个人简介</h1><p>林然，资深婚礼&amp;商演主持人，8年行业经验，擅长婚礼、发布会、年会、启动仪式等多种风格主持。以真诚的表达、稳健的台风和出色的现场把控力，为每一场活动注入温度与仪式感。</p>`,
+    `<h1>服务优势</h1>${[
       ["8年主持经验", "千场历练 专业沉淀"],
       ["婚礼/商演双场景", "风格多变 轻松驾驭"],
       ["控场能力强", "节奏精准 临场应变"],
       ["普通话一级", "发音标准 表达清晰"]
-    ].map(([title, body]) => `<div class="ea-advantage-item"><strong>${title}</strong><p>${body}</p></div>`).join("")}</div></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">代表案例</h2><div class="ea-case-grid">${cases.map(([title, meta], index) => `<div class="ea-case-item"><img data-media-asset-id="${media(index)}" alt="${title}"><strong>${title}</strong><p>${meta}</p></div>`).join("")}</div></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">服务流程</h2><div class="ea-process-row">${[
+    ].map(([title, body]) => `<p><strong>${title}</strong><br>${body}</p>`).join("")}`,
+    `<h1>代表案例</h1>${cases.map(([title, meta], index) => `<p><strong>${title}</strong><br>${meta}</p><img data-media-asset-id="${media(index)}" alt="${title}">`).join("")}`,
+    `<h1>服务流程</h1>${[
       ["需求沟通", "了解需求"],
       ["确定方案", "定制流程"],
       ["确认档期", "签约保定"],
       ["现场执行", "专业呈现"],
       ["售后回访", "贴心服务"]
-    ].map(([title, body]) => `<div class="ea-process-item"><strong>${title}</strong><p>${body}</p></div>`).join("")}</div></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">客户评价</h2><div class="ea-review-list"><div class="ea-review-item"><div class="ea-review-main"><strong>小确幸</strong><p>主持风格非常温暖自然，现场氛围感拉满，宾客都说是参加过最走心的婚礼！</p></div><img class="ea-review-image" data-media-asset-id="${media(0)}" alt="客户评价"></div><div class="ea-review-item"><div class="ea-review-main"><strong>Leon</strong><p>流程把控精准到位，与嘉宾互动自然，整场活动节奏非常好，期待下次合作！</p></div><img class="ea-review-image" data-media-asset-id="${media(1)}" alt="客户评价"></div></div></section>`,
-    `<section class="ea-detail-card"><div class="ea-two-column"><div class="ea-calendar-card"><h2 class="ea-section-title">档期提醒</h2><p>档期较为紧张，建议尽早预约。</p><p>近期可预约时间：6月28日 周六、6月29日 周日、7月05日 周六</p></div><div class="ea-faq-card"><h2 class="ea-section-title">常见问题</h2><ul><li>主持费用包含哪些服务？</li><li>需要提前多久预定？</li><li>可以定制专属主持词吗？</li></ul></div></div></section>`
+    ].map(([title, body]) => `<p><strong>${title}</strong><br>${body}</p>`).join("")}`,
+    `<h1>客户评价</h1><p><strong>小确幸</strong><br>主持风格非常温暖自然，现场氛围感拉满，宾客都说是参加过最走心的婚礼！</p><img data-media-asset-id="${media(0)}" alt="客户评价"><p><strong>Leon</strong><br>流程把控精准到位，与嘉宾互动自然，整场活动节奏非常好，期待下次合作！</p><img data-media-asset-id="${media(1)}" alt="客户评价">`,
+    `<h1>档期提醒</h1><p>档期较为紧张，建议尽早预约。</p><p>近期可预约时间：6月28日 周六、6月29日 周日、7月05日 周六</p><p><strong>常见问题</strong><br>主持费用包含哪些服务？<br>需要提前多久预定？<br>可以定制专属主持词吗？</p>`
   ].join("");
 }
 
 export function buildActivityCaseTemplate(imageAssetIds: number[], videoAssetId?: number) {
   if (!imageAssetIds.length) throw new Error("案例参考模板至少需要一张图片资源");
   return [
-    `<section class="ea-detail-card"><h2 class="ea-section-title">项目简介</h2><div class="ea-section-body"><p>围绕活动主题完成流程策划、舞台表达与现场协同，以统一的视觉和节奏呈现项目价值。</p></div></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">活动亮点</h2><ul><li>定制化流程与内容编排</li><li>多团队现场协同执行</li><li>关键环节节奏精准</li></ul></section>`,
-    `<section class="ea-detail-card"><h2 class="ea-section-title">现场图片</h2><div class="ea-case-grid">${imageAssetIds.map((id, index) => `<div class="ea-case-item"><img data-media-asset-id="${id}" alt="现场图片 ${index + 1}"></div>`).join("")}</div></section>`,
-    ...(videoAssetId ? [`<section class="ea-detail-card"><h2 class="ea-section-title">项目视频</h2><video data-media-asset-id="${videoAssetId}"></video></section>`] : []),
-    `<section class="ea-detail-card"><h2 class="ea-section-title">执行信息</h2><div class="ea-section-body"><p>项目团队按确认方案完成进场、联排、现场执行与复盘交付。</p></div></section>`
+    `<h1>项目简介</h1><p>围绕活动主题完成流程策划、舞台表达与现场协同，以统一的视觉和节奏呈现项目价值。</p>`,
+    `<h1>活动亮点</h1><p>定制化流程与内容编排<br>多团队现场协同执行<br>关键环节节奏精准</p>`,
+    `<h1>现场图片</h1>${imageAssetIds.map((id, index) => `<img data-media-asset-id="${id}" alt="现场图片 ${index + 1}">`).join("")}`,
+    ...(videoAssetId ? [`<h1>项目视频</h1><video data-media-asset-id="${videoAssetId}"></video>`] : []),
+    `<h1>执行信息</h1><p>项目团队按确认方案完成进场、联排、现场执行与复盘交付。</p>`
   ].join("");
 }

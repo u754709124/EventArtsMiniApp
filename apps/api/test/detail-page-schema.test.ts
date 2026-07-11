@@ -55,7 +55,7 @@ describe("detail page SQLite schema", () => {
     expect(Number(configColumns.find((column) => column.name === "ownerType")?.notnull)).toBe(0);
     expect(Number(configColumns.find((column) => column.name === "ownerId")?.notnull)).toBe(0);
     expect(configColumns.find((column) => column.name === "heroSubtitle")?.dflt_value).toContain("");
-    expect(configColumns.find((column) => column.name === "schemaVersion")?.dflt_value).toBe("1");
+    expect(configColumns.find((column) => column.name === "schemaVersion")?.dflt_value).toBe("2");
 
     const indexes = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name LIKE 'detail_page_%' ORDER BY name"

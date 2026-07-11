@@ -1,40 +1,12 @@
 import { Extension, Node, mergeAttributes, type Extensions } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
-import TextAlign from "@tiptap/extension-text-align";
 import { FontSize, TextStyle } from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import type { MediaType } from "@event-arts/shared";
 
-export type AssetAlignment = "left" | "center" | "right" | null;
-
-const allowedRichTextClasses = new Set([
-  "ea-detail-card",
-  "ea-section-title",
-  "ea-section-body",
-  "ea-intro",
-  "ea-advantage-grid",
-  "ea-advantage-item",
-  "ea-case-grid",
-  "ea-case-item",
-  "ea-process-row",
-  "ea-process-item",
-  "ea-review-list",
-  "ea-review-item",
-  "ea-review-main",
-  "ea-review-image",
-  "ea-two-column",
-  "ea-calendar-card",
-  "ea-faq-card",
-  "ea-media",
-  "ea-image",
-  "ea-video",
-  "ea-media-block",
-  "ea-align-left",
-  "ea-align-center",
-  "ea-align-right"
-]);
+const allowedRichTextClasses = new Set<string>();
 
 const safeStyleValue = /^(?!.*(?:expression|javascript|vbscript|url\s*\())[^{}<>]{1,160}$/i;
 const lengthStyleValue = /^(?:0|auto|\d+(?:\.\d+)?(?:px|rpx|rem|em|%))(?:\s+(?:0|auto|\d+(?:\.\d+)?(?:px|rpx|rem|em|%))){0,3}$/i;
@@ -226,17 +198,6 @@ export function createTrustedMediaRegistry(): TrustedMediaRegistry {
   };
 }
 
-function readAlignment(element: HTMLElement): AssetAlignment {
-  if (element.classList.contains("ea-align-left")) return "left";
-  if (element.classList.contains("ea-align-center")) return "center";
-  if (element.classList.contains("ea-align-right")) return "right";
-  return null;
-}
-
-function mediaClass(kind: "image" | "video", alignment: AssetAlignment) {
-  return ["ea-media", `ea-${kind}`, alignment ? `ea-align-${alignment}` : null].filter(Boolean).join(" ");
-}
-
 function createAssetImage(registry: TrustedMediaRegistry) {
   return Node.create({
     name: "assetImage",
@@ -249,8 +210,7 @@ function createAssetImage(registry: TrustedMediaRegistry) {
       return {
         src: { default: null },
         mediaAssetId: { default: null },
-        alt: { default: "内容图片" },
-        align: { default: null }
+        alt: { default: "内容图片" }
       };
     },
 
@@ -269,8 +229,7 @@ function createAssetImage(registry: TrustedMediaRegistry) {
             return {
               src: normalizedSrc,
               mediaAssetId,
-              alt: node.getAttribute("alt")?.trim() || "内容图片",
-              align: readAlignment(node)
+              alt: node.getAttribute("alt")?.trim() || "内容图片"
             };
           }
         }
@@ -284,14 +243,12 @@ function createAssetImage(registry: TrustedMediaRegistry) {
       if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "image", mediaAssetId, src })) {
         return ["span", { class: "ea-media-invalid" }];
       }
-      const align = (["left", "center", "right"] as const).includes(node.attrs.align) ? node.attrs.align : null;
       return [
         "img",
         mergeAttributes({
           src: normalizedSrc,
           alt: typeof node.attrs.alt === "string" && node.attrs.alt.trim() ? node.attrs.alt.trim() : "内容图片",
-          "data-media-asset-id": String(mediaAssetId),
-          class: mediaClass("image", align)
+          "data-media-asset-id": String(mediaAssetId)
         })
       ];
     }
@@ -310,8 +267,7 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
     addAttributes() {
       return {
         src: { default: null },
-        mediaAssetId: { default: null },
-        align: { default: null }
+        mediaAssetId: { default: null }
       };
     },
 
@@ -327,7 +283,7 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
             if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "video", mediaAssetId, src })) {
               return false;
             }
-            return { src: normalizedSrc, mediaAssetId, align: readAlignment(node) };
+            return { src: normalizedSrc, mediaAssetId };
           }
         }
       ];
@@ -340,13 +296,11 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
       if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "video", mediaAssetId, src })) {
         return ["span", { class: "ea-media-invalid" }];
       }
-      const align = (["left", "center", "right"] as const).includes(node.attrs.align) ? node.attrs.align : null;
       return [
         "video",
         mergeAttributes({
           src: normalizedSrc,
           "data-media-asset-id": String(mediaAssetId),
-          class: mediaClass("video", align),
           controls: "",
           preload: "metadata"
         })
@@ -354,54 +308,6 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
     }
   });
 }
-
-const SafeSection = Node.create({
-  name: "safeSection",
-  group: "block",
-  content: "block*",
-  defining: true,
-  addAttributes: safeAttributeDefinitions,
-  parseHTML() {
-    return [{ tag: "section", getAttrs: (node) => safeHtmlAttributes(node as HTMLElement) }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["section", mergeAttributes(HTMLAttributes), 0];
-  }
-});
-
-const SafeDiv = Node.create({
-  name: "safeDiv",
-  group: "block",
-  content: "block*",
-  defining: true,
-  addAttributes: safeAttributeDefinitions,
-  parseHTML() {
-    return [{ tag: "div", getAttrs: (node) => safeHtmlAttributes(node as HTMLElement) }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["div", mergeAttributes(HTMLAttributes), 0];
-  }
-});
-
-const SafeStrongBlock = Node.create({
-  name: "safeStrongBlock",
-  group: "block",
-  content: "inline*",
-  addAttributes: safeAttributeDefinitions,
-  parseHTML() {
-    return [
-      {
-        tag: "strong",
-        context: "safeDiv/|safeSection/",
-        priority: 200,
-        getAttrs: (node) => safeHtmlAttributes(node as HTMLElement)
-      }
-    ];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["strong", mergeAttributes(HTMLAttributes), 0];
-  }
-});
 
 const SafeTextStyle = TextStyle.extend({
   addAttributes: safeAttributeDefinitions,
@@ -421,11 +327,6 @@ const SafeTemplateAttributes = Extension.create({
         types: [
           "paragraph",
           "heading",
-          "bulletList",
-          "orderedList",
-          "listItem",
-          "blockquote",
-          "horizontalRule",
           "bold",
           "italic",
           "underline",
@@ -443,14 +344,16 @@ export function createRichTextEditorExtensions(registry: TrustedMediaRegistry): 
     StarterKit.configure({
       code: false,
       codeBlock: false,
-      heading: { levels: [1, 2, 3, 4, 5, 6] },
+      heading: { levels: [1] },
+      bulletList: false,
+      orderedList: false,
+      listItem: false,
+      blockquote: false,
+      horizontalRule: false,
       link: false,
       trailingNode: false,
       underline: false
     }),
-    SafeSection,
-    SafeDiv,
-    SafeStrongBlock,
     SafeTextStyle,
     SafeTemplateAttributes,
     FontSize,
@@ -464,7 +367,6 @@ export function createRichTextEditorExtensions(registry: TrustedMediaRegistry): 
       HTMLAttributes: { rel: "noopener noreferrer" },
       isAllowedUri: (url, context) => context.defaultValidate(url)
     }),
-    TextAlign.configure({ types: ["heading", "paragraph"], alignments: ["left", "center", "right"] }),
     createAssetImage(registry),
     createAssetVideo(registry)
   ];

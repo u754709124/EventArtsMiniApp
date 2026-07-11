@@ -2,16 +2,18 @@
   display: grid;
   grid-template-columns: minmax(360px, 44%) minmax(480px, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+  height: calc(100dvh - 112px);
+  min-height: 620px;
+  overflow: hidden;
 }
 
 .detail-designer__preview {
-  position: sticky;
-  top: 20px;
   display: flex;
   justify-content: center;
-  min-height: 640px;
+  min-height: 0;
   padding: 18px;
+  overflow-y: auto;
   border: 1px solid #eadfd3;
   border-radius: 8px;
   background: #f7f2ec;
@@ -19,6 +21,8 @@
 
 .detail-designer__panel {
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .detail-designer__toolbar {
@@ -122,9 +126,12 @@
 @media (max-width: 1080px) {
   .detail-designer {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, 42vh) minmax(420px, 1fr);
+    height: calc(100dvh - 112px);
+    min-height: 0;
   }
 
   .detail-designer__preview {
-    position: static;
+    min-height: 0;
   }
 }

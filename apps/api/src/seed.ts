@@ -160,7 +160,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     name: "Jessica 双语主持详情",
     type: "rich_text",
     richTextHtml:
-      '<section class="ea-detail-card"><h2 class="ea-section-title">个人简介</h2><div class="ea-section-body"><p>Jessica 善于用流利的双语表达与优雅节奏，为国际活动和品牌晚宴营造从容氛围。</p></div></section>'
+      "<h1>个人简介</h1><p>Jessica 善于用流利的双语表达与优雅节奏，为国际活动和品牌晚宴营造从容氛围。</p>"
   });
 
   const bannerCaseDetailPage = await upsertSeedDetailPage(prisma, "detailPage.case.banner", {

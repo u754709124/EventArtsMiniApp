@@ -206,7 +206,7 @@ model DetailPageConfig {
   heroLocation  String   @default("")
   heroMetaJson  String   @default("[]")
   richTextHtml  String   @default("")
-  schemaVersion Int      @default(1)
+  schemaVersion Int      @default(2)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

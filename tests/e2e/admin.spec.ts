@@ -29,8 +29,11 @@ async function expectLivePreviewContract(
     items.map((item) => (item as HTMLImageElement).src)
   );
   expect(bannerUrls).toEqual(expected.bannerUrls.map(assetUrl));
-  await expect(preview.locator(".detail-preview-content > section")).toHaveCount(expected.blockTypes.length);
-  const blockTypes = await preview.locator(".detail-preview-content > section").evaluateAll((sections) =>
+  await expect(preview.locator(".detail-preview-card")).toHaveCount(
+    expected.blockTypes.length > 0 ? 1 : 0
+  );
+  await expect(preview.locator(".detail-preview-card > section")).toHaveCount(expected.blockTypes.length);
+  const blockTypes = await preview.locator(".detail-preview-card > section").evaluateAll((sections) =>
     sections.map((section) =>
       section.classList.contains("detail-preview-video-wrap") ? "video" : "richText"
     )
@@ -39,12 +42,12 @@ async function expectLivePreviewContract(
   const geometry = await preview.evaluate((root) => {
     const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
     const content = root.querySelector(".detail-preview-content")?.getBoundingClientRect();
-    const firstBlock = root.querySelector(".detail-preview-content > section")?.getBoundingClientRect();
-    if (!hero || !content || !firstBlock) throw new Error("后台详情预览结构缺失");
+    const firstCard = root.querySelector(".detail-preview-card")?.getBoundingClientRect();
+    if (!hero || !content || !firstCard) throw new Error("后台详情预览结构缺失");
     return {
       heroHeight: hero.height,
       gutter: Number.parseFloat(getComputedStyle(root.querySelector(".detail-preview-content")!).paddingLeft),
-      overlap: hero.bottom - firstBlock.top
+      overlap: hero.bottom - firstCard.top
     };
   });
   expect(geometry.heroHeight).toBe(202);
@@ -418,6 +421,7 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await page.getByTestId("sidebar-media-assets").click();
   await expect(page.getByRole("tab", { name: "图片" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "视频" })).toBeVisible();
+  await expect(page.getByTestId("media-upload-button")).toBeEnabled();
 
   const uploadBuffer = await createUniqueLibraryUploadPng();
   const file = {
@@ -425,7 +429,9 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
     mimeType: "image/png",
     buffer: uploadBuffer
   };
-  await page.getByTestId("media-upload-button-input").setInputFiles(file);
+  const uploadChooser = page.waitForEvent("filechooser");
+  await page.getByTestId("media-upload-button").click();
+  await (await uploadChooser).setFiles(file);
   await expect(page.getByTestId("media-resource-name")).toBeVisible();
   await page.getByTestId("media-resource-name").fill("E2E 未使用资源");
   await page.getByTestId("media-upload-button-confirm").click();
@@ -435,7 +441,9 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await page.getByTestId("media-search").locator("input").press("Enter");
   await expect(page.getByRole("row", { name: /E2E 未使用资源/ })).toBeVisible();
 
-  await page.getByTestId("media-upload-button-input").setInputFiles(file);
+  const reuseChooser = page.waitForEvent("filechooser");
+  await page.getByTestId("media-upload-button").click();
+  await (await reuseChooser).setFiles(file);
   await waitForToast(page, "已存在相同资源，已直接复用");
 
   await page.getByTestId("media-clean-unused").click();

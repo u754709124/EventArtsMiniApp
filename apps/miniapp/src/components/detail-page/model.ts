@@ -1,10 +1,13 @@
 import type {
   DetailPageBannerDto,
   DetailPageBlockDto,
+  DetailPageCardDto,
   DetailPageRendererKey
 } from "@event-arts/shared";
 import {
+  collectDetailPageCardImageUrls,
   collectDetailPageImageUrls,
+  hasSemanticDetailPageCards,
   hasSemanticDetailPageContent,
   sortDetailPageBanners
 } from "@event-arts/shared/detail-page-presentation";
@@ -47,6 +50,14 @@ export function collectDetailImageUrls(blocks: DetailPageBlockDto[]) {
   return collectDetailPageImageUrls(blocks);
 }
 
+export function collectDetailCardImageUrls(cards: DetailPageCardDto[]) {
+  return collectDetailPageCardImageUrls(cards);
+}
+
 export function hasSemanticDetailContent(blocks: DetailPageBlockDto[]) {
   return hasSemanticDetailPageContent(blocks);
+}
+
+export function hasSemanticDetailCards(cards: DetailPageCardDto[]) {
+  return hasSemanticDetailPageCards(cards);
 }

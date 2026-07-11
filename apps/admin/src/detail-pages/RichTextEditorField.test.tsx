@@ -143,10 +143,6 @@ function canonicalArtistTemplate() {
       '<img src="https://assets.example.com/$1.webp" data-media-asset-id="$1"'
     )
     .replace(
-      '<section class="ea-detail-card">',
-      '<section class="ea-detail-card unknown-card" style="padding:16px;color:#663300;position:fixed">'
-    )
-    .replace(
       "林然，资深",
       '<span class="ea-intro unknown-inline" style="font-size:18px;color:#663300;background-image:url(javascript:bad)">林然</span>，资深'
     );
@@ -173,11 +169,13 @@ describe("RichTextEditorField", () => {
     expect(screen.getByLabelText("文字颜色")).toBeTruthy();
 
     for (const name of [
-      "粗体", "斜体", "下划线", "删除线", "左对齐", "居中", "右对齐",
-      "有序列表", "无序列表", "引用", "分割线", "添加链接", "插入图片",
+      "粗体", "斜体", "下划线", "删除线", "添加链接", "插入图片",
       "插入视频", "撤销", "重做", "清除格式"
     ]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
+    for (const name of ["左对齐", "居中", "右对齐", "有序列表", "无序列表", "引用", "分割线"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
     }
 
     act(() => {
@@ -186,17 +184,16 @@ describe("RichTextEditorField", () => {
     fireEvent.click(screen.getByRole("button", { name: "粗体" }));
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("<p><strong>主持人介绍</strong></p>"));
 
-    fireEvent.change(screen.getByRole("combobox", { name: "段落与标题" }), { target: { value: "h2" } });
-    await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("<h2>"));
+    fireEvent.change(screen.getByRole("combobox", { name: "段落与标题" }), { target: { value: "h1" } });
+    await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("<h1>"));
 
     fireEvent.change(screen.getByRole("combobox", { name: "字号" }), { target: { value: "24px" } });
     await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("font-size: 24px"));
 
-    fireEvent.click(screen.getByRole("button", { name: "居中" }));
-    await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("text-align: center"));
+    expect([...screen.getByRole("combobox", { name: "段落与标题" }).querySelectorAll("option")].map((option) => option.value)).toEqual(["p", "h1"]);
   });
 
-  it("preserves the complete trusted template structure, safe classes, styles and order after editing", async () => {
+  it("preserves the new H1 template order while stripping legacy classes after editing", async () => {
     const lifecycle = editorObserver();
     const onChange = vi.fn();
     render(
@@ -222,9 +219,8 @@ describe("RichTextEditorField", () => {
     const html = lifecycle.current?.getHTML() ?? "";
     const template = document.createElement("template");
     template.innerHTML = html;
-    const sections = [...template.content.querySelectorAll("section.ea-detail-card")];
-    expect(sections).toHaveLength(6);
-    expect(sections.map((section) => section.querySelector("h2")?.textContent)).toEqual([
+    const headings = [...template.content.querySelectorAll("h1")];
+    expect(headings.map((heading) => heading.textContent)).toEqual([
       "个人简介",
       "服务优势",
       "代表案例",
@@ -232,25 +228,15 @@ describe("RichTextEditorField", () => {
       "客户评价",
       "档期提醒"
     ]);
-    expect(template.content.querySelectorAll("div.ea-advantage-grid > div.ea-advantage-item")).toHaveLength(4);
-    expect(template.content.querySelectorAll("div.ea-case-grid > div.ea-case-item > strong")).toHaveLength(5);
-    expect(template.content.querySelectorAll("div.ea-process-row > div.ea-process-item > strong")).toHaveLength(5);
-    expect(template.content.querySelectorAll("div.ea-review-list > div.ea-review-item > div.ea-review-main")).toHaveLength(2);
-    expect(template.content.querySelectorAll("div.ea-two-column > div.ea-calendar-card")).toHaveLength(1);
-    expect(template.content.querySelectorAll("div.ea-two-column > div.ea-faq-card > ul > li")).toHaveLength(3);
+    expect(template.content.querySelectorAll("section,div,ul,ol,li,blockquote,hr,h2,h3,h4")).toHaveLength(0);
+    expect(template.content.querySelectorAll("img[data-media-asset-id]")).toHaveLength(7);
     expect(template.content.querySelector("p")?.textContent?.startsWith("已编辑：")).toBe(true);
-    expect(template.content.querySelector("span.ea-intro")?.textContent).toBe("已编辑：林然");
+    expect(template.content.querySelector("span")?.textContent).toBe("已编辑：林然");
 
-    const firstSection = sections[0] as HTMLElement;
-    expect(firstSection.className).toBe("ea-detail-card");
-    expect(firstSection.getAttribute("style")).toContain("padding: 16px");
-    expect(firstSection.style.color).toBe("rgb(102, 51, 0)");
-    expect(firstSection.getAttribute("style")).not.toContain("position");
-    const intro = template.content.querySelector("span.ea-intro") as HTMLElement;
-    expect(intro.className).toBe("ea-intro");
+    const intro = template.content.querySelector("span") as HTMLElement;
+    expect(intro.className).toBe("");
     expect(intro.getAttribute("style")).toContain("font-size: 18px");
     expect(intro.getAttribute("style")).not.toContain("background-image");
-    expect(html).not.toContain("unknown-card");
     expect(html).not.toContain("unknown-inline");
     expect(html).not.toContain("javascript:");
   });
@@ -269,7 +255,6 @@ describe("RichTextEditorField", () => {
       const html = onChange.mock.calls.at(-1)?.[0] as string;
       expect(html).toContain('src="/uploads/content.webp"');
       expect(html).toContain('data-media-asset-id="123"');
-      expect(html).toContain('class="ea-media ea-image"');
       expect(html).toContain('alt="内容图片"');
     });
 
@@ -283,11 +268,9 @@ describe("RichTextEditorField", () => {
     });
     vi.spyOn(window, "prompt").mockReturnValueOnce("舞台内容图");
     fireEvent.click(screen.getByRole("button", { name: "编辑图片替代文本" }));
-    fireEvent.click(screen.getByRole("button", { name: "右对齐" }));
     await waitFor(() => {
       const html = onChange.mock.calls.at(-1)?.[0] as string;
       expect(html).toContain('alt="舞台内容图"');
-      expect(html).toContain('class="ea-media ea-image ea-align-right"');
     });
 
     fireEvent.click(screen.getByRole("button", { name: "插入视频" }));
@@ -300,7 +283,6 @@ describe("RichTextEditorField", () => {
       expect(html).toContain('data-media-asset-id="123"');
       expect(html).toContain('src="/uploads/content.mp4"');
       expect(html).toContain('data-media-asset-id="456"');
-      expect(html).toContain('class="ea-media ea-video"');
       expect(html).toContain("controls");
       expect(html).toContain('preload="metadata"');
       expect(html).not.toMatch(/autoplay|loop|iframe/i);
@@ -326,15 +308,7 @@ describe("RichTextEditorField", () => {
     expect(isSafeAssetMediaSource("/%5C%5Cevil.invalid/video.mp4")).toBe(false);
     expect(isSafeAssetMediaSource("https://unregistered.invalid/file.png")).toBe(false);
 
-    const safeClasses = [
-      "ea-detail-card", "ea-section-title", "ea-section-body", "ea-intro",
-      "ea-advantage-grid", "ea-advantage-item", "ea-case-grid", "ea-case-item",
-      "ea-process-row", "ea-process-item", "ea-review-list", "ea-review-item",
-      "ea-review-main", "ea-review-image", "ea-two-column", "ea-calendar-card",
-      "ea-faq-card", "ea-media", "ea-image", "ea-video", "ea-media-block",
-      "ea-align-left", "ea-align-center", "ea-align-right"
-    ];
-    expect(sanitizeRichTextClassName(`${safeClasses.join(" ")} unknown fixed`)).toBe(safeClasses.join(" "));
+    expect(sanitizeRichTextClassName("unknown fixed")).toBeNull();
     expect(sanitizeRichTextStyle("color:#663300;padding:16px;position:fixed;background-image:url(x)")).toBe(
       "color: #663300; padding: 16px"
     );
@@ -361,7 +335,7 @@ describe("RichTextEditorField", () => {
     await act(async () => {
       lifecycle.current?.commands.insertContent({
         type: "assetVideo",
-        attrs: { src: "/\\evil.invalid/direct.mp4", mediaAssetId: 910, align: null }
+        attrs: { src: "/\\evil.invalid/direct.mp4", mediaAssetId: 910 }
       });
     });
     expect(lifecycle.current?.getHTML()).not.toContain("evil.invalid");
@@ -371,10 +345,9 @@ describe("RichTextEditorField", () => {
   it("round-trips canonical remote media only when it carries a valid registered asset id", async () => {
     const lifecycle = editorObserver();
     const canonical =
-      '<section class="ea-detail-card"><div class="ea-media-block">' +
-      '<img src="https://assets.example.com/registered.webp" alt="对象存储图片" data-media-asset-id="808" class="ea-media ea-image">' +
-      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" class="ea-media ea-video" controls preload="metadata"></video>' +
-      "</div></section>";
+      '<h1>媒体</h1>' +
+      '<img src="https://assets.example.com/registered.webp" alt="对象存储图片" data-media-asset-id="808">' +
+      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" controls preload="metadata"></video>';
     const { rerender } = render(
       <RichTextEditorField value={canonical} onChange={vi.fn()} lifecycleObserver={lifecycle.observer} />
     );
@@ -385,7 +358,7 @@ describe("RichTextEditorField", () => {
       expect(html).toContain('data-media-asset-id="808"');
       expect(html).toContain('src="https://assets.example.com/registered.mp4"');
       expect(html).toContain('data-media-asset-id="809"');
-      expect(html).toContain('<section class="ea-detail-card"><div class="ea-media-block">');
+      expect(html).toContain("<h1>媒体</h1>");
     });
 
     await act(async () => {
@@ -423,8 +396,8 @@ describe("RichTextEditorField", () => {
     );
     await waitFor(() => expect(lifecycle.current?.getHTML()).toBe("<p>初始内容</p>"));
 
-    rerender(<RichTextEditorField value="<h3>编辑回填</h3>" onChange={onChange} lifecycleObserver={lifecycle.observer} />);
-    await waitFor(() => expect(lifecycle.current?.getHTML()).toBe("<h3>编辑回填</h3>"));
+    rerender(<RichTextEditorField value="<h1>编辑回填</h1>" onChange={onChange} lifecycleObserver={lifecycle.observer} />);
+    await waitFor(() => expect(lifecycle.current?.getHTML()).toBe("<h1>编辑回填</h1>"));
     expect(onChange).not.toHaveBeenCalled();
 
     rerender(<RichTextEditorField value="" onChange={onChange} lifecycleObserver={lifecycle.observer} />);

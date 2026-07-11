@@ -57,9 +57,7 @@ function ToolbarButton({ label, disabled, active, onClick, children }: ToolbarBu
 
 function selectedBlockType(editor: Editor | null) {
   if (!editor) return "p";
-  for (const level of [1, 2, 3, 4] as const) {
-    if (editor.isActive("heading", { level })) return `h${level}`;
-  }
+  if (editor.isActive("heading", { level: 1 })) return "h1";
   return "p";
 }
 
@@ -130,16 +128,8 @@ export function RichTextEditorField({
       italic: instance?.isActive("italic") ?? false,
       underline: instance?.isActive("underline") ?? false,
       strike: instance?.isActive("strike") ?? false,
-      bulletList: instance?.isActive("bulletList") ?? false,
-      orderedList: instance?.isActive("orderedList") ?? false,
-      blockquote: instance?.isActive("blockquote") ?? false,
       link: instance?.isActive("link") ?? false,
-      image: instance?.isActive("assetImage") ?? false,
-      align: instance?.isActive({ textAlign: "center" })
-        ? "center"
-        : instance?.isActive({ textAlign: "right" })
-          ? "right"
-          : "left"
+      image: instance?.isActive("assetImage") ?? false
     })
   });
 
@@ -168,12 +158,8 @@ export function RichTextEditorField({
     italic: false,
     underline: false,
     strike: false,
-    bulletList: false,
-    orderedList: false,
-    blockquote: false,
     link: false,
-    image: false,
-    align: "left"
+    image: false
   };
 
   function setBlock(block: string) {
@@ -183,18 +169,9 @@ export function RichTextEditorField({
       return;
     }
     const level = Number(block.slice(1));
-    if ([1, 2, 3, 4].includes(level)) {
-      editor.chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 }).run();
+    if (level === 1) {
+      editor.chain().focus().setHeading({ level }).run();
     }
-  }
-
-  function setAlignment(align: "left" | "center" | "right") {
-    if (!editor) return;
-    if (editor.isActive("assetImage")) {
-      editor.chain().focus().updateAttributes("assetImage", { align }).run();
-      return;
-    }
-    editor.chain().focus().setTextAlign(align).run();
   }
 
   function editLink() {
@@ -256,10 +233,10 @@ export function RichTextEditorField({
     if (asset.mediaType === "image") {
       insert({
         type: "assetImage",
-        attrs: { src: asset.url, mediaAssetId, alt: asset.resourceName || "内容图片", align: null }
+        attrs: { src: asset.url, mediaAssetId, alt: asset.resourceName || "内容图片" }
       });
     } else {
-      insert({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId, align: null } });
+      insert({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId } });
     }
     setPickerType(null);
   }
@@ -284,9 +261,6 @@ export function RichTextEditorField({
           >
             <option value="p">正文 P</option>
             <option value="h1">标题 H1</option>
-            <option value="h2">标题 H2</option>
-            <option value="h3">标题 H3</option>
-            <option value="h4">标题 H4</option>
           </select>
         </label>
 
@@ -328,13 +302,6 @@ export function RichTextEditorField({
         <ToolbarButton label="斜体" disabled={unavailable} active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><em>I</em></ToolbarButton>
         <ToolbarButton label="下划线" disabled={unavailable} active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
         <ToolbarButton label="删除线" disabled={unavailable} active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><s>S</s></ToolbarButton>
-        <ToolbarButton label="左对齐" disabled={unavailable} active={state.align === "left"} onClick={() => setAlignment("left")}>左</ToolbarButton>
-        <ToolbarButton label="居中" disabled={unavailable} active={state.align === "center"} onClick={() => setAlignment("center")}>中</ToolbarButton>
-        <ToolbarButton label="右对齐" disabled={unavailable} active={state.align === "right"} onClick={() => setAlignment("right")}>右</ToolbarButton>
-        <ToolbarButton label="有序列表" disabled={unavailable} active={state.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>1.</ToolbarButton>
-        <ToolbarButton label="无序列表" disabled={unavailable} active={state.bulletList} onClick={() => editor?.chain().focus().toggleBulletList().run()}>•</ToolbarButton>
-        <ToolbarButton label="引用" disabled={unavailable} active={state.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()}>引用</ToolbarButton>
-        <ToolbarButton label="分割线" disabled={unavailable} onClick={() => editor?.chain().focus().setHorizontalRule().run()}>—</ToolbarButton>
         <ToolbarButton label="添加链接" disabled={unavailable} active={state.link} onClick={editLink}>链接</ToolbarButton>
         <ToolbarButton label="插入图片" disabled={unavailable} onClick={() => setPickerType("image")}>图片</ToolbarButton>
         <ToolbarButton label="编辑图片替代文本" disabled={unavailable || !state.image} onClick={editImageAlt}>图片 ALT</ToolbarButton>

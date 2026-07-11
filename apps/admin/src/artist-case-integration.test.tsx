@@ -14,7 +14,7 @@ const bannerDetailPage: DetailPageConfigDto = {
   type: "banner_rich_text",
   typeLabel: "BANNER + 富文本",
   rendererKey: "bannerRichText",
-  schemaVersion: 1,
+  schemaVersion: 2,
   hero: {
     title: "专业舞台服务",
     typeLabel: "案例",
@@ -29,7 +29,8 @@ const bannerDetailPage: DetailPageConfigDto = {
     { id: 202, assetId: 22, sortOrder: 1, url: "/uploads/22.png", width: 1420, height: 580 },
     { id: 101, assetId: 11, sortOrder: 0, url: "/uploads/11.png", width: 1420, height: 580 }
   ],
-  richTextHtml: '<p>正文<img src="/uploads/33.png" data-media-asset-id="33"></p>',
+  richTextHtml: '<h1>正文</h1><p>正文</p><img src="/uploads/33.png" data-media-asset-id="33">',
+  cards: [{ blocks: [{ type: "richText", html: '<h1>正文</h1><p>正文</p><img src="/uploads/33.png" data-media-asset-id="33">' }] }],
   blocks: []
 };
 

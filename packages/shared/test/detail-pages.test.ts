@@ -17,7 +17,7 @@ import {
   type DetailPageConfigDto
 } from "../src/index";
 
-const richTextHtml = '<section class="ea-detail-card"><p>有效详情</p></section>';
+const richTextHtml = "<h1>有效详情</h1><p>正文</p>";
 
 describe("detail page registry", () => {
   it("binds every registered detail type to an input schema", () => {
@@ -53,7 +53,7 @@ describe("detail page registry", () => {
         "banners",
         "richText"
       ],
-      schemaVersion: 1
+      schemaVersion: 2
     });
     expect(detailPageTypeDefinitions.rich_text).toMatchObject({
       rendererKey: "richText",
@@ -64,7 +64,7 @@ describe("detail page registry", () => {
       maxBannerCount: 0,
       bannerAllowedMediaTypes: [],
       configFields: ["richText"],
-      schemaVersion: 1
+      schemaVersion: 2
     });
     expect(new Set(Object.values(detailPageTypeDefinitions).map((definition) => definition.rendererKey)).size).toBe(2);
   });
@@ -213,7 +213,7 @@ describe("business request integration", () => {
       type: "rich_text",
       typeLabel: "单富文本",
       rendererKey: "richText",
-      schemaVersion: 1,
+      schemaVersion: 2,
       hero: {
         title: "",
         typeLabel: "",
@@ -226,6 +226,7 @@ describe("business request integration", () => {
       heroSubtitle: "",
       banners: [],
       richTextHtml,
+      cards: [{ blocks: [{ type: "richText", html: richTextHtml }] }],
       blocks: [{ type: "richText", html: richTextHtml }]
     };
     expect(dto.banners).toEqual([]);
@@ -240,7 +241,7 @@ describe("detail page presentation resolver", () => {
     type: "banner_rich_text",
     typeLabel: " BANNER + 富文本 ",
     rendererKey: "bannerRichText",
-    schemaVersion: 1,
+    schemaVersion: 2,
     hero: {
       title: "  ",
       typeLabel: "  主持人  ",
@@ -262,8 +263,16 @@ describe("detail page presentation resolver", () => {
       { id: 1, assetId: 11, url: "/a.webp", width: 100, height: 50, sortOrder: 1 }
     ],
     richTextHtml: "<p>正文</p>",
+    cards: [
+      {
+        blocks: [
+          { type: "richText", html: '<h1>图文</h1><p><img src="/one.jpg"><img src=" /two.jpg "></p>' },
+          { type: "video", assetId: 5, url: " /video.mp4 ", posterUrl: "/poster.jpg", width: 100, height: 50 }
+        ]
+      }
+    ],
     blocks: [
-      { type: "richText", html: '<section><img src="/one.jpg"><img src=" /two.jpg "></section>' },
+      { type: "richText", html: '<h1>图文</h1><p><img src="/one.jpg"><img src=" /two.jpg "></p>' },
       { type: "video", assetId: 5, url: " /video.mp4 ", posterUrl: "/poster.jpg", width: 100, height: 50 }
     ]
   };
@@ -284,6 +293,7 @@ describe("detail page presentation resolver", () => {
         { id: 4, assetId: 44, url: "/b.webp", width: 100, height: 50, sortOrder: 1 },
         { id: 3, assetId: 33, url: "/c.webp", width: 100, height: 50, sortOrder: 2 }
       ],
+      cards: dto.cards,
       blocks: dto.blocks,
       hasSemanticContent: true
     });

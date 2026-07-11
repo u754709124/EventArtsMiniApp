@@ -33,7 +33,7 @@ const bannerDto: DetailPageConfigDto = {
   type: "banner_rich_text",
   typeLabel: "BANNER + 富文本",
   rendererKey: "bannerRichText",
-  schemaVersion: 1,
+  schemaVersion: 2,
   hero: {
     title: "主持人林然",
     typeLabel: "主持人",
@@ -45,9 +45,17 @@ const bannerDto: DetailPageConfigDto = {
   },
   heroSubtitle: "温暖而专业",
   banners: [{ id: 1, assetId: 11, url: "/uploads/banner.webp", width: 1500, height: 760, sortOrder: 0 }],
-  richTextHtml: "<p>已清洗正文</p>",
+  richTextHtml: "<h1>已清洗正文</h1><p>已清洗正文</p><video data-media-asset-id=\"8\"></video>",
+  cards: [
+    {
+      blocks: [
+        { type: "richText", html: "<h1>已清洗正文</h1><p>已清洗正文</p>" },
+        { type: "video", assetId: 8, url: "/uploads/video.mp4", posterUrl: null, width: 1920, height: 1080 }
+      ]
+    }
+  ],
   blocks: [
-    { type: "richText", html: "<p>已清洗正文</p>" },
+    { type: "richText", html: "<h1>已清洗正文</h1><p>已清洗正文</p>" },
     { type: "video", assetId: 8, url: "/uploads/video.mp4", posterUrl: null, width: 1920, height: 1080 }
   ]
 };
@@ -86,7 +94,7 @@ describe("DetailPagePreview", () => {
     expect(within(dialog).getByText("温暖而专业")).toBeTruthy();
     expect(within(dialog).getByRole("img", { name: "主持人林然 BANNER 1" })).toBeTruthy();
     expect((within(dialog).getByRole("img", { name: "主持人林然 BANNER 1" }) as HTMLImageElement).className).toContain("is-current");
-    expect(dialog.querySelector(".detail-preview-card")).toBeNull();
+    expect(dialog.querySelector(".detail-preview-card")).toBeTruthy();
     const video = within(dialog).getByLabelText("详情视频 1") as HTMLVideoElement;
     expect(video.poster).toBe("");
     expect(video.style.aspectRatio).toBe("1920 / 1080");
@@ -112,7 +120,7 @@ describe("DetailPagePreview", () => {
     render(<DetailPagePreview getDraft={getDraft} />);
     fireEvent.click(screen.getByTestId("detail-page-preview"));
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText("已清洗正文");
+    expect(await within(dialog).findAllByText("已清洗正文")).toHaveLength(2);
     expect(dialog.querySelector(".detail-preview-hero")).toBeNull();
     expect(dialog.querySelector(".detail-preview-first-card-overlap")).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "关闭预览" }));
@@ -124,6 +132,7 @@ describe("DetailPagePreview", () => {
     vi.mocked(request).mockResolvedValue({
       ...bannerDto,
       richTextHtml: "<p><br></p>",
+      cards: [{ blocks: [{ type: "richText", html: "<p><br></p>" }] }],
       blocks: [{ type: "richText", html: "<p><br></p>" }]
     });
     const getDraft = vi.fn().mockResolvedValue({

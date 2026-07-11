@@ -106,7 +106,7 @@ describe("DetailPageService", () => {
       type: "banner_rich_text",
       typeLabel: "BANNER + 富文本",
       rendererKey: "bannerRichText",
-      schemaVersion: 1,
+      schemaVersion: 2,
       heroSubtitle: "温暖・专业"
     });
     expect(dto.banners.map((banner) => banner.assetId)).toEqual([11, 10]);
@@ -122,7 +122,7 @@ describe("DetailPageService", () => {
     await createArtist(prisma);
     await createAsset(prisma, 10, "image");
     await createAsset(prisma, 11, "image");
-    const html = "<section class=\"ea-detail-card\"><p>保留富文本</p></section>";
+    const html = "<h1>保留富文本</h1><p>保留富文本</p>";
     await prisma.$transaction((tx) =>
       upsertDetailPageConfig(tx, "artist", 1, {
         type: "banner_rich_text",

@@ -8,7 +8,7 @@ export function RichTextRenderer({ config, hero, fallbackTabUrl }: DetailRendere
     <View className="detail-page detail-page--rich-only" data-testid="detail-layout-rich-only">
       <DetailNavigation title={hero.title} fallbackTabUrl={fallbackTabUrl} />
       <View className="detail-content detail-content--normal" data-testid="detail-content-normal">
-        <DetailRichContent blocks={config.blocks} />
+        <DetailRichContent cards={config.cards} />
       </View>
     </View>
   );

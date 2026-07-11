@@ -7,7 +7,7 @@ import {
   extractRichTextMedia,
   sanitizeAndNormalizeRichText
 } from "../src/detail-pages/detail-page-sanitizer";
-import { buildDetailPageBlocks } from "../src/detail-pages/detail-page-parser";
+import { buildDetailPageBlocks, buildDetailPageCards } from "../src/detail-pages/detail-page-parser";
 
 const assets = new Map<number, DetailPageMediaAsset>([
   [1, { id: 1, mediaType: "image", url: "/uploads/one.webp", width: 1200, height: 800 }],
@@ -16,7 +16,7 @@ const assets = new Map<number, DetailPageMediaAsset>([
 ]);
 
 describe("detail rich-text sanitizer", () => {
-  it("removes executable elements, events, unsafe links and unapproved classes", () => {
+  it("rewrites legacy sections into canonical H1 cards and removes unsafe markup", () => {
     const html = sanitizeAndNormalizeRichText(
       `<section class="ea-detail-card unknown" onclick="alert(1)">
         <script>alert(1)</script><style>body{display:none}</style>
@@ -28,10 +28,9 @@ describe("detail rich-text sanitizer", () => {
       assets
     );
 
-    expect(html).toContain('class="ea-detail-card"');
-    expect(html).toContain('class="ea-section-title"');
-    expect(html).toContain("color:#333");
-    expect(html).not.toMatch(/script|style>|onclick|onmouseover|position|z-index|javascript:|iframe|unknown/);
+    expect(html).toContain("<h1>介绍</h1>");
+    expect(html).toContain("<p>正文</p>");
+    expect(html).not.toMatch(/class=|style=|script|style>|onclick|onmouseover|position|z-index|javascript:|iframe|unknown|h2/);
   });
 
   it("rejects semantically empty rich text after sanitization", () => {
@@ -42,7 +41,7 @@ describe("detail rich-text sanitizer", () => {
 
   it("drops oversized or negative layout styles while preserving reasonable values", () => {
     const html = sanitizeAndNormalizeRichText(
-      '<p style="font-size:999px;width:99999px;height:-1px;margin:-20px;max-width:100%;padding:20px">正文</p>',
+      '<h1>样式</h1><p><span style="font-size:999px;width:99999px;height:-1px;margin:-20px;max-width:100%;padding:20px">正文</span></p>',
       assets
     );
     expect(html).toContain("max-width:100%");
@@ -58,12 +57,8 @@ describe("detail rich-text sanitizer", () => {
       assets
     );
 
-    expect(html).toContain(
-      '<img src="/uploads/one.webp" data-media-asset-id="1" class="ea-media ea-image" alt="现场图">'
-    );
-    expect(html).toContain(
-      '<video src="/uploads/two.mp4" data-media-asset-id="2" class="ea-media ea-video" controls="" preload="metadata"></video>'
-    );
+    expect(html).toContain('<img src="/uploads/one.webp" data-media-asset-id="1" alt="现场图">');
+    expect(html).toContain('<video src="/uploads/two.mp4" data-media-asset-id="2" controls="" preload="metadata"></video>');
     expect(html).not.toMatch(/untrusted|autoplay|loop|onerror|onclick/);
   });
 
@@ -101,7 +96,7 @@ describe("detail rich-text sanitizer", () => {
 });
 
 describe("detail page ordered blocks", () => {
-  it("keeps text and images in richText blocks while splitting video in source order", () => {
+  it("keeps text and images in richText blocks while splitting video in source order inside a card", () => {
     const html = sanitizeAndNormalizeRichText(
       `<section class="ea-detail-card"><p>视频之前</p>
        <img data-media-asset-id="1">
@@ -110,8 +105,11 @@ describe("detail page ordered blocks", () => {
       assets
     );
     const blocks = buildDetailPageBlocks(html, assets);
+    const cards = buildDetailPageCards(html, assets);
 
     expect(blocks).toHaveLength(3);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].blocks).toEqual(blocks);
     expect(blocks[0]).toMatchObject({ type: "richText" });
     expect(blocks[0]).toHaveProperty("html", expect.stringContaining("视频之前"));
     expect(blocks[0]).toHaveProperty("html", expect.stringContaining("/uploads/one.webp"));
@@ -127,7 +125,7 @@ describe("detail page ordered blocks", () => {
     expect(blocks[2]).toHaveProperty("html", expect.stringContaining("/uploads/three.png"));
   });
 
-  it("safely splits a nested legacy video and preserves the adjacent container class", () => {
+  it("safely splits a nested legacy video without preserving legacy container classes", () => {
     const html = sanitizeAndNormalizeRichText(
       `<section class="ea-detail-card"><div class="ea-section-body"><p>甲</p><video data-media-asset-id="2"></video><p>乙</p></div></section>`,
       assets
@@ -135,12 +133,13 @@ describe("detail page ordered blocks", () => {
     const blocks = buildDetailPageBlocks(html, assets);
 
     expect(blocks.map((block) => block.type)).toEqual(["richText", "video", "richText"]);
-    expect(blocks[0]).toHaveProperty("html", expect.stringMatching(/ea-detail-card.*ea-section-body.*甲/s));
-    expect(blocks[2]).toHaveProperty("html", expect.stringMatching(/ea-detail-card.*ea-section-body.*乙/s));
+    expect(blocks[0]).toHaveProperty("html", expect.stringMatching(/<h1>甲乙<\/h1>.*甲/s));
+    expect(blocks[0]).not.toHaveProperty("html", expect.stringMatching(/ea-detail-card|ea-section-body/s));
+    expect(blocks[2]).toHaveProperty("html", expect.stringContaining("乙"));
   });
 
   it("converts text-only content into one richText block", () => {
     const html = sanitizeAndNormalizeRichText("<p>纯文本详情</p>", assets);
-    expect(buildDetailPageBlocks(html, assets)).toEqual([{ type: "richText", html: "<p>纯文本详情</p>" }]);
+    expect(buildDetailPageBlocks(html, assets)).toEqual([{ type: "richText", html: "<h1>纯文本详情</h1><p>纯文本详情</p>" }]);
   });
 });

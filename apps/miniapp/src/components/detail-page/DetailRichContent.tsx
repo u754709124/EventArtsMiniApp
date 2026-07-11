@@ -1,14 +1,14 @@
 import Taro from "@tarojs/taro";
 import { RichText, Text, View } from "@tarojs/components";
 import { useMemo } from "react";
-import type { DetailPageBlockDto } from "@event-arts/shared";
+import type { DetailPageCardDto } from "@event-arts/shared";
 import { previewRichTextImage } from "./media-health";
-import { collectDetailImageUrls } from "./model";
+import { collectDetailCardImageUrls } from "./model";
 import { DetailVideoBlock } from "./DetailVideoBlock";
 import { useDetailImageHealth } from "./useDetailImageHealth";
 
-export function DetailRichContent({ blocks }: { blocks: DetailPageBlockDto[] }) {
-  const imageUrls = useMemo(() => collectDetailImageUrls(blocks), [blocks]);
+export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
+  const imageUrls = useMemo(() => collectDetailCardImageUrls(cards), [cards]);
   const imageHealth = useDetailImageHealth(imageUrls);
 
   function previewImage(event: unknown) {
@@ -38,18 +38,22 @@ export function DetailRichContent({ blocks }: { blocks: DetailPageBlockDto[] }) 
           </Text>
         </View>
       )}
-      {blocks.map((block, index) =>
-        block.type === "richText" ? (
-          <RichText
-            key={`${imageHealth.richTextRetryKey}-rich-${index}`}
-            className="detail-rich-text"
-            data-testid="detail-rich-text-block"
-            nodes={block.html}
-            onClick={previewImage}
-          />
-        ) : (
-          <DetailVideoBlock key={`video-${block.assetId}-${index}`} block={block} />
-        )
+      {cards.map((card, cardIndex) =>
+        <View key={`card-${cardIndex}`} className="detail-rich-card" data-testid="detail-rich-card">
+          {card.blocks.map((block, blockIndex) =>
+            block.type === "richText" ? (
+              <RichText
+                key={`${imageHealth.richTextRetryKey}-rich-${cardIndex}-${blockIndex}`}
+                className="detail-rich-text"
+                data-testid="detail-rich-text-block"
+                nodes={block.html}
+                onClick={previewImage}
+              />
+            ) : (
+              <DetailVideoBlock key={`video-${block.assetId}-${cardIndex}-${blockIndex}`} block={block} />
+            )
+          )}
+        </View>
       )}
     </View>
   );

@@ -1,5 +1,5 @@
 import { parseFragment, serialize, type DefaultTreeAdapterTypes } from "parse5";
-import type { DetailPageBlockDto } from "@event-arts/shared";
+import type { DetailPageCardDto, DetailPageContentBlockDto } from "@event-arts/shared";
 import { DetailPageValidationError, type DetailPageMediaAsset } from "./detail-page-types";
 import { attachParentNodes, hasRenderableRichTextHtml } from "./detail-page-sanitizer";
 
@@ -97,10 +97,13 @@ function getMediaAssetId(element: Element) {
 export function buildDetailPageBlocks(
   html: string,
   assets: ReadonlyMap<number, DetailPageMediaAsset>
-): DetailPageBlockDto[] {
-  const fragment = parseFragment(html);
-  const segments = fragment.childNodes.flatMap(splitNode);
-  const blocks: DetailPageBlockDto[] = [];
+): DetailPageContentBlockDto[] {
+  return buildDetailPageCards(html, assets).flatMap((card) => card.blocks);
+}
+
+function buildBlocksFromNodes(nodes: ChildNode[], assets: ReadonlyMap<number, DetailPageMediaAsset>) {
+  const segments = nodes.flatMap(splitNode);
+  const blocks: DetailPageContentBlockDto[] = [];
   let richNodes: ChildNode[] = [];
 
   const flushRichText = () => {
@@ -130,6 +133,32 @@ export function buildDetailPageBlocks(
     });
   }
   flushRichText();
-  if (!blocks.length) throw new DetailPageValidationError("富文本内容无法解析");
   return blocks;
+}
+
+export function buildDetailPageCards(
+  html: string,
+  assets: ReadonlyMap<number, DetailPageMediaAsset>
+): DetailPageCardDto[] {
+  const fragment = parseFragment(html);
+  const cardNodes: ChildNode[][] = [];
+  let current: ChildNode[] = [];
+  const flush = () => {
+    if (!current.length) return;
+    cardNodes.push(current);
+    current = [];
+  };
+
+  for (const child of fragment.childNodes) {
+    if (isElement(child) && child.tagName === "h1") flush();
+    current.push(child);
+  }
+  flush();
+
+  const cards = cardNodes
+    .map((nodes) => ({ blocks: buildBlocksFromNodes(nodes, assets) }))
+    .filter((card) => card.blocks.length > 0);
+
+  if (!cards.length) throw new DetailPageValidationError("富文本内容无法解析");
+  return cards;
 }

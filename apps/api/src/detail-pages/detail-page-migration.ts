@@ -1,6 +1,8 @@
 import type { AppPrismaClient } from "../db";
+import { collectRichTextMediaAssetIds, extractRichTextMedia, normalizeDetailRichTextToH1Cards } from "./detail-page-sanitizer";
 
 export const DETAIL_PAGE_MIGRATION_ID = "20260711_standalone_detail_pages_v1";
+export const DETAIL_PAGE_H1_CARDS_MIGRATION_ID = "20260711_h1_detail_cards_v2";
 
 type ColumnInfo = { name: string; notnull: number; dflt_value: string | null };
 type RelationSnapshot = {
@@ -35,12 +37,16 @@ async function columnNames(prisma: AppPrismaClient, table: string) {
   return new Set((await columns(prisma, table)).map((column) => column.name));
 }
 
-async function hasMigration(prisma: AppPrismaClient) {
+async function hasMigrationId(prisma: AppPrismaClient, id: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
     "SELECT id FROM schema_migrations WHERE id = ?",
-    DETAIL_PAGE_MIGRATION_ID
+    id
   );
   return rows.length > 0;
+}
+
+async function hasMigration(prisma: AppPrismaClient) {
+  return hasMigrationId(prisma, DETAIL_PAGE_MIGRATION_ID);
 }
 
 async function hasTargetSchema(prisma: AppPrismaClient) {
@@ -211,7 +217,7 @@ async function rebuildDetailTablesIfNeeded(prisma: AppPrismaClient) {
       heroLocation TEXT NOT NULL DEFAULT '',
       heroMetaJson TEXT NOT NULL DEFAULT '[]',
       richTextHtml TEXT NOT NULL DEFAULT '',
-      schemaVersion INTEGER NOT NULL DEFAULT 1,
+      schemaVersion INTEGER NOT NULL DEFAULT 2,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(ownerType, ownerId)
@@ -357,9 +363,57 @@ async function assertForeignKeys(prisma: AppPrismaClient) {
   if (rows.length) throw new Error(`SQLite 外键校验失败: ${JSON.stringify(rows)}`);
 }
 
+async function runH1DetailCardsMigration(prisma: AppPrismaClient) {
+  if (await hasMigrationId(prisma, DETAIL_PAGE_H1_CARDS_MIGRATION_ID)) return;
+
+  const details = await prisma.detailPageConfig.findMany({
+    select: { id: true, richTextHtml: true },
+    orderBy: { id: "asc" }
+  });
+  const mediaIds = [...new Set(details.flatMap((detail) => collectRichTextMediaAssetIds(detail.richTextHtml)))];
+  const assets = mediaIds.length
+    ? await prisma.mediaAsset.findMany({
+        where: { id: { in: mediaIds } },
+        select: { id: true, mediaType: true, url: true, width: true, height: true }
+      })
+    : [];
+  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
+  await prisma.$transaction(async (tx) => {
+    for (const detail of details) {
+      let richTextHtml = "";
+      try {
+        const sourceHtml = detail.richTextHtml.trim() ? detail.richTextHtml : "<h1>内容</h1><p>内容</p>";
+        richTextHtml = normalizeDetailRichTextToH1Cards(sourceHtml, assetMap);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`详情页 ${detail.id} H1 卡片迁移失败: ${message}`);
+      }
+      const contentMedia = extractRichTextMedia(richTextHtml);
+      await tx.detailPageConfig.update({
+        where: { id: detail.id },
+        data: { richTextHtml, schemaVersion: 2 }
+      });
+      await tx.detailPageContentMedia.deleteMany({ where: { detailPageConfigId: detail.id } });
+      for (const media of contentMedia) {
+        await tx.detailPageContentMedia.create({
+          data: { detailPageConfigId: detail.id, mediaAssetId: media.assetId }
+        });
+      }
+    }
+    await tx.$executeRawUnsafe(
+      "INSERT INTO schema_migrations (id, appliedAt) VALUES (?, CURRENT_TIMESTAMP)",
+      DETAIL_PAGE_H1_CARDS_MIGRATION_ID
+    );
+  });
+}
+
 export async function runDetailPageMigration(prisma: AppPrismaClient) {
   const migrationApplied = await hasMigration(prisma);
-  if (migrationApplied && await hasTargetSchema(prisma)) return;
+  if (migrationApplied && await hasTargetSchema(prisma)) {
+    await runH1DetailCardsMigration(prisma);
+    return;
+  }
 
   const before = await snapshot(prisma);
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF");
@@ -386,6 +440,7 @@ export async function runDetailPageMigration(prisma: AppPrismaClient) {
     await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
   }
   await assertForeignKeys(prisma);
+  await runH1DetailCardsMigration(prisma);
 }
 
 export type DetailPageOrphan = {
