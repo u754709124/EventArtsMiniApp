@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Empty, Input, Modal, Pagination, Select, Space, Spin, Tabs, Tag, message } from "antd";
 import { mediaFieldRules, mediaTypeValues, type MediaAssetDto, type MediaFieldKey, type MediaType } from "@event-arts/shared";
 import { request } from "../api";
@@ -33,34 +33,43 @@ export function MediaLibraryModal({
   const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
   const allowedTypesKey = allowedTypes.join(",");
   const [mediaType, setMediaType] = useState<MediaType>(allowedTypes[0]);
+  const effectiveMediaType = allowedTypes.includes(mediaType) ? mediaType : allowedTypes[0];
   const [q, setQ] = useState("");
   const [tag, setTag] = useState<string>();
   const [tags, setTags] = useState<Array<{ label: string; count: number }>>([]);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<MediaListResponse>({ items: [], total: 0, page: 1, pageSize: 20 });
   const [loading, setLoading] = useState(false);
+  const requestSequence = useRef(0);
 
   const load = useCallback(async () => {
-    if (!open) return;
+    const sequence = ++requestSequence.current;
+    if (!open) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ mediaType, page: String(page), pageSize: "20" });
+      const params = new URLSearchParams({ mediaType: effectiveMediaType, page: String(page), pageSize: "20" });
       if (q.trim()) params.set("q", q.trim());
       if (tag) params.set("tag", tag);
       if (rule?.width) params.set("width", String(rule.width));
       if (rule?.height) params.set("height", String(rule.height));
-      setData(await request<MediaListResponse>(`/api/admin/media-assets?${params}`));
+      const nextData = await request<MediaListResponse>(`/api/admin/media-assets?${params}`);
+      if (sequence !== requestSequence.current) return;
+      setData(nextData);
     } catch (error) {
+      if (sequence !== requestSequence.current) return;
       setData((current) => ({ ...current, items: [], total: 0, page }));
       message.error(error instanceof Error ? error.message : "资源加载失败");
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [mediaType, open, page, q, rule?.height, rule?.width, tag]);
+  }, [effectiveMediaType, open, page, q, rule?.height, rule?.width, tag]);
 
   useEffect(() => {
     if (!open) return;
-    setMediaType(allowedTypes[0]);
+    setMediaType((current) => allowedTypes.includes(current) ? current : allowedTypes[0]);
     setPage(1);
     void request<{ items: Array<{ label: string; count: number }> }>("/api/admin/media-assets/tags")
       .then((value) => setTags(value.items))
@@ -82,7 +91,7 @@ export function MediaLibraryModal({
       <div data-testid="media-library-modal">
       {allowedTypes.length > 1 && (
         <Tabs
-          activeKey={mediaType}
+          activeKey={effectiveMediaType}
           onChange={(key) => {
             setMediaType(key as MediaType);
             setPage(1);

@@ -4,7 +4,8 @@ import {
   ArrowUpOutlined,
   CloseOutlined,
   HolderOutlined,
-  PlusOutlined
+  PlusOutlined,
+  ReloadOutlined
 } from "@ant-design/icons";
 import { Button, Spin, message } from "antd";
 import {
@@ -115,6 +116,54 @@ function BannerTile({ asset, index, count, disabled, onMove, onRemove }: BannerT
   );
 }
 
+type FailedBannerTileProps = {
+  id: number;
+  index: number;
+  disabled: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+  onRemove: () => void;
+};
+
+function FailedBannerTile({ id, index, disabled, retrying, onRetry, onRemove }: FailedBannerTileProps) {
+  return (
+    <article
+      data-testid={`detail-banner-error-${id}`}
+      className="detail-banner-item detail-banner-item-error"
+      role="alert"
+    >
+      <div className="detail-banner-thumbnail detail-banner-thumbnail-error">无法显示缩略图</div>
+      <div className="detail-banner-metadata">
+        <strong>资源 ID #{id}</strong>
+        <span>元数据加载失败</span>
+        <span data-testid={`detail-banner-order-${id}`}>第 {index + 1} 张</span>
+      </div>
+      <div className="detail-banner-actions">
+        <Button
+          type="text"
+          icon={<ReloadOutlined />}
+          disabled={disabled}
+          loading={retrying}
+          aria-label={`重试资源 #${id}`}
+          onClick={onRetry}
+        >
+          重试
+        </Button>
+        <Button
+          danger
+          type="text"
+          icon={<CloseOutlined />}
+          disabled={disabled || retrying}
+          aria-label={`删除资源 #${id}`}
+          onClick={onRemove}
+        >
+          删除
+        </Button>
+      </div>
+    </article>
+  );
+}
+
 export type DetailBannerFieldProps = {
   value?: number[];
   onChange?: (value: number[]) => void;
@@ -124,6 +173,8 @@ export type DetailBannerFieldProps = {
 export function DetailBannerField({ value = [], onChange, disabled = false }: DetailBannerFieldProps) {
   const ids = useMemo(() => value, [value]);
   const [assets, setAssets] = useState<Map<number, MediaAssetDto>>(new Map());
+  const [failedIds, setFailedIds] = useState<Set<number>>(new Set());
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const sensors = useSensors(
@@ -135,6 +186,7 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
     let active = true;
     if (!ids.length) {
       setAssets(new Map());
+      setFailedIds(new Set());
       setLoading(false);
       return;
     }
@@ -145,18 +197,42 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
           return await request<MediaAssetDto>(`/api/admin/media-assets/${id}`);
         } catch (error) {
           message.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
-          return null;
+          return { id, asset: null };
         }
       })
     ).then((items) => {
       if (!active) return;
-      setAssets(new Map(items.filter((asset): asset is MediaAssetDto => Boolean(asset)).map((asset) => [asset.id, asset])));
+      const loadedAssets = items.filter((item): item is MediaAssetDto => "mediaType" in item);
+      setAssets(new Map(loadedAssets.map((asset) => [asset.id, asset])));
+      setFailedIds(new Set(items.filter((item) => !("mediaType" in item)).map((item) => item.id)));
       setLoading(false);
     });
     return () => {
       active = false;
     };
   }, [ids.join(",")]);
+
+  async function retry(id: number) {
+    setRetryingIds((current) => new Set(current).add(id));
+    try {
+      const asset = await request<MediaAssetDto>(`/api/admin/media-assets/${id}`);
+      setAssets((current) => new Map(current).set(id, asset));
+      setFailedIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    } catch (error) {
+      setFailedIds((current) => new Set(current).add(id));
+      message.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
+    } finally {
+      setRetryingIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
 
   function move(id: number, offset: -1 | 1) {
     const from = ids.indexOf(id);
@@ -208,6 +284,16 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
                     count={ids.length}
                     disabled={disabled}
                     onMove={(offset) => move(id, offset)}
+                    onRemove={() => onChange?.(ids.filter((item) => item !== id))}
+                  />
+                ) : failedIds.has(id) ? (
+                  <FailedBannerTile
+                    key={id}
+                    id={id}
+                    index={index}
+                    disabled={disabled}
+                    retrying={retryingIds.has(id)}
+                    onRetry={() => void retry(id)}
                     onRemove={() => onChange?.(ids.filter((item) => item !== id))}
                   />
                 ) : null;

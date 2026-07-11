@@ -2,9 +2,12 @@
 
 import { act } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaAssetDto } from "@event-arts/shared";
+import { request } from "../api";
 import { DetailBannerField, validateDetailBannerIds } from "./DetailBannerField";
+
+const unavailableIds = new Set<number>();
 
 const assets = new Map<number, MediaAssetDto>([
   [
@@ -57,15 +60,17 @@ const assets = new Map<number, MediaAssetDto>([
 
 vi.mock("../api", () => ({
   request: vi.fn(async (path: string) => {
-    const asset = assets.get(Number(path.split("/").at(-1)));
+    const id = Number(path.split("/").at(-1));
+    if (unavailableIds.has(id)) throw new Error(`资源 #${id} 加载失败`);
+    const asset = assets.get(id);
     if (!asset) throw new Error("missing fixture");
     return asset;
   })
 }));
 
 vi.mock("./MediaPickerModal", () => ({
-  MediaPickerModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="detail-banner-picker">picker</div> : null
+  MediaPickerModal: ({ open, onCancel }: { open: boolean; onCancel: () => void }) =>
+    open ? <div data-testid="detail-banner-picker">picker<button onClick={onCancel}>关闭资源选择器</button></div> : null
 }));
 
 beforeAll(() => {
@@ -88,6 +93,11 @@ beforeAll(() => {
 });
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  unavailableIds.clear();
+  vi.mocked(request).mockClear();
+});
 
 describe("DetailBannerField", () => {
   it("validates that the form value contains 1–6 unique integer image ids", () => {
@@ -117,11 +127,44 @@ describe("DetailBannerField", () => {
     expect(onChange).toHaveBeenLastCalledWith([1]);
   });
 
-  it("disables adding at six banners and exposes a stable picker test id below the limit", () => {
+  it("keeps a failed id visible in order and lets the user remove it", async () => {
+    unavailableIds.add(2);
+    const onChange = vi.fn();
+    render(<DetailBannerField value={[1, 2]} onChange={onChange} />);
+
+    const failedTile = await screen.findByTestId("detail-banner-error-2");
+    expect(failedTile.textContent).toContain("资源 ID #2");
+    expect(failedTile.textContent).toContain("第 2 张");
+    expect(failedTile.textContent).toContain("加载失败");
+    expect(screen.getByTestId("detail-banner-item-1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除资源 #2" }));
+    expect(onChange).toHaveBeenLastCalledWith([1]);
+  });
+
+  it("retries failed metadata and restores the banner tile", async () => {
+    unavailableIds.add(2);
+    render(<DetailBannerField value={[2]} onChange={vi.fn()} />);
+
+    await screen.findByTestId("detail-banner-error-2");
+    expect(vi.mocked(request)).toHaveBeenCalledWith("/api/admin/media-assets/2");
+
+    unavailableIds.delete(2);
+    fireEvent.click(screen.getByRole("button", { name: "重试资源 #2" }));
+
+    await waitFor(() => expect(screen.getByTestId("detail-banner-item-2")).toBeTruthy());
+    expect(screen.queryByTestId("detail-banner-error-2")).toBeNull();
+    expect(vi.mocked(request)).toHaveBeenCalledTimes(2);
+  });
+
+  it("disables adding at six banners and exposes a stable picker test id only while open", () => {
     const { rerender } = render(<DetailBannerField value={[1]} onChange={vi.fn()} />);
     expect(screen.getByTestId("detail-banner-add")).not.toHaveProperty("disabled", true);
     fireEvent.click(screen.getByTestId("detail-banner-add"));
     expect(screen.getByTestId("detail-banner-picker")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭资源选择器" }));
+    expect(screen.queryByTestId("detail-banner-picker")).toBeNull();
 
     rerender(<DetailBannerField value={[1, 2, 3, 4, 5, 6]} onChange={vi.fn()} />);
     expect(screen.getByTestId("detail-banner-add")).toHaveProperty("disabled", true);

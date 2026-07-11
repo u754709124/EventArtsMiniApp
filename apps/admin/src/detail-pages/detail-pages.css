@@ -29,6 +29,20 @@
   object-fit: cover;
 }
 
+.detail-banner-item-error {
+  border-color: #ffccc7;
+  background: #fff7f6;
+}
+
+.detail-banner-thumbnail-error {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: #a8071a;
+  font-size: 13px;
+  text-align: center;
+}
+
 .detail-banner-metadata {
   display: grid;
   gap: 4px;
