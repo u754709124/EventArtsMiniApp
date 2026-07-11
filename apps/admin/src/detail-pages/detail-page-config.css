@@ -1,0 +1,57 @@
+.detail-page-config {
+  --detail-focus: #9b642e;
+  --detail-border: #e3d9cf;
+  --detail-surface-muted: #faf7f3;
+  display: grid;
+  gap: 4px;
+}
+
+.detail-page-type-select .ant-select {
+  width: 100%;
+  min-height: 44px;
+}
+
+.detail-page-type-select .ant-select-selector {
+  min-height: 44px;
+  align-items: center;
+}
+
+.detail-page-empty-hint {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  min-height: 104px;
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px dashed var(--detail-border);
+  border-radius: 8px;
+  color: #5f554d;
+  background: var(--detail-surface-muted);
+  text-align: center;
+}
+
+.detail-page-empty-hint strong {
+  color: #8b5c2e;
+}
+
+.detail-page-dynamic-fields {
+  display: grid;
+}
+
+.detail-page-actions {
+  margin: 0 0 24px;
+}
+
+.detail-page-actions .ant-btn {
+  min-height: 44px;
+}
+
+.detail-page-config .ant-input {
+  min-height: 44px;
+}
+
+.detail-page-config :is(.ant-btn, .ant-input, .ant-select-selector):focus-visible,
+.detail-page-config .ant-select-focused .ant-select-selector {
+  outline: 3px solid var(--detail-focus) !important;
+  outline-offset: 2px;
+}
