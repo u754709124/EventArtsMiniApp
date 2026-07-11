@@ -95,6 +95,15 @@ All agents must conduct task analysis, planning, and reasoning in Chinese.
 Use Chinese for internal working notes and agent handoffs unless code, command
 output, or a user requirement makes another language necessary.
 
+### Goal authority
+
+Every executable goal must be produced by `planner`. The parent agent may only
+state the user-requested output target when invoking `planner`; it must not
+independently create, expand, reinterpret, or revise an executable goal. The
+planner's output is the authoritative goal definition, including scope,
+acceptance criteria, constraints, and non-goals. The parent then selects the
+implementation route and executes against that output.
+
 | Task class | Route | Model / reasoning | Use when |
 | --- | --- | --- | --- |
 | Planning | `planner` (read-only) | `gpt-5.6-sol` / `medium` | A long-term goal is being defined or decomposed, or requirements, architecture, acceptance criteria, data flow, or implementation choices need to be clarified before consequential work. Long-term goals must enter through this route. |
