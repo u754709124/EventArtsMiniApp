@@ -121,6 +121,7 @@ const legacyArtistTagsSchema = z
   .refine((values) => values.every((value) => value.length <= 12), "单个标签不能超过 12 个字符")
   .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
 const artistQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
+const optionalQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
 
 const artistTagInput = {
   tags: artistTagsSchema.optional(),
@@ -178,6 +179,10 @@ export const artistListQuerySchema = z.object({
   tag: artistQueryTextSchema
 });
 
+export const caseListQuerySchema = z.object({
+  q: optionalQueryTextSchema
+});
+
 const activityCaseFields = {
   title: z.string().trim().min(1),
   category: z.string().trim().min(1),
@@ -195,6 +200,22 @@ const activityCaseFields = {
 
 export const ActivityCaseCreateRequestSchema = z.object(activityCaseFields).strict();
 export const ActivityCaseUpdateRequestSchema = z.object(activityCaseFields).partial().strict();
+
+const menuItemFields = {
+  text: z.string().trim().min(1),
+  iconAssetId: positiveIntFromInput,
+  type: MenuTypeSchema,
+  configJson: z.unknown().optional(),
+  showOnHome: z.boolean(),
+  sortOrder: z.coerce.number().int().min(0),
+  status: StatusSchema
+};
+
+export const MenuItemCreateRequestSchema = z.object({
+  ...menuItemFields,
+  showOnHome: menuItemFields.showOnHome.default(true)
+}).strict();
+export const MenuItemUpdateRequestSchema = z.object(menuItemFields).partial().strict();
 
 export const mediaListQuerySchema = z.object({
   mediaType: MediaTypeSchema.optional(),
@@ -359,9 +380,11 @@ export type BannerDto = {
 export type MenuItemDto = {
   id: number;
   text: string;
+  iconAssetId: number;
   iconUrl: string;
   type: MenuType;
   configJson: unknown;
+  showOnHome: boolean;
   sortOrder: number;
   status: Status;
 };

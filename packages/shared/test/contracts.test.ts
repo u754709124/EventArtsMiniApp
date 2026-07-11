@@ -1,9 +1,12 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ArtistCreateRequestSchema,
+  MenuItemCreateRequestSchema,
+  MenuItemUpdateRequestSchema,
   artistListQuerySchema,
   artistTypeLabels,
   batchDeleteMediaRequestSchema,
+  caseListQuerySchema,
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
@@ -24,6 +27,27 @@ import {
 describe("shared contracts", () => {
   it("keeps the phase-one menu enum fixed to the five supported types", () => {
     expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "contact"]);
+  });
+
+  it("validates menu item create and update requests strictly", () => {
+    expect(
+      MenuItemCreateRequestSchema.parse({
+        text: " 联系我们 ",
+        iconAssetId: "5",
+        type: "contact",
+        configJson: { phone: "13800001111" },
+        sortOrder: "2",
+        status: "enabled"
+      })
+    ).toMatchObject({
+      text: "联系我们",
+      iconAssetId: 5,
+      showOnHome: true,
+      sortOrder: 2
+    });
+    expect(MenuItemUpdateRequestSchema.parse({ text: "主持人" })).toEqual({ text: "主持人" });
+    expect(() => MenuItemUpdateRequestSchema.parse({ type: "bad" })).toThrow();
+    expect(() => MenuItemUpdateRequestSchema.parse({ text: "主持人", iconUrl: "/uploads/icon.png" })).toThrow();
   });
 
   it("normalizes resource names for global case-insensitive uniqueness", () => {
@@ -160,6 +184,8 @@ describe("shared contracts", () => {
       q: "林",
       tag: "婚礼主持"
     });
+    expect(caseListQuerySchema.parse({ q: " 年会 " })).toEqual({ q: "年会" });
+    expect(caseListQuerySchema.parse({ q: "   " })).toEqual({ q: undefined });
     expect(() => artistListQuerySchema.parse({ type: "invalid" })).toThrow();
   });
 });

@@ -203,10 +203,11 @@ describe("client home aggregation", () => {
     ]);
     expect(body.data.site.appName).toBe("喜缘主持・演艺服务");
     expect(body.data.menus.map((menu: { type: string }) => menu.type)).toEqual(menuTypeValues);
+    expect(body.data.menus.every((menu: { showOnHome: boolean }) => menu.showOnHome)).toBe(true);
     expect(body.data.featuredCases).toHaveLength(3);
   });
 
-  it("hides disabled announcements, banners, and menu items", async () => {
+  it("hides disabled announcements, banners, and menu items from home", async () => {
     await prisma.announcement.updateMany({ data: { status: "disabled" } });
     await prisma.banner.updateMany({ data: { status: "disabled" } });
     await prisma.menuItem.updateMany({ data: { status: "disabled" } });
@@ -217,6 +218,27 @@ describe("client home aggregation", () => {
     expect(data.announcements).toEqual([]);
     expect(data.banners).toEqual([]);
     expect(data.menus).toEqual([]);
+  });
+
+  it("uses showOnHome only for home menus while client menu-items returns all enabled menus", async () => {
+    const [homeHidden, disabled] = await prisma.menuItem.findMany({ orderBy: { sortOrder: "asc" }, take: 2 });
+    await prisma.menuItem.update({ where: { id: homeHidden.id }, data: { showOnHome: false } });
+    await prisma.menuItem.update({ where: { id: disabled.id }, data: { status: "disabled" } });
+
+    const [homeResponse, menuResponse] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/client/home" }),
+      app.inject({ method: "GET", url: "/api/client/menu-items" })
+    ]);
+    const homeMenus = homeResponse.json().data.menus as Array<{ id: number }>;
+    const clientMenus = menuResponse.json().data as Array<{ id: number; showOnHome: boolean }>;
+
+    expect(homeResponse.statusCode).toBe(200);
+    expect(menuResponse.statusCode).toBe(200);
+    expect(homeMenus.map((menu) => menu.id)).not.toContain(homeHidden.id);
+    expect(homeMenus.map((menu) => menu.id)).not.toContain(disabled.id);
+    expect(clientMenus.map((menu) => menu.id)).toContain(homeHidden.id);
+    expect(clientMenus.find((menu) => menu.id === homeHidden.id)?.showOnHome).toBe(false);
+    expect(clientMenus.map((menu) => menu.id)).not.toContain(disabled.id);
   });
 
   it("uses activity_cases as the shared source for featured cases", async () => {
@@ -246,6 +268,129 @@ describe("client home aggregation", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("defaults menu showOnHome on create and preserves it on partial updates", async () => {
+    const token = await login();
+    const icon = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "icon-contact.png" } });
+    const createDefault = await app.inject({
+      method: "POST",
+      url: "/api/admin/menu-items",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        text: "默认首页显示",
+        iconAssetId: icon.id,
+        type: "contact",
+        configJson: {},
+        sortOrder: 101,
+        status: "enabled"
+      }
+    });
+    const createHidden = await app.inject({
+      method: "POST",
+      url: "/api/admin/menu-items",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        text: "隐藏首页显示",
+        iconAssetId: icon.id,
+        type: "contact",
+        configJson: {},
+        showOnHome: false,
+        sortOrder: 102,
+        status: "enabled"
+      }
+    });
+
+    expect(createDefault.statusCode).toBe(200);
+    expect(createDefault.json().data.showOnHome).toBe(true);
+    expect(createHidden.statusCode).toBe(200);
+    expect(createHidden.json().data.showOnHome).toBe(false);
+
+    const id = createHidden.json().data.id as number;
+    const update = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { text: "隐藏首页显示已更新" }
+    });
+    const get = await app.inject({
+      method: "GET",
+      url: `/api/admin/menu-items/${id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(update.statusCode).toBe(200);
+    expect(update.json().data.showOnHome).toBe(false);
+    expect(get.json().data.showOnHome).toBe(false);
+  });
+
+  it("updates an existing seeded menu with the complete editable payload", async () => {
+    const token = await login();
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const response = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${existing.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        text: "主持人服务",
+        iconAssetId: existing.iconAssetId,
+        type: existing.type,
+        configJson: { defaultSort: "newest", pageSize: 12 },
+        showOnHome: false,
+        sortOrder: 7,
+        status: "enabled"
+      }
+    });
+    const saved = await prisma.menuItem.findUniqueOrThrow({ where: { id: existing.id } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      id: existing.id,
+      text: "主持人服务",
+      type: "host",
+      showOnHome: false,
+      sortOrder: 7,
+      status: "enabled"
+    });
+    expect(JSON.parse(saved.configJson)).toEqual({ defaultSort: "newest", pageSize: 12 });
+  });
+
+  it("keeps menu updates strict when response-only fields are submitted", async () => {
+    const token = await login();
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const response = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${existing.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        text: existing.text,
+        iconAssetId: existing.iconAssetId,
+        iconUrl: "/uploads/icon-host.png",
+        type: existing.type,
+        configJson: JSON.parse(existing.configJson),
+        showOnHome: existing.showOnHome,
+        sortOrder: existing.sortOrder,
+        status: existing.status
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toEqual({
+      code: "VALIDATION_ERROR",
+      message: "菜单参数错误"
+    });
+  });
+});
+
+describe("client case search", () => {
+  it("filters enabled cases by keyword across public card fields", async () => {
+    const byLocation = await app.inject({ method: "GET", url: "/api/client/cases?q=%E6%B5%A6%E4%B8%9C" });
+    const blank = await app.inject({ method: "GET", url: "/api/client/cases?q=%20%20" });
+
+    expect(byLocation.statusCode).toBe(200);
+    expect((byLocation.json().data as Array<{ title: string }>).map((item) => item.title)).toEqual(["企业年会歌手演出"]);
+    expect(blank.statusCode).toBe(200);
+    expect(blank.json().data).toHaveLength(3);
   });
 });
 

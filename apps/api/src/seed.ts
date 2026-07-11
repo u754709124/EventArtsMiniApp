@@ -284,6 +284,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       iconAssetId: assets.get(icon)!.id,
       type,
       configJson: JSON.stringify(config),
+      showOnHome: true,
       sortOrder: index + 1,
       status: "enabled"
     };

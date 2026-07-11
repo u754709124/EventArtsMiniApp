@@ -14,9 +14,11 @@ import {
   BannerLinkTypeSchema,
   DetailPageInputSchema,
   MediaFieldKeySchema,
-  MenuTypeSchema,
+  MenuItemCreateRequestSchema,
+  MenuItemUpdateRequestSchema,
   artistListQuerySchema,
   batchDeleteMediaRequestSchema,
+  caseListQuerySchema,
   checkMediaNameRequestSchema,
   fail,
   lookupMediaRequestSchema,
@@ -118,15 +120,6 @@ const bannerCreateSchema = z.object({
   status: statusInputSchema
 }).strict();
 const bannerUpdateSchema = bannerCreateSchema.partial().strict();
-const menuCreateSchema = z.object({
-  text: z.string().min(1),
-  iconAssetId: positiveIdSchema,
-  type: MenuTypeSchema,
-  configJson: z.unknown().optional(),
-  sortOrder: sortOrderSchema,
-  status: statusInputSchema
-}).strict();
-const menuUpdateSchema = menuCreateSchema.partial().strict();
 const detailPagePreviewSchema = z.object({ detailPage: DetailPageInputSchema }).strict();
 const detailPageListQuerySchema = z.object({
   q: z.string().trim().optional(),
@@ -309,6 +302,37 @@ function serializeBanner(item: {
     linkTarget: item.linkTarget,
     status: item.status as "enabled" | "disabled"
   };
+}
+
+function serializeMenuItem(item: {
+  id: number;
+  text: string;
+  iconAssetId: number;
+  iconAsset?: { url: string } | null;
+  type: string;
+  configJson: string;
+  showOnHome: boolean;
+  sortOrder: number;
+  status: string;
+}) {
+  return {
+    id: item.id,
+    text: item.text,
+    iconAssetId: item.iconAssetId,
+    iconUrl: item.iconAsset?.url ?? "",
+    type: item.type,
+    configJson: parseJson(item.configJson),
+    showOnHome: Boolean(item.showOnHome),
+    sortOrder: item.sortOrder,
+    status: item.status as "enabled" | "disabled"
+  };
+}
+
+function matchesCaseQuery(item: { title: string; category: string; tag: string; summary: string; location: string }, q?: string) {
+  const normalizedQuery = q?.toLocaleLowerCase("zh-CN");
+  if (!normalizedQuery) return true;
+  return [item.title, item.category, item.tag, item.summary, item.location]
+    .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
 }
 
 function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
@@ -500,9 +524,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         orderBy: { sortOrder: "asc" }
       }),
       prisma.menuItem.findMany({
-        where: { status: "enabled" },
+        where: { status: "enabled", showOnHome: true },
         include: { iconAsset: true },
-        orderBy: { sortOrder: "asc" }
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
       }),
       prisma.activityCase.findMany({
         where: { status: "enabled", isFeatured: true },
@@ -523,10 +547,19 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         },
         announcements: announcements.map(serializeAnnouncement),
         banners: banners.map(serializeBanner),
-        menus: menus.map((menu) => ({ ...menu, iconUrl: menu.iconAsset.url, configJson: parseJson(menu.configJson) })),
+        menus: menus.map(serializeMenuItem),
         featuredCases: featuredCases.map(serializeCaseListItem)
       })
     );
+  });
+
+  app.get("/api/client/menu-items", async (_request, reply) => {
+    const items = await prisma.menuItem.findMany({
+      where: { status: "enabled" },
+      include: { iconAsset: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+    });
+    return reply.send(ok(items.map(serializeMenuItem)));
   });
 
   app.post("/api/client/track/page-view", async (request, reply) => {
@@ -554,14 +587,16 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok(await getRequiredDetailPageById(prisma, id)));
   });
 
-  app.get("/api/client/cases", async (_request, reply) => {
+  app.get("/api/client/cases", async (request, reply) => {
+    const parsed = caseListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "案例列表查询参数错误");
     const items = await prisma.activityCase.findMany({
       where: { status: "enabled" },
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } },
       orderBy: { sortOrder: "asc" }
     });
     return reply.send(
-      ok(items.map(serializeCaseListItem))
+      ok(items.filter((item) => matchesCaseQuery(item, parsed.data.q)).map(serializeCaseListItem))
     );
   });
 
@@ -1041,29 +1076,31 @@ function registerCrud(
   });
 
   app.get("/api/admin/menu-items", { preHandler: requireAdmin }, async (_request, reply) => {
-    const items = await prisma.menuItem.findMany({ include: { iconAsset: true }, orderBy: { sortOrder: "asc" } });
-    return reply.send(ok({ items, total: items.length }));
+    const items = await prisma.menuItem.findMany({ include: { iconAsset: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
+    const serialized = items.map(serializeMenuItem);
+    return reply.send(ok({ items: serialized, total: serialized.length }));
   });
   app.get("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "菜单 ID 错误");
     const item = await prisma.menuItem.findUnique({ where: { id }, include: { iconAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "菜单不存在");
-    return reply.send(ok({ ...item, configJson: parseJson(item.configJson) }));
+    return reply.send(ok(serializeMenuItem(item)));
   });
   app.post("/api/admin/menu-items", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = menuCreateSchema.safeParse(request.body);
+    const parsed = MenuItemCreateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "菜单参数错误");
     const body = parsed.data;
     const problem = await mediaProblemForId(prisma, body.iconAssetId, "menu.icon");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     const item = await prisma.menuItem.create({
-      data: { ...body, configJson: JSON.stringify(body.configJson ?? {}) }
+      data: { ...body, configJson: JSON.stringify(body.configJson ?? {}) },
+      include: { iconAsset: true }
     });
-    return reply.send(ok(item));
+    return reply.send(ok(serializeMenuItem(item)));
   });
   app.put("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
-    const parsed = menuUpdateSchema.safeParse(request.body);
+    const parsed = MenuItemUpdateRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "菜单参数错误");
     const body = parsed.data;
     const id = Number((request.params as { id: string }).id);
@@ -1075,9 +1112,10 @@ function registerCrud(
     if (Object.hasOwn(body, "configJson")) data.configJson = JSON.stringify(body.configJson ?? {});
     const item = await prisma.menuItem.update({
       where: { id },
-      data: data as never
+      data: data as never,
+      include: { iconAsset: true }
     });
-    return reply.send(ok(item));
+    return reply.send(ok(serializeMenuItem(item)));
   });
   app.delete("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     await prisma.menuItem.delete({ where: { id: Number((request.params as { id: string }).id) } });

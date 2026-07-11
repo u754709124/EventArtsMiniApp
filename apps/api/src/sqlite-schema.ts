@@ -101,6 +101,7 @@ const statements = [
     iconAssetId INTEGER NOT NULL,
     type TEXT NOT NULL,
     configJson TEXT NOT NULL,
+    showOnHome BOOLEAN NOT NULL DEFAULT true,
     sortOrder INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'enabled',
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -265,6 +266,15 @@ async function ensureArtistColumns(prisma: AppPrismaClient) {
   }
   if (!names.has("badge")) {
     await prisma.$executeRawUnsafe("ALTER TABLE artists ADD COLUMN badge TEXT NOT NULL DEFAULT ''");
+  }
+}
+
+async function ensureMenuItemColumns(prisma: AppPrismaClient) {
+  if (!(await tableExists(prisma, "menu_items"))) return;
+  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(menu_items)");
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("showOnHome")) {
+    await prisma.$executeRawUnsafe("ALTER TABLE menu_items ADD COLUMN showOnHome BOOLEAN NOT NULL DEFAULT true");
   }
 }
 
@@ -452,5 +462,6 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
     await prisma.$executeRawUnsafe(statement);
   }
   await ensureArtistColumns(prisma);
+  await ensureMenuItemColumns(prisma);
   await runDetailPageMigration(prisma);
 }

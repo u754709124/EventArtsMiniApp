@@ -97,4 +97,38 @@ describe("detail page SQLite schema", () => {
 
     await prisma.$disconnect();
   });
+
+  it("backfills menu item showOnHome once and preserves existing false values", async () => {
+    await mkdir(root, { recursive: true });
+    const prisma = createPrismaClient(`file:${path.join(root, "legacy-menu.db")}`);
+    await prisma.$executeRawUnsafe(`CREATE TABLE menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      iconAssetId INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      configJson TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'enabled',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await prisma.$executeRawUnsafe(
+      "INSERT INTO menu_items (text, iconAssetId, type, configJson, sortOrder, status) VALUES ('旧菜单', 1, 'host', '{}', 1, 'enabled')"
+    );
+
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(root, "uploads") });
+    const backfilled = await prisma.$queryRawUnsafe<Array<{ showOnHome: boolean | number }>>(
+      "SELECT showOnHome FROM menu_items WHERE text = '旧菜单'"
+    );
+    expect(Boolean(backfilled[0].showOnHome)).toBe(true);
+
+    await prisma.$executeRawUnsafe("UPDATE menu_items SET showOnHome = false WHERE text = '旧菜单'");
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(root, "uploads") });
+    const preserved = await prisma.$queryRawUnsafe<Array<{ showOnHome: boolean | number }>>(
+      "SELECT showOnHome FROM menu_items WHERE text = '旧菜单'"
+    );
+    expect(Boolean(preserved[0].showOnHome)).toBe(false);
+
+    await prisma.$disconnect();
+  });
 });

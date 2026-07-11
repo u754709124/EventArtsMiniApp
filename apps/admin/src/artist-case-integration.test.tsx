@@ -35,6 +35,37 @@ const bannerDetailPage: DetailPageConfigDto = {
 };
 
 describe("人员/案例详情页后台接入", () => {
+  it("编辑菜单时只提交可编辑字段，并清理其他类型残留配置", () => {
+    const request = buildCrudSaveRequest(configs["menu-items"], { id: 3 }, {
+      id: 3,
+      text: "联系我们",
+      iconAssetId: 18,
+      iconUrl: "/uploads/icon-contact.png",
+      type: "contact",
+      configJson: {
+        phone: "13800001111",
+        defaultSort: "newest",
+        onlyFeatured: true,
+        pageSize: 20
+      },
+      showOnHome: false,
+      sortOrder: 5,
+      status: "enabled"
+    });
+
+    expect(request.path).toBe("/api/admin/menu-items/3");
+    expect(request.method).toBe("PUT");
+    expect(request.body).toEqual({
+      text: "联系我们",
+      iconAssetId: 18,
+      type: "contact",
+      configJson: { phone: "13800001111" },
+      showOnHome: false,
+      sortOrder: 5,
+      status: "enabled"
+    });
+  });
+
   it("创建人员只提交规范化后的 detailPageId，并保留人员列表字段", () => {
     const request = buildCrudSaveRequest(configs.artists, null, {
       name: "林然",

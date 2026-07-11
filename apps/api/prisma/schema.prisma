@@ -123,6 +123,7 @@ model MenuItem {
   iconAsset   MediaAsset @relation(fields: [iconAssetId], references: [id])
   type        String
   configJson  String
+  showOnHome Boolean    @default(true)
   sortOrder   Int        @default(0)
   status      String     @default("enabled")
   createdAt   DateTime   @default(now())

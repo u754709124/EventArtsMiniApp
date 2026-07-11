@@ -5,6 +5,7 @@ import type { ColumnsType } from "antd/es/table";
 import {
   artistTypeLabels,
   artistTypeValues,
+  menuConfigSchemaByType,
   type MenuType
 } from "@event-arts/shared";
 import { MediaField } from "../media/MediaField";
@@ -28,6 +29,7 @@ export type CrudConfig = {
     fields: (form: ReturnType<typeof Form.useForm>[0], editing: AnyRecord | null) => React.ReactNode;
   }>;
   normalize?: (values: AnyRecord) => AnyRecord;
+  defaultValues?: AnyRecord;
   drawerWidth?: number;
   formMode: "drawer" | "page";
 };
@@ -140,6 +142,23 @@ function normalizeCasePayload(values: AnyRecord) {
     eventDate: values.eventDate ? dayjs(values.eventDate as string).toISOString() : new Date().toISOString(),
     detailPageId: values.detailPageId ?? null
   };
+}
+
+function isMenuType(value: unknown): value is MenuType {
+  return typeof value === "string" && value in menuConfigSchemaByType;
+}
+
+function normalizeMenuPayload(values: AnyRecord) {
+  const body: AnyRecord = {};
+  for (const key of ["text", "iconAssetId", "type", "showOnHome", "sortOrder", "status"] as const) {
+    if (Object.hasOwn(values, key)) body[key] = values[key];
+  }
+  if (Object.hasOwn(values, "configJson") || isMenuType(values.type)) {
+    body.configJson = isMenuType(values.type)
+      ? menuConfigSchemaByType[values.type].parse(values.configJson ?? {})
+      : values.configJson ?? {};
+  }
+  return body;
 }
 
 function CaseBasicFields() {
@@ -353,16 +372,19 @@ export const configs: Record<string, CrudConfig> = {
     )
   },
   "menu-items": {
-    title: "首页菜单",
+    title: "分类菜单",
     path: "/api/admin/menu-items",
     routePath: "/menu-items",
     testid: "menu-items",
     searchPlaceholder: "搜索菜单文本或类型",
     searchFields: ["text", "type"],
     formMode: "drawer",
+    defaultValues: { showOnHome: true },
+    normalize: normalizeMenuPayload,
     columns: [
       { title: "菜单文本", dataIndex: "text" },
       { title: "类型", dataIndex: "type" },
+      { title: "首页显示", dataIndex: "showOnHome", render: (value) => (value ? <Tag color="green">显示</Tag> : <Tag>隐藏</Tag>) },
       { title: "排序", dataIndex: "sortOrder" }
     ],
     fields: (form) => (
@@ -386,6 +408,15 @@ export const configs: Record<string, CrudConfig> = {
           />
         </Form.Item>
         <MenuConfigFields form={form} />
+        <Form.Item
+          label="是否显示在首页"
+          name="showOnHome"
+          valuePropName="checked"
+          initialValue
+          extra="关闭后仅从首页隐藏，分类页仍会展示；状态停用后前台均不展示。"
+        >
+          <Switch data-testid="menu-show-on-home" checkedChildren="显示" unCheckedChildren="隐藏" />
+        </Form.Item>
         <SortField />
         <StatusSwitchField />
       </>
