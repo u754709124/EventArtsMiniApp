@@ -28,10 +28,21 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 const bannerDto: DetailPageConfigDto = {
+  id: 1,
+  name: "预览详情",
   type: "banner_rich_text",
   typeLabel: "BANNER + 富文本",
   rendererKey: "bannerRichText",
   schemaVersion: 1,
+  hero: {
+    title: "主持人林然",
+    typeLabel: "主持人",
+    subtitle: "温暖而专业",
+    badge: "",
+    tags: [],
+    location: "",
+    metaItems: []
+  },
   heroSubtitle: "温暖而专业",
   banners: [{ id: 1, assetId: 11, url: "/uploads/banner.webp", width: 1500, height: 760, sortOrder: 0 }],
   richTextHtml: "<p>已清洗正文</p>",

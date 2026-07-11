@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DetailPageInputSchema, type DetailPageConfigDto } from "./detail-pages";
+import { DetailPageReferenceIdSchema, type DetailPageConfigDto } from "./detail-pages";
 
 export * from "./detail-pages";
 
@@ -103,6 +103,7 @@ export function serializeArtistTags(input: unknown): string {
 }
 
 const positiveIntFromInput = z.coerce.number().int().positive();
+const nullableDetailPageIdSchema = DetailPageReferenceIdSchema.default(null);
 
 const artistNameSchema = z.string().trim().min(1).max(60);
 const artistLocationSchema = z.string().trim().min(1).max(30);
@@ -145,7 +146,7 @@ export const ArtistCreateRequestSchema = z
     badge: artistBadgeSchema,
     ...artistTagInput,
     summary: artistSummarySchema,
-    detailPage: DetailPageInputSchema,
+    detailPageId: nullableDetailPageIdSchema,
     sortOrder: z.coerce.number().int().min(0),
     status: StatusSchema
   })
@@ -162,7 +163,7 @@ export const ArtistUpdateRequestSchema = z
     badge: artistBadgeSchema.optional(),
     ...artistTagInput,
     summary: artistSummarySchema.optional(),
-    detailPage: DetailPageInputSchema.optional(),
+    detailPageId: DetailPageReferenceIdSchema.optional(),
     sortOrder: z.coerce.number().int().min(0).optional(),
     status: StatusSchema.optional()
   })
@@ -188,7 +189,7 @@ const activityCaseFields = {
   featuredSortOrder: z.coerce.number().int().min(0),
   sortOrder: z.coerce.number().int().min(0),
   status: StatusSchema,
-  detailPage: DetailPageInputSchema
+  detailPageId: nullableDetailPageIdSchema
 };
 
 export const ActivityCaseCreateRequestSchema = z.object(activityCaseFields).strict();
@@ -335,13 +336,19 @@ export type AnnouncementDto = {
   displayDurationMs: number;
   sortOrder: number;
   status: Status;
+  detailPageId: number | null;
+  hasDetailPage: boolean;
 };
 
 export type BannerDto = {
   id: number;
   title: string;
   imageUrl: string;
+  detailPageId: number | null;
+  hasDetailPage: boolean;
+  /** @deprecated Use detailPageId. */
   linkType: BannerLinkType;
+  /** @deprecated Use detailPageId. */
   linkTarget: string | null;
   switchDurationMs: number;
   sortOrder: number;
@@ -369,6 +376,8 @@ export type ActivityCaseListItemDto = {
   location: string;
   detail: string;
   media: CaseMediaDto[];
+  detailPageId: number | null;
+  hasDetailPage: boolean;
   isFeatured: boolean;
   featuredSortOrder: number;
   sortOrder: number;
@@ -376,7 +385,7 @@ export type ActivityCaseListItemDto = {
 };
 
 export type ActivityCaseDetailDto = ActivityCaseListItemDto & {
-  detailPage: DetailPageConfigDto;
+  detailPage: DetailPageConfigDto | null;
 };
 
 /** @deprecated Use ActivityCaseListItemDto or ActivityCaseDetailDto for an exact endpoint contract. */
@@ -393,12 +402,14 @@ export type ArtistListItemDto = {
   tags: string[];
   summary: string;
   detail: string;
+  detailPageId: number | null;
+  hasDetailPage: boolean;
   sortOrder: number;
   status: Status;
 };
 
 export type ArtistDetailDto = ArtistListItemDto & {
-  detailPage: DetailPageConfigDto;
+  detailPage: DetailPageConfigDto | null;
 };
 
 /** @deprecated Use ArtistListItemDto or ArtistDetailDto for an exact endpoint contract. */

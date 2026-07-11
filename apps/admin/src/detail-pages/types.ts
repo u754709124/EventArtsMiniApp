@@ -1,5 +1,4 @@
 import type {
-  DetailOwnerType,
   DetailPageConfigDto,
   DetailPageInput,
   DetailPageType,
@@ -8,9 +7,24 @@ import type {
 
 export type DetailPageFormValue = {
   type?: DetailPageType;
+  hero?: {
+    title?: string;
+    typeLabel?: string;
+    subtitle?: string;
+    badge?: string;
+    tags?: string[];
+    location?: string;
+    metaItems?: Array<{ label?: string; value?: string }>;
+  };
+  /** @deprecated Use hero.subtitle in standalone forms. */
   heroSubtitle?: string;
   bannerAssetIds?: number[];
   richTextHtml?: string;
+};
+
+export type StandaloneDetailPageFormValue = {
+  name?: string;
+  detailPage?: DetailPageFormValue;
 };
 
 export type DetailPageOwnerPreviewData = {
@@ -22,7 +36,7 @@ export type DetailPageOwnerPreviewData = {
 
 export type DetailPageConfigFieldsProps = {
   form: import("antd").FormInstance;
-  ownerType: DetailOwnerType;
+  ownerType?: "artist" | "activity_case";
   ownerPreviewData: DetailPageOwnerPreviewData;
   initialDetailPage?: DetailPageConfigDto | null;
   disabled?: boolean;

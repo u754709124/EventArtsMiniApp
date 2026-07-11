@@ -16,7 +16,7 @@ export function buildArtistHero(item: ArtistDetailDto): DetailHeroViewModel {
   return {
     title: item.name,
     typeLabel: artistTypeLabels[item.type],
-    subtitle: clean(item.detailPage.heroSubtitle),
+    subtitle: clean(item.detailPage?.hero.subtitle || item.detailPage?.heroSubtitle),
     badge: clean(item.badge),
     tags: item.tags
       .map((tag) => tag.trim())
@@ -31,7 +31,7 @@ export function buildCaseHero(item: ActivityCaseDetailDto): DetailHeroViewModel 
   return {
     title: item.title,
     typeLabel: clean(item.category) || clean(item.tag),
-    subtitle: clean(item.detailPage.heroSubtitle),
+    subtitle: clean(item.detailPage?.hero.subtitle || item.detailPage?.heroSubtitle),
     badge: clean(item.tag),
     location: clean(item.location),
     metaItems: eventDate ? [{ label: "日期", value: eventDate }] : undefined

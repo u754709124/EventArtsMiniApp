@@ -89,8 +89,10 @@ describe("shared contracts", () => {
     expectTypeOf<ArtistListItemDto>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
     expectTypeOf<ActivityCaseListItemDto>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
     expectTypeOf<ClientHomeResponse["featuredCases"][number]>().not.toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
-    expectTypeOf<ArtistDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
-    expectTypeOf<ActivityCaseDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto }>();
+    expectTypeOf<ArtistListItemDto>().toMatchTypeOf<{ detailPageId: number | null; hasDetailPage: boolean }>();
+    expectTypeOf<ActivityCaseListItemDto>().toMatchTypeOf<{ detailPageId: number | null; hasDetailPage: boolean }>();
+    expectTypeOf<ArtistDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto | null }>();
+    expectTypeOf<ActivityCaseDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto | null }>();
   });
 
   it("normalizes artist tags once and exposes Chinese artist labels", () => {
@@ -111,11 +113,11 @@ describe("shared contracts", () => {
         badge: " 金牌主持 ",
         tags: ["10年经验", "婚礼主持"],
         summary: " 风格大气沉稳。 ",
-        detailPage: { type: "rich_text", richTextHtml: "<p>详情内容</p>" },
+        detailPageId: null,
         sortOrder: 1,
         status: "enabled"
       })
-    ).toMatchObject({ name: "林然", location: "杭州", badge: "金牌主持", tags: ["10年经验", "婚礼主持"] });
+    ).toMatchObject({ name: "林然", location: "杭州", badge: "金牌主持", tags: ["10年经验", "婚礼主持"], detailPageId: null });
     expect(
       ArtistCreateRequestSchema.parse({
         name: "旧记录",
@@ -125,7 +127,7 @@ describe("shared contracts", () => {
         badge: "金牌主持",
         tagsJson: '["婚礼主持", "婚礼主持"]',
         summary: "简介",
-        detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
+        detailPageId: 8,
         sortOrder: 1,
         status: "enabled"
       }).tags
@@ -137,7 +139,7 @@ describe("shared contracts", () => {
       badge: "金牌主持",
       tags: [],
       summary: "简介",
-      detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
+      detailPageId: null,
       sortOrder: 1,
       status: "enabled"
     })).toThrow();
@@ -149,7 +151,7 @@ describe("shared contracts", () => {
       badge: "金牌主持",
       tags: ["超过十二个字符的标签内容啊"],
       summary: "简介",
-      detailPage: { type: "rich_text", richTextHtml: "<p>详情</p>" },
+      detailPageId: null,
       sortOrder: 1,
       status: "enabled"
     })).toThrow();

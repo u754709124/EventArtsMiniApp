@@ -1,268 +1,408 @@
-import { parseFragment, type DefaultTreeAdapterTypes } from "parse5";
-import type { Prisma } from "@prisma/client";
-import type { DetailOwnerType } from "@event-arts/shared";
 import type { AppPrismaClient } from "../db";
-import {
-  extractRichTextMedia,
-  sanitizeAndNormalizeRichText
-} from "./detail-page-sanitizer";
-import {
-  detailPageConfigInclude,
-  serializeDetailPageConfig,
-  type DetailPageConfigRecord
-} from "./detail-page-serializer";
-import type { DetailPageMediaAsset } from "./detail-page-types";
 
-export const DETAIL_PAGE_MIGRATION_ID = "20260710_detail_page_config_v1";
+export const DETAIL_PAGE_MIGRATION_ID = "20260711_standalone_detail_pages_v1";
 
-type MigrationDb = Prisma.TransactionClient;
-type HtmlChildNode = DefaultTreeAdapterTypes.ChildNode;
+type ColumnInfo = { name: string; notnull: number; dflt_value: string | null };
+type RelationSnapshot = {
+  detailCount: number;
+  bannerRows: Array<{ id: number; detailPageConfigId: number; mediaAssetId: number; sortOrder: number }>;
+  contentRows: Array<{ id: number; detailPageConfigId: number; mediaAssetId: number }>;
+};
 
-const recognizedHtmlTags = new Set([
-  "p",
-  "div",
-  "section",
-  "span",
-  "strong",
-  "em",
-  "u",
-  "s",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "ul",
-  "ol",
-  "li",
-  "blockquote",
-  "hr",
-  "br",
-  "a",
-  "img",
-  "video",
-  "source"
-]);
+const targetDetailColumns = [
+  ["name", "TEXT NOT NULL DEFAULT ''"],
+  ["heroTitle", "TEXT NOT NULL DEFAULT ''"],
+  ["heroTypeLabel", "TEXT NOT NULL DEFAULT ''"],
+  ["heroBadge", "TEXT NOT NULL DEFAULT ''"],
+  ["heroTagsJson", "TEXT NOT NULL DEFAULT '[]'"],
+  ["heroLocation", "TEXT NOT NULL DEFAULT ''"],
+  ["heroMetaJson", "TEXT NOT NULL DEFAULT '[]'"]
+] as const;
 
-function isElement(node: HtmlChildNode): node is DefaultTreeAdapterTypes.Element {
-  return "tagName" in node;
+async function tableExists(prisma: AppPrismaClient, table: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    table
+  );
+  return rows.length > 0;
 }
 
-function walkHtml(parent: { childNodes: HtmlChildNode[] }, visitor: (element: DefaultTreeAdapterTypes.Element) => void) {
-  for (const child of parent.childNodes) {
-    if (!isElement(child)) continue;
-    visitor(child);
-    walkHtml(child, visitor);
-  }
+async function columns(prisma: AppPrismaClient, table: string) {
+  return prisma.$queryRawUnsafe<ColumnInfo[]>(`PRAGMA table_info(${table})`);
 }
 
-function looksLikeSupportedHtml(value: string) {
-  let found = false;
-  walkHtml(parseFragment(value), (element) => {
-    if (recognizedHtmlTags.has(element.tagName)) found = true;
-  });
-  return found;
+async function columnNames(prisma: AppPrismaClient, table: string) {
+  return new Set((await columns(prisma, table)).map((column) => column.name));
 }
 
-function submittedMediaIds(value: string) {
-  const ids = new Set<number>();
-  walkHtml(parseFragment(value), (element) => {
-    if (element.tagName !== "img" && element.tagName !== "video") return;
-    const raw = element.attrs.find((attribute) => attribute.name === "data-media-asset-id")?.value ?? "";
-    const id = Number(raw);
-    if (Number.isInteger(id) && id > 0) ids.add(id);
-  });
-  return [...ids];
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function plainTextToParagraphs(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `<p>${escapeHtml(line)}</p>`)
-    .join("");
-}
-
-async function loadAssets(db: MigrationDb, ids: number[]) {
-  if (!ids.length) return new Map<number, DetailPageMediaAsset>();
-  const rows = await db.mediaAsset.findMany({
-    where: { id: { in: [...new Set(ids)] } },
-    select: { id: true, mediaType: true, url: true, width: true, height: true }
-  });
-  return new Map(rows.map((asset) => [asset.id, asset]));
-}
-
-async function migrateLegacyHtml(db: MigrationDb, legacyDetail: string, additionalAssetIds: number[] = []) {
-  const trimmed = legacyDetail.trim();
-  const initial = !trimmed
-    ? ""
-    : looksLikeSupportedHtml(trimmed)
-      ? trimmed
-      : plainTextToParagraphs(legacyDetail);
-  const assetIds = [...new Set([...submittedMediaIds(initial), ...additionalAssetIds])];
-  const assets = await loadAssets(db, assetIds);
-  if (!initial) return { html: "", assets };
-  return { html: sanitizeAndNormalizeRichText(initial, assets), assets };
-}
-
-function validateExistingConfig(record: DetailPageConfigRecord) {
-  const config = serializeDetailPageConfig(record);
-  const htmlAssetIds = [...new Set(extractRichTextMedia(record.richTextHtml).map((item) => item.assetId))].sort((a, b) => a - b);
-  const relationAssetIds = [...new Set(record.contentMedia.map((item) => item.mediaAssetId))].sort((a, b) => a - b);
-  if (htmlAssetIds.length !== relationAssetIds.length || htmlAssetIds.some((id, index) => id !== relationAssetIds[index])) {
-    throw new Error("富文本媒体关系与 HTML 不一致");
-  }
-  if (config.type === "rich_text" && (record.heroSubtitle.trim() || record.banners.length)) {
-    throw new Error("单富文本配置不得保留 BANNER 文案或关系");
-  }
-  if (config.type === "banner_rich_text") {
-    if (!record.heroSubtitle.trim()) throw new Error("BANNER 配置缺少宣传语");
-    if (record.banners.length < 1 || record.banners.length > 6) throw new Error("BANNER 配置数量应为 1 至 6 张");
-  }
-}
-
-async function migrateArtists(db: MigrationDb) {
-  const artists = await db.artist.findMany({ orderBy: { id: "asc" } });
-  for (const artist of artists) {
-    try {
-      const existing = await db.detailPageConfig.findUnique({
-        where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } },
-        include: detailPageConfigInclude
-      });
-      if (existing) {
-        validateExistingConfig(existing);
-        continue;
-      }
-      const migrated = await migrateLegacyHtml(db, artist.detail);
-      const media = migrated.html ? extractRichTextMedia(migrated.html) : [];
-      await db.detailPageConfig.create({
-        data: {
-          ownerType: "artist",
-          ownerId: artist.id,
-          pageType: "rich_text",
-          heroSubtitle: "",
-          richTextHtml: migrated.html,
-          schemaVersion: 1,
-          contentMedia: {
-            create: media.map((item) => ({ mediaAssetId: item.assetId }))
-          }
-        }
-      });
-    } catch (error) {
-      throw new Error(`无法迁移 artist #${artist.id} (${artist.name}): ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-}
-
-async function migrateCases(db: MigrationDb) {
-  const cases = await db.activityCase.findMany({
-    include: { media: { include: { mediaAsset: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
-    orderBy: { id: "asc" }
-  });
-  for (const activityCase of cases) {
-    try {
-      const legacyJson = activityCase.legacyMediaJson.trim();
-      if (legacyJson && legacyJson !== "[]") {
-        throw new Error(`legacyMediaJson 非空且无法解释: ${legacyJson}`);
-      }
-
-      const existing = await db.detailPageConfig.findUnique({
-        where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } },
-        include: detailPageConfigInclude
-      });
-      if (existing) {
-        validateExistingConfig(existing);
-        await db.activityCaseMedia.deleteMany({ where: { activityCaseId: activityCase.id } });
-        continue;
-      }
-
-      const oldMediaIds = activityCase.media.map((item) => item.mediaAssetId);
-      const initial = await migrateLegacyHtml(db, activityCase.detail, oldMediaIds);
-      const existingIds = new Set(initial.html ? extractRichTextMedia(initial.html).map((item) => item.assetId) : []);
-      const appended = activityCase.media
-        .filter((item) => !existingIds.has(item.mediaAssetId))
-        .map((item) =>
-          item.mediaAsset.mediaType === "image"
-            ? `<img data-media-asset-id="${item.mediaAssetId}" alt="内容图片">`
-            : `<video data-media-asset-id="${item.mediaAssetId}"></video>`
-        )
-        .join("");
-      const combined = `${initial.html}${appended}`;
-      const assets = await loadAssets(db, [...submittedMediaIds(combined), ...oldMediaIds]);
-      const html = combined ? sanitizeAndNormalizeRichText(combined, assets) : "";
-      const media = html ? extractRichTextMedia(html) : [];
-      await db.detailPageConfig.create({
-        data: {
-          ownerType: "activity_case",
-          ownerId: activityCase.id,
-          pageType: "rich_text",
-          heroSubtitle: "",
-          richTextHtml: html,
-          schemaVersion: 1,
-          contentMedia: {
-            create: media.map((item) => ({ mediaAssetId: item.assetId }))
-          }
-        }
-      });
-      await db.activityCaseMedia.deleteMany({ where: { activityCaseId: activityCase.id } });
-    } catch (error) {
-      throw new Error(
-        `无法迁移 activity_case #${activityCase.id} (${activityCase.title}): ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-}
-
-export async function runDetailPageMigration(prisma: AppPrismaClient) {
-  const applied = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+async function hasMigration(prisma: AppPrismaClient) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
     "SELECT id FROM schema_migrations WHERE id = ?",
     DETAIL_PAGE_MIGRATION_ID
   );
-  if (applied.length) return;
+  return rows.length > 0;
+}
 
-  await prisma.$transaction(async (db) => {
-    const unsupported = await db.activityCase.findMany({
-      where: { NOT: { legacyMediaJson: { in: ["", "[]"] } } },
-      select: { id: true, title: true, legacyMediaJson: true }
+async function hasTargetSchema(prisma: AppPrismaClient) {
+  if (!(await tableExists(prisma, "detail_page_configs"))) return false;
+  const detailColumns = await columns(prisma, "detail_page_configs");
+  const detailNames = new Set(detailColumns.map((column) => column.name));
+  const ownerType = detailColumns.find((column) => column.name === "ownerType");
+  const ownerId = detailColumns.find((column) => column.name === "ownerId");
+  if (!targetDetailColumns.every(([name]) => detailNames.has(name))) return false;
+  if (ownerType?.notnull || ownerId?.notnull) return false;
+  for (const table of ["announcements", "banners", "artists", "activity_cases"]) {
+    if (!(await columnNames(prisma, table)).has("detailPageId")) return false;
+  }
+  return true;
+}
+
+async function snapshot(prisma: AppPrismaClient): Promise<RelationSnapshot> {
+  const detailCount = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
+    "SELECT COUNT(*) AS count FROM detail_page_configs"
+  );
+  const bannerRows = await prisma.$queryRawUnsafe<RelationSnapshot["bannerRows"]>(
+    "SELECT id, detailPageConfigId, mediaAssetId, sortOrder FROM detail_page_banner_media ORDER BY id"
+  );
+  const contentRows = await prisma.$queryRawUnsafe<RelationSnapshot["contentRows"]>(
+    "SELECT id, detailPageConfigId, mediaAssetId FROM detail_page_content_media ORDER BY id"
+  );
+  return {
+    detailCount: Number(detailCount[0]?.count ?? 0),
+    bannerRows,
+    contentRows
+  };
+}
+
+function assertSameSnapshot(before: RelationSnapshot, after: RelationSnapshot) {
+  if (before.detailCount !== after.detailCount) {
+    throw new Error(`详情页数量不一致: ${before.detailCount} -> ${after.detailCount}`);
+  }
+  if (JSON.stringify(before.bannerRows) !== JSON.stringify(after.bannerRows)) {
+    throw new Error("详情页 BANNER 媒体关系或顺序在迁移中发生变化");
+  }
+  if (JSON.stringify(before.contentRows) !== JSON.stringify(after.contentRows)) {
+    throw new Error("详情页富文本媒体关系在迁移中发生变化");
+  }
+}
+
+async function addColumnIfMissing(prisma: AppPrismaClient, table: string, name: string, definition: string) {
+  const names = await columnNames(prisma, table);
+  if (!names.has(name)) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+  }
+}
+
+async function ensureDetailColumns(prisma: AppPrismaClient) {
+  for (const [name, definition] of targetDetailColumns) {
+    await addColumnIfMissing(prisma, "detail_page_configs", name, definition);
+  }
+}
+
+async function backfillDetailIdentity(prisma: AppPrismaClient) {
+  await prisma.$executeRawUnsafe(`
+    UPDATE detail_page_configs
+       SET name = COALESCE(NULLIF(TRIM(name), ''), (
+             CASE
+               WHEN ownerType = 'artist' THEN COALESCE((SELECT '人员-' || artists.name || '-详情' FROM artists WHERE artists.id = ownerId), '详情页-' || id)
+               WHEN ownerType = 'activity_case' THEN COALESCE((SELECT '案例-' || activity_cases.title || '-详情' FROM activity_cases WHERE activity_cases.id = ownerId), '详情页-' || id)
+               ELSE '详情页-' || id
+             END
+           )),
+           heroTitle = COALESCE(NULLIF(TRIM(heroTitle), ''), (
+             CASE
+               WHEN ownerType = 'artist' THEN COALESCE((SELECT artists.name FROM artists WHERE artists.id = ownerId), '')
+               WHEN ownerType = 'activity_case' THEN COALESCE((SELECT activity_cases.title FROM activity_cases WHERE activity_cases.id = ownerId), '')
+               ELSE ''
+             END
+           )),
+           heroTypeLabel = COALESCE(NULLIF(TRIM(heroTypeLabel), ''), (
+             CASE
+               WHEN ownerType = 'artist' THEN COALESCE((
+                 SELECT CASE artists.type
+                   WHEN 'host' THEN '主持人'
+                   WHEN 'singer' THEN '歌手'
+                   WHEN 'actor' THEN '演员'
+                   ELSE artists.type
+                 END
+                 FROM artists WHERE artists.id = ownerId
+               ), '')
+               WHEN ownerType = 'activity_case' THEN COALESCE((SELECT NULLIF(activity_cases.category, '') FROM activity_cases WHERE activity_cases.id = ownerId), '')
+               ELSE ''
+             END
+           )),
+           heroBadge = COALESCE(NULLIF(TRIM(heroBadge), ''), (
+             CASE
+               WHEN ownerType = 'artist' THEN COALESCE((SELECT artists.badge FROM artists WHERE artists.id = ownerId), '')
+               WHEN ownerType = 'activity_case' THEN COALESCE((SELECT activity_cases.tag FROM activity_cases WHERE activity_cases.id = ownerId), '')
+               ELSE ''
+             END
+           )),
+           heroTagsJson = CASE
+             WHEN ownerType = 'artist' AND (heroTagsJson IS NULL OR TRIM(heroTagsJson) = '' OR TRIM(heroTagsJson) = '[]')
+             THEN COALESCE((SELECT artists.tagsJson FROM artists WHERE artists.id = ownerId), '[]')
+             ELSE COALESCE(NULLIF(TRIM(heroTagsJson), ''), '[]')
+           END,
+           heroLocation = COALESCE(NULLIF(TRIM(heroLocation), ''), (
+             CASE
+               WHEN ownerType = 'artist' THEN COALESCE((SELECT artists.location FROM artists WHERE artists.id = ownerId), '')
+               WHEN ownerType = 'activity_case' THEN COALESCE((SELECT activity_cases.location FROM activity_cases WHERE activity_cases.id = ownerId), '')
+               ELSE ''
+             END
+           )),
+           heroMetaJson = CASE
+             WHEN ownerType = 'activity_case' AND (heroMetaJson IS NULL OR TRIM(heroMetaJson) = '' OR TRIM(heroMetaJson) = '[]')
+             THEN COALESCE((
+               SELECT '[{"label":"日期","value":"' ||
+                      COALESCE(
+                        CASE
+                          WHEN typeof(activity_cases.eventDate) IN ('integer', 'real')
+                          THEN date(
+                            CASE
+                              WHEN ABS(activity_cases.eventDate) > 9999999999
+                              THEN activity_cases.eventDate / 1000
+                              ELSE activity_cases.eventDate
+                            END,
+                            'unixepoch'
+                          )
+                          WHEN CAST(activity_cases.eventDate AS TEXT) GLOB '[0-9]*'
+                          THEN date(
+                            CASE
+                              WHEN LENGTH(CAST(activity_cases.eventDate AS TEXT)) > 10
+                              THEN CAST(activity_cases.eventDate AS INTEGER) / 1000
+                              ELSE CAST(activity_cases.eventDate AS INTEGER)
+                            END,
+                            'unixepoch'
+                          )
+                          ELSE substr(activity_cases.eventDate, 1, 10)
+                        END,
+                        substr(activity_cases.eventDate, 1, 10)
+                      ) || '"}]'
+                 FROM activity_cases
+                WHERE activity_cases.id = ownerId
+             ), '[]')
+             ELSE COALESCE(NULLIF(TRIM(heroMetaJson), ''), '[]')
+           END
+  `);
+}
+
+async function rebuildDetailTablesIfNeeded(prisma: AppPrismaClient) {
+  const detailColumns = await columns(prisma, "detail_page_configs");
+  const ownerType = detailColumns.find((column) => column.name === "ownerType");
+  const ownerId = detailColumns.find((column) => column.name === "ownerId");
+  if (!ownerType?.notnull && !ownerId?.notnull) return;
+
+  await prisma.$executeRawUnsafe("ALTER TABLE detail_page_banner_media RENAME TO detail_page_banner_media_old");
+  await prisma.$executeRawUnsafe("ALTER TABLE detail_page_content_media RENAME TO detail_page_content_media_old");
+  await prisma.$executeRawUnsafe("ALTER TABLE detail_page_configs RENAME TO detail_page_configs_old");
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE detail_page_configs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL DEFAULT '',
+      ownerType TEXT,
+      ownerId INTEGER,
+      pageType TEXT NOT NULL,
+      heroTitle TEXT NOT NULL DEFAULT '',
+      heroTypeLabel TEXT NOT NULL DEFAULT '',
+      heroSubtitle TEXT NOT NULL DEFAULT '',
+      heroBadge TEXT NOT NULL DEFAULT '',
+      heroTagsJson TEXT NOT NULL DEFAULT '[]',
+      heroLocation TEXT NOT NULL DEFAULT '',
+      heroMetaJson TEXT NOT NULL DEFAULT '[]',
+      richTextHtml TEXT NOT NULL DEFAULT '',
+      schemaVersion INTEGER NOT NULL DEFAULT 1,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(ownerType, ownerId)
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO detail_page_configs (
+      id, name, ownerType, ownerId, pageType, heroTitle, heroTypeLabel, heroSubtitle,
+      heroBadge, heroTagsJson, heroLocation, heroMetaJson, richTextHtml, schemaVersion, createdAt, updatedAt
+    )
+    SELECT id, name, ownerType, ownerId, pageType, heroTitle, heroTypeLabel, heroSubtitle,
+           heroBadge, heroTagsJson, heroLocation, heroMetaJson, richTextHtml, schemaVersion, createdAt, updatedAt
+      FROM detail_page_configs_old
+     ORDER BY id
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE detail_page_banner_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      detailPageConfigId INTEGER NOT NULL,
+      mediaAssetId INTEGER NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(detailPageConfigId) REFERENCES detail_page_configs(id) ON DELETE CASCADE,
+      FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+      UNIQUE(detailPageConfigId, mediaAssetId)
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO detail_page_banner_media (id, detailPageConfigId, mediaAssetId, sortOrder)
+    SELECT id, detailPageConfigId, mediaAssetId, sortOrder
+      FROM detail_page_banner_media_old
+     ORDER BY id
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE detail_page_content_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      detailPageConfigId INTEGER NOT NULL,
+      mediaAssetId INTEGER NOT NULL,
+      FOREIGN KEY(detailPageConfigId) REFERENCES detail_page_configs(id) ON DELETE CASCADE,
+      FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+      UNIQUE(detailPageConfigId, mediaAssetId)
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO detail_page_content_media (id, detailPageConfigId, mediaAssetId)
+    SELECT id, detailPageConfigId, mediaAssetId
+      FROM detail_page_content_media_old
+     ORDER BY id
+  `);
+
+  await prisma.$executeRawUnsafe("DROP TABLE detail_page_banner_media_old");
+  await prisma.$executeRawUnsafe("DROP TABLE detail_page_content_media_old");
+  await prisma.$executeRawUnsafe("DROP TABLE detail_page_configs_old");
+}
+
+async function ensureDetailIndexes(prisma: AppPrismaClient) {
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS detail_page_configs_ownerType_ownerId_key
+      ON detail_page_configs(ownerType, ownerId)
+  `);
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS detail_page_configs_ownerType_idx ON detail_page_configs(ownerType)");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS detail_page_configs_name_idx ON detail_page_configs(name)");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS detail_page_configs_pageType_idx ON detail_page_configs(pageType)");
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS detail_page_banner_media_detailPageConfigId_mediaAssetId_key
+      ON detail_page_banner_media(detailPageConfigId, mediaAssetId)
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS detail_page_banner_media_detailPageConfigId_sortOrder_idx
+      ON detail_page_banner_media(detailPageConfigId, sortOrder)
+  `);
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS detail_page_banner_media_mediaAssetId_idx ON detail_page_banner_media(mediaAssetId)");
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS detail_page_content_media_detailPageConfigId_mediaAssetId_key
+      ON detail_page_content_media(detailPageConfigId, mediaAssetId)
+  `);
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS detail_page_content_media_mediaAssetId_idx ON detail_page_content_media(mediaAssetId)");
+}
+
+async function ensureBusinessDetailColumns(prisma: AppPrismaClient) {
+  await addColumnIfMissing(prisma, "announcements", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  await addColumnIfMissing(prisma, "banners", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  await addColumnIfMissing(prisma, "artists", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  await addColumnIfMissing(prisma, "activity_cases", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS announcements_detailPageId_idx ON announcements(detailPageId)");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS banners_detailPageId_idx ON banners(detailPageId)");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS artists_detailPageId_idx ON artists(detailPageId)");
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS activity_cases_detailPageId_idx ON activity_cases(detailPageId)");
+}
+
+async function backfillBusinessReferences(prisma: AppPrismaClient) {
+  await prisma.$executeRawUnsafe(`
+    UPDATE artists
+       SET detailPageId = (
+         SELECT id FROM detail_page_configs
+          WHERE ownerType = 'artist' AND ownerId = artists.id
+          ORDER BY id
+          LIMIT 1
+       )
+     WHERE detailPageId IS NULL
+       AND EXISTS (
+         SELECT 1 FROM detail_page_configs
+          WHERE ownerType = 'artist' AND ownerId = artists.id
+       )
+  `);
+  await prisma.$executeRawUnsafe(`
+    UPDATE activity_cases
+       SET detailPageId = (
+         SELECT id FROM detail_page_configs
+          WHERE ownerType = 'activity_case' AND ownerId = activity_cases.id
+          ORDER BY id
+          LIMIT 1
+       )
+     WHERE detailPageId IS NULL
+       AND EXISTS (
+         SELECT 1 FROM detail_page_configs
+          WHERE ownerType = 'activity_case' AND ownerId = activity_cases.id
+       )
+  `);
+  await prisma.$executeRawUnsafe(`
+    UPDATE banners
+       SET detailPageId = CASE
+         WHEN linkType = 'announcement' THEN (
+           SELECT announcements.detailPageId
+             FROM announcements
+            WHERE announcements.id = CAST(banners.linkTarget AS INTEGER)
+              AND announcements.detailPageId IS NOT NULL
+         )
+         WHEN linkType = 'case' THEN (
+           SELECT activity_cases.detailPageId
+             FROM activity_cases
+            WHERE activity_cases.id = CAST(banners.linkTarget AS INTEGER)
+              AND activity_cases.detailPageId IS NOT NULL
+         )
+         ELSE detailPageId
+       END
+     WHERE detailPageId IS NULL
+       AND linkTarget IS NOT NULL
+  `);
+}
+
+async function assertForeignKeys(prisma: AppPrismaClient) {
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>("PRAGMA foreign_key_check");
+  if (rows.length) throw new Error(`SQLite 外键校验失败: ${JSON.stringify(rows)}`);
+}
+
+export async function runDetailPageMigration(prisma: AppPrismaClient) {
+  const migrationApplied = await hasMigration(prisma);
+  if (migrationApplied && await hasTargetSchema(prisma)) return;
+
+  const before = await snapshot(prisma);
+  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF");
+  try {
+    await prisma.$transaction(async (tx) => {
+      await ensureDetailColumns(tx as AppPrismaClient);
+      await backfillDetailIdentity(tx as AppPrismaClient);
+      await rebuildDetailTablesIfNeeded(tx as AppPrismaClient);
+      await ensureDetailIndexes(tx as AppPrismaClient);
+      await ensureBusinessDetailColumns(tx as AppPrismaClient);
+      await backfillBusinessReferences(tx as AppPrismaClient);
+      await backfillDetailIdentity(tx as AppPrismaClient);
+
+      const after = await snapshot(tx as AppPrismaClient);
+      assertSameSnapshot(before, after);
+      if (!migrationApplied) {
+        await tx.$executeRawUnsafe(
+          "INSERT INTO schema_migrations (id, appliedAt) VALUES (?, CURRENT_TIMESTAMP)",
+          DETAIL_PAGE_MIGRATION_ID
+        );
+      }
     });
-    if (unsupported.length) {
-      throw new Error(
-        `无法迁移 activity_case: ${unsupported
-          .map((item) => `#${item.id} (${item.title}) legacyMediaJson=${item.legacyMediaJson}`)
-          .join("; ")}`
-      );
-    }
-    await migrateArtists(db);
-    await migrateCases(db);
-    await db.$executeRawUnsafe(
-      "INSERT INTO schema_migrations (id, appliedAt) VALUES (?, CURRENT_TIMESTAMP)",
-      DETAIL_PAGE_MIGRATION_ID
-    );
-  });
+  } finally {
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
+  }
+  await assertForeignKeys(prisma);
 }
 
 export type DetailPageOrphan = {
   id: number;
-  ownerType: string;
-  ownerId: number;
+  ownerType: string | null;
+  ownerId: number | null;
   reason: string;
 };
 
 export async function auditDetailPageOrphans(prisma: AppPrismaClient): Promise<DetailPageOrphan[]> {
   const configs = await prisma.detailPageConfig.findMany({ select: { id: true, ownerType: true, ownerId: true } });
-  const artistIds = configs.filter((item) => item.ownerType === "artist").map((item) => item.ownerId);
-  const caseIds = configs.filter((item) => item.ownerType === "activity_case").map((item) => item.ownerId);
+  const artistIds = configs
+    .filter((item) => item.ownerType === "artist" && item.ownerId !== null)
+    .map((item) => item.ownerId as number);
+  const caseIds = configs
+    .filter((item) => item.ownerType === "activity_case" && item.ownerId !== null)
+    .map((item) => item.ownerId as number);
   const [artists, cases] = await Promise.all([
     artistIds.length ? prisma.artist.findMany({ where: { id: { in: artistIds } }, select: { id: true } }) : [],
     caseIds.length ? prisma.activityCase.findMany({ where: { id: { in: caseIds } }, select: { id: true } }) : []
@@ -270,12 +410,12 @@ export async function auditDetailPageOrphans(prisma: AppPrismaClient): Promise<D
   const existingArtists = new Set(artists.map((item) => item.id));
   const existingCases = new Set(cases.map((item) => item.id));
   return configs.flatMap((config) => {
-    const ownerType = config.ownerType as DetailOwnerType | string;
-    if (ownerType === "artist" && existingArtists.has(config.ownerId)) return [];
-    if (ownerType === "activity_case" && existingCases.has(config.ownerId)) return [];
+    if (config.ownerType === null && config.ownerId === null) return [];
+    if (config.ownerType === "artist" && config.ownerId !== null && existingArtists.has(config.ownerId)) return [];
+    if (config.ownerType === "activity_case" && config.ownerId !== null && existingCases.has(config.ownerId)) return [];
     return [{
       ...config,
-      reason: ownerType === "artist" || ownerType === "activity_case" ? "业务对象不存在" : "未知 ownerType"
+      reason: config.ownerType === "artist" || config.ownerType === "activity_case" ? "业务对象不存在" : "未知 ownerType"
     }];
   });
 }

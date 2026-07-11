@@ -35,15 +35,25 @@ describe("detail page SQLite schema", () => {
     );
     expect(configColumns.map((column) => column.name)).toEqual([
       "id",
+      "name",
       "ownerType",
       "ownerId",
       "pageType",
+      "heroTitle",
+      "heroTypeLabel",
       "heroSubtitle",
+      "heroBadge",
+      "heroTagsJson",
+      "heroLocation",
+      "heroMetaJson",
       "richTextHtml",
       "schemaVersion",
       "createdAt",
       "updatedAt"
     ]);
+    expect(Number(configColumns.find((column) => column.name === "name")?.notnull)).toBe(1);
+    expect(Number(configColumns.find((column) => column.name === "ownerType")?.notnull)).toBe(0);
+    expect(Number(configColumns.find((column) => column.name === "ownerId")?.notnull)).toBe(0);
     expect(configColumns.find((column) => column.name === "heroSubtitle")?.dflt_value).toContain("");
     expect(configColumns.find((column) => column.name === "schemaVersion")?.dflt_value).toBe("1");
 
@@ -54,11 +64,26 @@ describe("detail page SQLite schema", () => {
       expect.arrayContaining([
         "detail_page_configs_ownerType_idx",
         "detail_page_configs_ownerType_ownerId_key",
+        "detail_page_configs_name_idx",
+        "detail_page_configs_pageType_idx",
         "detail_page_banner_media_detailPageConfigId_sortOrder_idx",
         "detail_page_banner_media_mediaAssetId_idx",
         "detail_page_content_media_mediaAssetId_idx"
       ])
     );
+
+    for (const table of ["announcements", "banners", "artists", "activity_cases"]) {
+      const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info(${table})`);
+      const foreignKeys = await prisma.$queryRawUnsafe<Array<{ table: string; from: string; on_delete: string }>>(
+        `PRAGMA foreign_key_list(${table})`
+      );
+      expect(columns.map((column) => column.name)).toContain("detailPageId");
+      expect(foreignKeys).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ table: "detail_page_configs", from: "detailPageId", on_delete: "RESTRICT" })
+        ])
+      );
+    }
 
     const bannerForeignKeys = await prisma.$queryRawUnsafe<Array<{ table: string; on_delete: string }>>(
       "PRAGMA foreign_key_list(detail_page_banner_media)"

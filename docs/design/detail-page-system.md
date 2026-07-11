@@ -2,9 +2,9 @@
 
 ## 架构背景
 
-人员与活动案例共用一套详情配置，而不是在两个业务表中各维护一份 BANNER、富文本、清洗器和 renderer。`packages/shared` 定义注册表及传输契约，API 负责持久化、安全清洗、媒体关系和 blocks 转换，Admin 负责动态表单与 Tiptap 编辑器，Taro 只通过 owner adapter 提供 Hero 数据，再交给公共 renderer registry。
+详情页已从 owner-bound 配置升级为独立、自包含、可复用的内容实体。公告、首页 BANNER、人员和活动案例只保存可空 `detailPageId` 外键；详情页自身保存名称、类型、Hero、BANNER、富文本、媒体关系和 blocks。`packages/shared` 定义注册表及传输契约，API 负责持久化、安全清洗、媒体关系和 blocks 转换，Admin 负责独立详情页管理与引用选择控件，Taro 通过公共 `/pages/detail/index?id=<detailPageId>` 渲染详情。
 
-旧 `Artist.detail`、`ActivityCase.detail` 与 `ActivityCase.legacyMediaJson` 保留为 deprecated 兼容字段。公共详情配置是新内容的唯一事实来源；客户端兼容 `detail` 从 `detailPage.richTextHtml` 派生。
+旧 `ownerType/ownerId`、`Artist.detail`、`ActivityCase.detail`、`ActivityCase.legacyMediaJson` 和 BANNER `linkType/linkTarget` 保留为 deprecated 兼容字段。新运行时不以它们作为导航或详情来源；客户端兼容 `detail` 从所引用详情页的 `richTextHtml` 派生。
 
 ## 类型注册表与 owner 规则
 
@@ -15,38 +15,61 @@
 | `banner_rich_text` | BANNER + 富文本 | `bannerRichText` | 宣传语 trim 后非空；1–6 张不重复图片；富文本语义非空 |
 | `rich_text`        | 单富文本        | `richText`       | 仅富文本；宣传语为空；`banners` 必须为空             |
 
-ownerType 只能是 `artist` 或 `activity_case`。数据库以 `(ownerType, ownerId)` 唯一，读取和删除必须同时使用两列，避免相同数值 ID 跨 owner 串数据。owner 的存在性由服务层在事务内验证。
+`ownerType/ownerId` 仅用于旧数据审计和迁移回填。运行时引用关系是四张业务表的真实 FK：`announcements.detailPageId`、`banners.detailPageId`、`artists.detailPageId`、`activity_cases.detailPageId`，均允许为空并使用 `ON DELETE RESTRICT` 保护被引用详情页。
 
 ## 数据库与传输契约
 
-- `detail_page_configs`：owner、pageType、schemaVersion、heroSubtitle、richTextHtml 与时间戳。
+- `detail_page_configs`：name、pageType、完整 Hero 字段、schemaVersion、richTextHtml、deprecated owner 与时间戳。
 - `detail_page_banner_media`：BANNER 图片关系与 `sortOrder`；配置和媒体联合唯一。
 - `detail_page_content_media`：清洗后 HTML 中的图片/视频引用；配置和媒体联合唯一。
 
-Admin 创建/更新人员或案例时只提交嵌套 `detailPage`：
+Admin 创建/更新独立详情页时提交：
 
 ```ts
 type DetailPageInput =
   | {
       type: "banner_rich_text";
-      heroSubtitle: string;
+      name: string;
+      hero: {
+        title: string;
+        typeLabel: string;
+        subtitle: string;
+        badge: string;
+        tags: string[];
+        location: string;
+        metaItems: Array<{ label: string; value: string }>;
+      };
       bannerAssetIds: number[];
       richTextHtml: string;
     }
   | {
       type: "rich_text";
+      name: string;
       richTextHtml: string;
     };
 ```
+
+业务表单只提交 `detailPageId: number | null`。未绑定时前台入口不可点击，也不会回退旧 `linkType/linkTarget` 或 owner route。
 
 API 返回稳定 DTO：
 
 ```ts
 type DetailPageConfigDto = {
+  id: number;
+  name: string;
   type: "banner_rich_text" | "rich_text";
   typeLabel: string;
   rendererKey: "bannerRichText" | "richText";
   schemaVersion: number;
+  hero: {
+    title: string;
+    typeLabel: string;
+    subtitle: string;
+    badge: string;
+    tags: string[];
+    location: string;
+    metaItems: Array<{ label: string; value: string }>;
+  };
   heroSubtitle: string;
   banners: Array<{
     id: number;
@@ -71,7 +94,7 @@ type DetailPageConfigDto = {
 };
 ```
 
-`rich_text` 响应的 `heroSubtitle` 是空字符串、`banners` 是空数组。客户端详情接口为 `GET /api/client/artists/:id` 和 `GET /api/client/cases/:id`；两者都在业务 DTO 的 `detailPage` 字段返回同一契约。
+`rich_text` 响应的 Hero 为空、`heroSubtitle` 是空字符串、`banners` 是空数组。公共客户端详情接口为 `GET /api/client/detail-pages/:id`。
 
 ## Admin 动态表单与 Tiptap 决策
 
@@ -105,13 +128,13 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 
 ## SQLite 兼容迁移
 
-初始化器先创建新表和索引，再执行幂等迁移。已有公共配置优先保留并审计；没有配置的旧人员以旧 `detail` 迁为 `rich_text`，旧案例把 `detail` 与可解释的 `legacyMediaJson` 顺序转换为富文本媒体节点。迁移 ledger 防止重复写入；事务失败回滚整条 owner 迁移。无法恢复的文件、类型不符或不可解释的非空旧媒体会使预检失败，不猜测也不丢弃数据。升级前必须同时备份 SQLite 和 `uploads`。
+初始化器先创建兼容基础表，再执行幂等迁移。已有 `detail_page_configs`、BANNER 关系和正文媒体关系优先保留并逐行校验；旧 owner-bound 配置会回填到对应业务表的 `detailPageId`，同时补齐名称和 Hero 字段。旧 BANNER `linkType/linkTarget` 只在目标业务对象已经拥有详情页时安全映射，否则保持 `detailPageId = null`。迁移 ledger 防止重复执行；升级前必须同时备份 SQLite 和 `uploads`。
 
 ## 公共 Taro renderer 与 adapters
 
 `DetailPageRenderer` 以共享 `rendererKey` 查找 exhaustively typed registry。`BannerRichTextRenderer` 渲染排序 Swiper、页码、覆盖式导航、Hero 与负重叠内容；单图不 circular。`RichTextRenderer` 只渲染正常导航和内容，完全没有 BANNER、Hero、页码、BANNER skeleton、高度或负 margin DOM。
 
-人员 adapter 映射姓名、人员类型中文名、宣传语、badge、1–4 个标签和地点。案例 adapter 映射标题、分类/标签、宣传语、地点和日期，不伪造人员类型。路由只负责取数、错误分类、ID race gate、PV 与 adapter；切换 ID 立即清空旧 state，迟到响应不能覆盖新数据。
+公共详情路由直接使用详情页 DTO 内的 Hero；旧人员/案例详情路由只作为兼容跳板，读取业务 `detailPageId` 后 redirect 到 `/pages/detail/index`，无引用时显示“暂无详情”。路由只负责取数、错误分类、ID race gate 和 PV；切换 ID 立即清空旧 state，迟到响应不能覆盖新数据。
 
 返回按钮优先 `navigateBack`，没有页面栈或失败时人员回分类 Tab、案例回案例列表。错误和配置缺失状态提供“重新加载”；不存在、停用、未知类型和语义空内容有各自文案。
 
@@ -192,9 +215,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 
 对齐方法不拉伸比例：把参考图按实际截图宽度等比缩放，实际图和参考图都从顶部对齐，再裁到两者较短高度；不遮罩 BANNER、Hero、返回按钮、首卡、富文本、边距或底部。overlay 使用 50% alpha，diff 使用逐像素 difference。H5 与微信状态栏、安全区、字体渲染及内容高度客观不同，因此这些文件用于定位差异，不宣称 pixel parity。
 
-当前运行证据必须以文件真实存在和 JSON hash 为准；不能以文档中的路径替代产物。
-
-截至 2026-07-11 本工作区的真实页面捕获仍被执行环境阻塞：`pnpm e2e -- --project=miniapp-h5 --grep "人员页卡片、搜索、筛选和详情交互可用"` 在 API webServer 的 `tsx src/bootstrap-db.ts` 启动阶段报 `listen EPERM .../tsx-501/45075.pipe`；按规则申请沙箱外重跑后，审批因当前 Codex usage limit 被拒绝。未使用替代启动方式绕过限制，因此上述六张 Task 14 视觉产物和 hash JSON 尚未生成，也不宣称完成第一轮/第二轮或 pixel parity。`pnpm exec playwright test --list --project=miniapp-h5` 只验证测试发现与静态加载，不能替代真实 E2E。
+当前运行证据必须以文件真实存在和 JSON hash 为准；不能以文档中的路径替代产物。2026-07-11 最终审计中，`pnpm e2e` 已真实执行通过 37/37，`pnpm release:check` 已真实执行通过并覆盖 lint、unit、E2E、API build、Admin build、H5 build 和 WeApp build。E2E 运行已重新生成详情页视觉截图、首页截图和 `docs/design/detail-page-visual-evidence.json`，当前哈希以该 JSON 文件为准。
 
 ## 新增第三种 renderer 的精确八步
 
@@ -203,6 +224,6 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 3. 把新分支加入 `DetailPageInputSchema` 的 discriminated union，写清字段互斥和媒体约束。
 4. 在公共 Admin `DetailPageConfigFields` 注册字段映射、预览与类型切换清理规则，不复制人员/案例编辑器。
 5. 在 API serializer/parser/service 增加新分支、规范化、关系同步与 blocks 输出，必要时提供向后兼容 migration。
-6. 在公共 Taro renderer registry 注册一个以新 `rendererKey` 为键的 renderer，并复用导航、内容、媒体和 owner adapters。
+6. 在公共 Taro renderer registry 注册一个以新 `rendererKey` 为键的 renderer，并复用导航、内容、媒体和公共详情路由。
 7. 增加 shared/API/Admin/Taro 单测、人员与案例 E2E、错误/迁移/媒体保护及视觉证据，再运行 H5 与 WeChat 构建。
 8. 不修改人员、案例基础表单主体；owner 路由继续只做取数、状态、PV 和 Hero adapter。

@@ -7,6 +7,7 @@ import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
+import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import "./index.scss";
 
 const menuRoutes: Record<string, string> = {
@@ -98,26 +99,29 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
         interval={currentAnnouncement.displayDurationMs || 3000}
         onChange={(event) => setCurrent(Number(event.detail.current || 0))}
       >
-        {announcements.map((announcement) => (
-          <SwiperItem key={announcement.id}>
-            <View
-              className="notice__slide"
-              onTouchStart={swipeGuard.onTouchStart}
-              onTouchMove={swipeGuard.onTouchMove}
-              onTouchEnd={swipeGuard.onTouchEnd}
-              onTouchCancel={swipeGuard.onTouchEnd}
-              onClick={() => {
-                if (!swipeGuard.allowClick()) return;
-                ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${announcement.id}` }));
-              }}
-            >
-              <Text className="notice__icon">▶</Text>
-              <Text className="notice__summary">{announcement.summary}</Text>
-              <Text className="notice__content">{announcement.content}</Text>
-              <Text className="notice__arrow">›</Text>
-            </View>
-          </SwiperItem>
-        ))}
+        {announcements.map((announcement) => {
+          const clickable = Boolean(announcement.detailPageId);
+          return (
+            <SwiperItem key={announcement.id}>
+              <View
+                className={`notice__slide ${clickable ? "notice__slide--clickable" : "notice__slide--static"}`}
+                onTouchStart={swipeGuard.onTouchStart}
+                onTouchMove={swipeGuard.onTouchMove}
+                onTouchEnd={swipeGuard.onTouchEnd}
+                onTouchCancel={swipeGuard.onTouchEnd}
+                onClick={clickable ? () => {
+                  if (!swipeGuard.allowClick()) return;
+                  navigateToDetailPage(announcement.detailPageId);
+                } : undefined}
+              >
+                <Text className="notice__icon">▶</Text>
+                <Text className="notice__summary">{announcement.summary}</Text>
+                <Text className="notice__content">{announcement.content}</Text>
+                {clickable && <Text className="notice__arrow">›</Text>}
+              </View>
+            </SwiperItem>
+          );
+        })}
       </Swiper>
     </View>
   );
@@ -135,6 +139,8 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
           imageUrl: site.defaultBannerUrl || generatedAssets.bannerDefault,
           linkType: "none",
           linkTarget: null,
+          detailPageId: null,
+          hasDetailPage: false,
           switchDurationMs: 3500,
           sortOrder: 0,
           status: "enabled"
@@ -142,18 +148,6 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
       ];
   const multiple = list.length > 1;
   const currentBanner = list[current] ?? list[0];
-
-  function open(banner: BannerDto) {
-    if (banner.linkType === "announcement" && banner.linkTarget) {
-      ignoreNavigationError(Taro.navigateTo({ url: `/pages/announcement/detail?id=${banner.linkTarget}` }));
-    }
-    if (banner.linkType === "case" && banner.linkTarget) {
-      ignoreNavigationError(Taro.navigateTo({ url: `/pages/cases/detail?id=${banner.linkTarget}` }));
-    }
-    if (banner.linkType === "internal" && banner.linkTarget) {
-      ignoreNavigationError(Taro.navigateTo({ url: banner.linkTarget }));
-    }
-  }
 
   return (
     <View className="banner-wrap" data-testid="home-banner-state" data-current-index={current}>
@@ -172,27 +166,30 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
         data-current-index={current}
         onChange={(event) => setCurrent(Number(event.detail.current || 0))}
       >
-        {list.map((banner) => (
-          <SwiperItem key={banner.id}>
-            <View
-              className="banner__slide"
-              onTouchStart={swipeGuard.onTouchStart}
-              onTouchMove={swipeGuard.onTouchMove}
-              onTouchEnd={swipeGuard.onTouchEnd}
-              onTouchCancel={swipeGuard.onTouchEnd}
-              onClick={() => {
-                if (swipeGuard.allowClick()) open(banner);
-              }}
-            >
-              <AppImage
-                className="banner__image"
-                testid="home-banner-image"
-                src={banner.imageUrl}
-                fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
-              />
-            </View>
-          </SwiperItem>
-        ))}
+        {list.map((banner) => {
+          const clickable = Boolean(banner.detailPageId);
+          return (
+            <SwiperItem key={banner.id}>
+              <View
+                className={`banner__slide ${clickable ? "banner__slide--clickable" : "banner__slide--static"}`}
+                onTouchStart={swipeGuard.onTouchStart}
+                onTouchMove={swipeGuard.onTouchMove}
+                onTouchEnd={swipeGuard.onTouchEnd}
+                onTouchCancel={swipeGuard.onTouchEnd}
+                onClick={clickable ? () => {
+                  if (swipeGuard.allowClick()) navigateToDetailPage(banner.detailPageId);
+                } : undefined}
+              >
+                <AppImage
+                  className="banner__image"
+                  testid="home-banner-image"
+                  src={banner.imageUrl}
+                  fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
+                />
+              </View>
+            </SwiperItem>
+          );
+        })}
       </Swiper>
     </View>
   );
@@ -270,31 +267,34 @@ export default function HomePage() {
         <View className="case-empty card">暂无精选案例</View>
       ) : (
         <View className="case-list" data-testid="home-featured-cases">
-          {data.featuredCases.map((item) => (
-            <View
-              key={item.id}
-              className="case-card"
-              data-testid="home-case-card"
-              onClick={() => ignoreNavigationError(Taro.navigateTo({ url: `/pages/cases/detail?id=${item.id}` }))}
-            >
-              <View className="case-card__image-wrap">
-                <AppImage
-                  className="case-card__image"
-                  testid="home-case-image"
-                  src={item.coverUrl}
-                  fallback={data.site.placeholderCaseUrl || generatedAssets.placeholderCase}
-                />
-                <Text className="case-card__tag">{item.tag}</Text>
+          {data.featuredCases.map((item) => {
+            const clickable = Boolean(item.detailPageId);
+            return (
+              <View
+                key={item.id}
+                className={`case-card ${clickable ? "case-card--clickable" : "case-card--static"}`}
+                data-testid="home-case-card"
+                onClick={clickable ? () => navigateToDetailPage(item.detailPageId) : undefined}
+              >
+                <View className="case-card__image-wrap">
+                  <AppImage
+                    className="case-card__image"
+                    testid="home-case-image"
+                    src={item.coverUrl}
+                    fallback={data.site.placeholderCaseUrl || generatedAssets.placeholderCase}
+                  />
+                  <Text className="case-card__tag">{item.tag}</Text>
+                </View>
+                <View className="case-card__body">
+                  <Text className="case-card__title">{item.title}</Text>
+                  <Text className="case-card__summary">{item.summary}</Text>
+                  <Text className="case-card__meta">📅 {item.eventDate}</Text>
+                  <Text className="case-card__meta">⌖ {item.location}</Text>
+                  {clickable && <Text className="case-card__button">查看详情 ›</Text>}
+                </View>
               </View>
-              <View className="case-card__body">
-                <Text className="case-card__title">{item.title}</Text>
-                <Text className="case-card__summary">{item.summary}</Text>
-                <Text className="case-card__meta">📅 {item.eventDate}</Text>
-                <Text className="case-card__meta">⌖ {item.location}</Text>
-                <Text className="case-card__button">查看详情 ›</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>

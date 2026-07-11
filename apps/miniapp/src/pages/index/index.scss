@@ -39,6 +39,10 @@
   gap: 14rpx;
 }
 
+.notice__slide--clickable {
+  cursor: pointer;
+}
+
 .notice__icon {
   color: #d69b52;
 }
@@ -89,6 +93,10 @@
 .banner__slide {
   width: 710rpx;
   height: 290rpx;
+}
+
+.banner__slide--clickable {
+  cursor: pointer;
 }
 
 .menu-card {
@@ -153,6 +161,10 @@
   background: #fff;
   overflow: hidden;
   box-shadow: 0 8rpx 24rpx rgba(132, 88, 45, 0.12);
+}
+
+.case-card--clickable {
+  cursor: pointer;
 }
 
 .case-card__image-wrap {

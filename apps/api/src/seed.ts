@@ -7,7 +7,7 @@ import {
 } from "@event-arts/shared";
 import { registerSeedAssets } from "./assets";
 import type { AppPrismaClient } from "./db";
-import { upsertDetailPageConfig } from "./detail-pages/detail-page-service";
+import { createDetailPage, updateDetailPage } from "./detail-pages/detail-page-service";
 import { hashPassword } from "./security";
 
 type SeedOptions = {
@@ -23,12 +23,13 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.seedRecord.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.pageViewEvent.deleteMany();
-  await prisma.detailPageConfig.deleteMany();
+  await prisma.activityCaseMedia.deleteMany();
   await prisma.activityCase.deleteMany();
   await prisma.artist.deleteMany();
   await prisma.menuItem.deleteMany();
   await prisma.banner.deleteMany();
   await prisma.announcement.deleteMany();
+  await prisma.detailPageConfig.deleteMany();
   await prisma.siteConfig.deleteMany();
   await prisma.mediaAsset.deleteMany();
   await prisma.adminUser.deleteMany();
@@ -57,6 +58,30 @@ async function upsertSeedEntity<T extends SeedEntity>(
     create: { key: options.key, entityType: options.entityType, entityId: entity.id }
   });
   return entity;
+}
+
+async function upsertSeedDetailPage(
+  prisma: AppPrismaClient,
+  key: string,
+  input: Parameters<typeof createDetailPage>[1]
+) {
+  return upsertSeedEntity(prisma, {
+    key,
+    entityType: "detailPage",
+    findById: async (id) => {
+      const record = await prisma.detailPageConfig.findUnique({ where: { id }, select: { id: true } });
+      return record ? { id: record.id } : null;
+    },
+    findLegacy: async () => {
+      const record = await prisma.detailPageConfig.findFirst({
+        where: { name: input.name, ownerType: null, ownerId: null },
+        select: { id: true }
+      });
+      return record ? { id: record.id } : null;
+    },
+    create: () => createDetailPage(prisma, input),
+    update: (id) => updateDetailPage(prisma, id, input)
+  });
 }
 
 export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions) {
@@ -105,10 +130,79 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     }
   });
 
+  const linranDetailPage = await upsertSeedDetailPage(prisma, "detailPage.linran", {
+    name: "林然个人详情",
+    type: "banner_rich_text",
+    hero: {
+      title: "林然",
+      typeLabel: "主持人",
+      subtitle: "温暖・专业・掌控全场",
+      badge: "金牌主持",
+      tags: ["10年经验", "婚礼主持", "高端晚宴", "控场力强"],
+      location: "杭州",
+      metaItems: []
+    },
+    bannerAssetIds: [
+      assets.get("banner-linran-balanced.png")!.id,
+      assets.get("banner-linran-close.png")!.id,
+      assets.get("banner-linran-wide.png")!.id
+    ],
+    richTextHtml: buildArtistProfileTemplate([
+      assets.get("case-shangri-la-wedding.png")!.id,
+      assets.get("case-brand-launch.png")!.id,
+      assets.get("case-annual-gala.png")!.id,
+      assets.get("case-lawn-wedding.png")!.id,
+      assets.get("case-appreciation-dinner.png")!.id
+    ])
+  });
+
+  const jessicaDetailPage = await upsertSeedDetailPage(prisma, "detailPage.jessica", {
+    name: "Jessica 双语主持详情",
+    type: "rich_text",
+    richTextHtml:
+      '<section class="ea-detail-card"><h2 class="ea-section-title">个人简介</h2><div class="ea-section-body"><p>Jessica 善于用流利的双语表达与优雅节奏，为国际活动和品牌晚宴营造从容氛围。</p></div></section>'
+  });
+
+  const bannerCaseDetailPage = await upsertSeedDetailPage(prisma, "detailPage.case.banner", {
+    name: "浪漫粉色系户外婚礼详情",
+    type: "banner_rich_text",
+    hero: {
+      title: "浪漫粉色系户外婚礼",
+      typeLabel: "婚礼主持",
+      subtitle: "专业策划・精彩呈现",
+      badge: "婚礼主持",
+      tags: ["户外草坪", "浪漫仪式", "现场统筹"],
+      location: "杭州・西湖区",
+      metaItems: [{ label: "日期", value: "2024-05-18" }]
+    },
+    bannerAssetIds: [
+      assets.get("case-shangri-la-wedding.png")!.id,
+      assets.get("case-lawn-wedding.png")!.id
+    ],
+    richTextHtml: buildActivityCaseTemplate(
+      [
+        assets.get("case-shangri-la-wedding.png")!.id,
+        assets.get("case-brand-launch.png")!.id,
+        assets.get("case-annual-gala.png")!.id
+      ],
+      assets.get("detail-case-demo.mp4")!.id
+    )
+  });
+
+  const richTextCaseDetailPage = await upsertSeedDetailPage(prisma, "detailPage.case.rich", {
+    name: "企业年会歌手演出详情",
+    type: "rich_text",
+    richTextHtml: buildActivityCaseTemplate([
+      assets.get("case-brand-launch.png")!.id,
+      assets.get("review-conference.png")!.id
+    ])
+  });
+
   const announcementData = {
     summary: "最新档期更新",
     content: "婚礼主持、商演主持、歌手演出可预约",
     displayDurationMs: 3000,
+    detailPageId: linranDetailPage.id,
     sortOrder: 1,
     status: "enabled"
   };
@@ -121,10 +215,29 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     update: (id) => prisma.announcement.update({ where: { id }, data: announcementData })
   });
 
+  const unlinkedAnnouncementData = {
+    summary: "本周客服在线",
+    content: "客服在线时间 09:00-21:00，欢迎咨询档期。",
+    displayDurationMs: 3000,
+    detailPageId: null,
+    sortOrder: 2,
+    status: "enabled"
+  };
+  await upsertSeedEntity(prisma, {
+    key: "announcement.unlinked",
+    entityType: "announcement",
+    findById: (id) => prisma.announcement.findUnique({ where: { id } }),
+    findLegacy: () => prisma.announcement.findFirst({ where: { summary: unlinkedAnnouncementData.summary } }),
+    create: () => prisma.announcement.create({ data: unlinkedAnnouncementData }),
+    update: (id) => prisma.announcement.update({ where: { id }, data: unlinkedAnnouncementData })
+  });
+
   const bannerData = {
     title: "高端婚礼与活动主持服务",
     imageAssetId: assets.get("banner-default.png")!.id,
     linkType: "none",
+    linkTarget: null,
+    detailPageId: bannerCaseDetailPage.id,
     switchDurationMs: 3500,
     sortOrder: 1,
     status: "enabled"
@@ -136,6 +249,25 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     findLegacy: () => prisma.banner.findFirst({ where: { title: bannerData.title } }),
     create: () => prisma.banner.create({ data: bannerData }),
     update: (id) => prisma.banner.update({ where: { id }, data: bannerData })
+  });
+
+  const unlinkedBannerData = {
+    title: "演艺团队档期开放",
+    imageAssetId: assets.get("placeholder-banner.png")!.id,
+    linkType: "none",
+    linkTarget: null,
+    detailPageId: null,
+    switchDurationMs: 3500,
+    sortOrder: 2,
+    status: "enabled"
+  };
+  await upsertSeedEntity(prisma, {
+    key: "banner.unlinked",
+    entityType: "banner",
+    findById: (id) => prisma.banner.findUnique({ where: { id } }),
+    findLegacy: () => prisma.banner.findFirst({ where: { title: unlinkedBannerData.title } }),
+    create: () => prisma.banner.create({ data: unlinkedBannerData }),
+    update: (id) => prisma.banner.update({ where: { id }, data: unlinkedBannerData })
   });
 
   const menus = [
@@ -182,6 +314,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       eventDate: new Date(`${eventDate}T00:00:00.000Z`),
       location,
       detail: `${title}详情内容`,
+      detailPageId: index === 0 ? bannerCaseDetailPage.id : index === 1 ? richTextCaseDetailPage.id : null,
       legacyMediaJson: JSON.stringify([]),
       isFeatured: true,
       featuredSortOrder: index + 1,
@@ -196,33 +329,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       create: () => prisma.activityCase.create({ data }),
       update: (id) => prisma.activityCase.update({ where: { id }, data })
     });
-    const caseImageIds = [
-      assets.get(cover)!.id,
-      assets.get(`case-${((index + 1) % 3) + 1}.png`)!.id
-    ];
-    await upsertDetailPageConfig(
-      prisma,
-      "activity_case",
-      activityCase.id,
-      index === 0
-        ? {
-            type: "banner_rich_text",
-            heroSubtitle: "专业策划・精彩呈现",
-            bannerAssetIds: [assets.get("case-shangri-la-wedding.png")!.id, assets.get("case-lawn-wedding.png")!.id],
-            richTextHtml: buildActivityCaseTemplate(
-              [assets.get("case-shangri-la-wedding.png")!.id, assets.get("case-brand-launch.png")!.id, assets.get("case-annual-gala.png")!.id],
-              assets.get("detail-case-demo.mp4")!.id
-            )
-          }
-        : {
-            type: "rich_text",
-            richTextHtml: buildActivityCaseTemplate(
-              index === 1
-                ? [assets.get("case-brand-launch.png")!.id, assets.get("review-conference.png")!.id]
-                : caseImageIds
-            )
-          }
-    );
+    void activityCase;
   }
 
   const legacyArtists = [
@@ -460,10 +567,11 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       summary,
       tagsJson: serializeArtistTags(tags),
       detail,
+      detailPageId: name === "林然" ? linranDetailPage.id : name === "Jessica" ? jessicaDetailPage.id : null,
       sortOrder,
       status: "enabled"
     };
-    const seededArtist = await upsertSeedEntity(prisma, {
+    await upsertSeedEntity(prisma, {
       key: `artist.${type}.${sortOrder}`,
       entityType: "artist",
       findById: (id) => prisma.artist.findUnique({ where: { id } }),
@@ -471,34 +579,5 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       create: () => prisma.artist.create({ data }),
       update: (id) => prisma.artist.update({ where: { id }, data })
     });
-    if (name === "林然") {
-      const bannerAssetIds = [
-        assets.get("banner-linran-balanced.png")!.id,
-        assets.get("banner-linran-close.png")!.id,
-        assets.get("banner-linran-wide.png")!.id
-      ];
-      const contentAssetIds = [
-        assets.get("case-shangri-la-wedding.png")!.id,
-        assets.get("case-brand-launch.png")!.id,
-        assets.get("case-annual-gala.png")!.id,
-        assets.get("case-lawn-wedding.png")!.id,
-        assets.get("case-appreciation-dinner.png")!.id
-      ];
-      await upsertDetailPageConfig(prisma, "artist", seededArtist.id, {
-        type: "banner_rich_text",
-        heroSubtitle: "温暖・专业・掌控全场",
-        bannerAssetIds,
-        richTextHtml: buildArtistProfileTemplate(contentAssetIds)
-      });
-    } else {
-      await upsertDetailPageConfig(prisma, "artist", seededArtist.id, {
-        type: "rich_text",
-        richTextHtml: `<section class="ea-detail-card"><h2 class="ea-section-title">个人简介</h2><div class="ea-section-body"><p>${escapeHtmlForSeed(detail)}</p></div></section>`
-      });
-    }
   }
-}
-
-function escapeHtmlForSeed(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }

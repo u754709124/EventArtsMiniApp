@@ -33,11 +33,13 @@ export function classifyDetailRequestError(
 export function useDetailResource<T extends DetailDto>({
   buildUrl,
   buildPagePath,
-  scene
+  scene,
+  normalize
 }: {
   buildUrl: (id: number) => string;
   buildPagePath: (id: number) => string;
   scene: string;
+  normalize?: (data: unknown) => T;
 }) {
   const [state, setState] = useState<DetailResourceState<T>>({ status: "loading", data: null });
   const gate = useRef(createDetailRequestGate());
@@ -53,11 +55,12 @@ export function useDetailResource<T extends DetailDto>({
       return;
     }
 
-    const task = requestWithTask<T>(buildUrl(currentId.current));
+    const task = requestWithTask<unknown>(buildUrl(currentId.current));
     const token = gate.current.begin(String(currentId.current), task.abort);
     void task.promise
-      .then((data) => {
+      .then((rawData) => {
         if (!gate.current.isCurrent(token)) return;
+        const data = normalize ? normalize(rawData) : rawData as T;
         if (data.status !== "enabled") {
           setState({ status: "disabled", data: null });
           return;

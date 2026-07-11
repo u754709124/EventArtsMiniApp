@@ -26,6 +26,7 @@ import zhCN from "antd/locale/zh_CN";
 import type { ColumnsType } from "antd/es/table";
 import {
   DashboardOutlined,
+  FileTextOutlined,
   FileImageOutlined,
   LogoutOutlined,
   MenuOutlined,
@@ -39,18 +40,14 @@ import dayjs from "dayjs";
 import {
   artistTypeValues,
   artistTypeLabels,
-  bannerLinkTypeValues,
   statusValues,
   type DashboardOverviewResponse,
-  type DetailPageConfigDto,
   type MenuType
 } from "@event-arts/shared";
 import { clearToken, getToken, request, setToken } from "./api";
-import { DetailPageConfigFields } from "./detail-pages/DetailPageConfigFields";
-import {
-  detailPageConfigDtoToFormValue,
-  normalizeDetailPageFormValue
-} from "./detail-pages/detail-page-form-utils";
+import { DetailPageDesigner } from "./detail-pages/DetailPageDesigner";
+import { DetailPageList } from "./detail-pages/DetailPageList";
+import { DetailPageReferenceField } from "./detail-pages/DetailPageReferenceField";
 import { MediaField } from "./media/MediaField";
 import { MediaPage } from "./media/MediaPage";
 import "./styles.css";
@@ -133,6 +130,7 @@ const navItems = [
   { key: "/site-config", icon: <SettingOutlined />, label: "首页配置", testid: "sidebar-site-config" },
   { key: "/announcements", icon: <NotificationOutlined />, label: "公告管理", testid: "sidebar-announcements" },
   { key: "/banners", icon: <PictureOutlined />, label: "Banner 管理", testid: "sidebar-banners" },
+  { key: "/detail-pages", icon: <FileTextOutlined />, label: "详情页管理", testid: "sidebar-detail-pages" },
   { key: "/menu-items", icon: <MenuOutlined />, label: "菜单管理", testid: "sidebar-menu-items" },
   { key: "/cases", icon: <FileImageOutlined />, label: "案例管理", testid: "sidebar-cases" },
   { key: "/artists", icon: <TeamOutlined />, label: "人员管理", testid: "sidebar-artists" },
@@ -143,7 +141,12 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  function confirmDirtyDetailNavigation() {
+    return !window.__eventartsDetailPageDirty || window.confirm("存在未保存修改，确认离开详情页设计器？");
+  }
+
   function logout() {
+    if (!confirmDirtyDetailNavigation()) return;
     clearToken();
     navigate("/login");
   }
@@ -160,7 +163,11 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
             icon: item.icon,
             label: <span data-testid={item.testid}>{item.label}</span>
           }))}
-          onClick={({ key }) => navigate(key)}
+          onClick={({ key }) => {
+            if (key === location.pathname) return;
+            if (!confirmDirtyDetailNavigation()) return;
+            navigate(key);
+          }}
         />
       </Layout.Sider>
       <Layout>
@@ -264,13 +271,12 @@ type CrudConfig = {
 };
 
 export function prepareCrudEditValues(record: AnyRecord): AnyRecord {
-  const detailPage = record.detailPage as DetailPageConfigDto | null | undefined;
   return {
     ...record,
     eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
     configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson,
     tags: normalizeArtistFormTags(record.tags ?? record.tagsJson),
-    detailPage: detailPage ? detailPageConfigDtoToFormValue(detailPage) : undefined
+    detailPageId: record.detailPageId ?? null
   };
 }
 
@@ -517,7 +523,7 @@ function normalizeArtistPayload(values: AnyRecord) {
   return {
     ...detailBusinessFields(values),
     tags: normalizeArtistFormTags(values.tags),
-    detailPage: normalizeDetailPageFormValue(values.detailPage)
+    detailPageId: values.detailPageId ?? null
   };
 }
 
@@ -525,13 +531,11 @@ function normalizeCasePayload(values: AnyRecord) {
   return {
     ...detailBusinessFields(values),
     eventDate: values.eventDate ? dayjs(values.eventDate as string).toISOString() : new Date().toISOString(),
-    detailPage: normalizeDetailPageFormValue(values.detailPage)
+    detailPageId: values.detailPageId ?? null
   };
 }
 
-function CaseCrudFields({ form, editing }: { form: ReturnType<typeof Form.useForm>[0]; editing: AnyRecord | null }) {
-  const title = Form.useWatch("title", form) as string | undefined;
-  const coverAssetId = Form.useWatch("coverAssetId", form) as number | null | undefined;
+function CaseCrudFields() {
   return (
     <>
       <Form.Item label="标题" name="title" rules={[{ required: true }]}>
@@ -563,19 +567,14 @@ function CaseCrudFields({ form, editing }: { form: ReturnType<typeof Form.useFor
       </Form.Item>
       <SortField />
       <StatusField />
-      <DetailPageConfigFields
-        form={form}
-        ownerType="activity_case"
-        ownerPreviewData={{ title, coverAssetId }}
-        initialDetailPage={editing ? (editing.detailPage as DetailPageConfigDto | null | undefined) ?? null : undefined}
-      />
+      <Form.Item label="详情页" name="detailPageId">
+        <DetailPageReferenceField />
+      </Form.Item>
     </>
   );
 }
 
-function ArtistCrudFields({ form, editing }: { form: ReturnType<typeof Form.useForm>[0]; editing: AnyRecord | null }) {
-  const title = Form.useWatch("name", form) as string | undefined;
-  const avatarAssetId = Form.useWatch("avatarAssetId", form) as number | null | undefined;
+function ArtistCrudFields() {
   return (
     <>
       <Form.Item label="姓名/艺名" name="name" rules={[{ required: true }]}>
@@ -614,12 +613,9 @@ function ArtistCrudFields({ form, editing }: { form: ReturnType<typeof Form.useF
       </Form.Item>
       <SortField />
       <StatusField />
-      <DetailPageConfigFields
-        form={form}
-        ownerType="artist"
-        ownerPreviewData={{ title, avatarAssetId }}
-        initialDetailPage={editing ? (editing.detailPage as DetailPageConfigDto | null | undefined) ?? null : undefined}
-      />
+      <Form.Item label="详情页" name="detailPageId">
+        <DetailPageReferenceField />
+      </Form.Item>
     </>
   );
 }
@@ -646,6 +642,9 @@ export const configs: Record<string, CrudConfig> = {
         <Form.Item label="单条显示时间" name="displayDurationMs" initialValue={3000} rules={[{ required: true }]}>
           <InputNumber data-testid="announcement-display-duration" min={1000} />
         </Form.Item>
+        <Form.Item label="详情页" name="detailPageId">
+          <DetailPageReferenceField />
+        </Form.Item>
         <SortField />
         <StatusField />
       </>
@@ -657,7 +656,7 @@ export const configs: Record<string, CrudConfig> = {
     testid: "banners",
     columns: [
       { title: "标题", dataIndex: "title" },
-      { title: "跳转类型", dataIndex: "linkType" },
+      { title: "详情页", dataIndex: "detailPageId", render: (value) => value ? `#${value}` : "未绑定" },
       { title: "切换时间", dataIndex: "switchDurationMs" },
       { title: "排序", dataIndex: "sortOrder" }
     ],
@@ -669,11 +668,8 @@ export const configs: Record<string, CrudConfig> = {
         <Form.Item label="图片" name="imageAssetId" rules={[{ required: true }]}>
           <MediaField testid="banner-image-select" fieldKey="banner.image" />
         </Form.Item>
-        <Form.Item label="跳转类型" name="linkType" initialValue="none">
-          <Select data-testid="banner-link-type" options={bannerLinkTypeValues.map((value) => ({ value, label: value }))} />
-        </Form.Item>
-        <Form.Item label="跳转目标" name="linkTarget">
-          <Input />
+        <Form.Item label="详情页" name="detailPageId">
+          <DetailPageReferenceField />
         </Form.Item>
         <Form.Item label="切换时间" name="switchDurationMs" initialValue={3500}>
           <InputNumber data-testid="banner-switch-duration" min={1000} />
@@ -732,7 +728,7 @@ export const configs: Record<string, CrudConfig> = {
     ],
     drawerWidth: 1040,
     normalize: normalizeCasePayload,
-    fields: (form, editing) => <CaseCrudFields form={form} editing={editing} />
+    fields: () => <CaseCrudFields />
   },
   artists: {
     title: "人员管理",
@@ -760,7 +756,7 @@ export const configs: Record<string, CrudConfig> = {
     ],
     drawerWidth: 1040,
     normalize: normalizeArtistPayload,
-    fields: (form, editing) => <ArtistCrudFields form={form} editing={editing} />
+    fields: () => <ArtistCrudFields />
   }
 };
 
@@ -781,6 +777,9 @@ function AppRoutes() {
                 {Object.entries(crudRoutes).map(([pathKey, config]) => (
                   <Route key={pathKey} path={`/${pathKey}`} element={<CrudPage config={config} />} />
                 ))}
+                <Route path="/detail-pages" element={<DetailPageList />} />
+                <Route path="/detail-pages/new" element={<DetailPageDesigner />} />
+                <Route path="/detail-pages/:id/edit" element={<DetailPageDesigner />} />
                 <Route path="/media-assets" element={<MediaPage />} />
               </Routes>
             </AdminLayout>

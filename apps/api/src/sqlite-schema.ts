@@ -71,24 +71,30 @@ const statements = [
     summary TEXT NOT NULL,
     content TEXT NOT NULL,
     displayDurationMs INTEGER NOT NULL,
+    detailPageId INTEGER,
     sortOrder INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'enabled',
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
   )`,
+  `CREATE INDEX IF NOT EXISTS announcements_detailPageId_idx ON announcements(detailPageId)`,
   `CREATE TABLE IF NOT EXISTS banners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     imageAssetId INTEGER NOT NULL,
     linkType TEXT NOT NULL DEFAULT 'none',
     linkTarget TEXT,
+    detailPageId INTEGER,
     switchDurationMs INTEGER NOT NULL,
     sortOrder INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'enabled',
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(imageAssetId) REFERENCES media_assets(id)
+    FOREIGN KEY(imageAssetId) REFERENCES media_assets(id),
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
   )`,
+  `CREATE INDEX IF NOT EXISTS banners_detailPageId_idx ON banners(detailPageId)`,
   `CREATE TABLE IF NOT EXISTS menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     text TEXT NOT NULL,
@@ -111,12 +117,15 @@ const statements = [
     summary TEXT NOT NULL,
     tagsJson TEXT NOT NULL,
     detail TEXT NOT NULL,
+    detailPageId INTEGER,
     sortOrder INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'enabled',
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(avatarAssetId) REFERENCES media_assets(id)
+    FOREIGN KEY(avatarAssetId) REFERENCES media_assets(id),
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
   )`,
+  `CREATE INDEX IF NOT EXISTS artists_detailPageId_idx ON artists(detailPageId)`,
   `CREATE TABLE IF NOT EXISTS activity_cases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -127,6 +136,7 @@ const statements = [
     eventDate DATETIME NOT NULL,
     location TEXT NOT NULL,
     detail TEXT NOT NULL,
+    detailPageId INTEGER,
     mediaJson TEXT NOT NULL,
     isFeatured BOOLEAN NOT NULL DEFAULT false,
     featuredSortOrder INTEGER NOT NULL DEFAULT 0,
@@ -134,8 +144,10 @@ const statements = [
     status TEXT NOT NULL DEFAULT 'enabled',
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(coverAssetId) REFERENCES media_assets(id)
+    FOREIGN KEY(coverAssetId) REFERENCES media_assets(id),
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
   )`,
+  `CREATE INDEX IF NOT EXISTS activity_cases_detailPageId_idx ON activity_cases(detailPageId)`,
   `CREATE TABLE IF NOT EXISTS activity_case_media (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     activityCaseId INTEGER NOT NULL,
@@ -148,10 +160,17 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS activity_case_media_mediaAssetId_idx ON activity_case_media(mediaAssetId)`,
   `CREATE TABLE IF NOT EXISTS detail_page_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ownerType TEXT NOT NULL,
-    ownerId INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    ownerType TEXT,
+    ownerId INTEGER,
     pageType TEXT NOT NULL,
+    heroTitle TEXT NOT NULL DEFAULT '',
+    heroTypeLabel TEXT NOT NULL DEFAULT '',
     heroSubtitle TEXT NOT NULL DEFAULT '',
+    heroBadge TEXT NOT NULL DEFAULT '',
+    heroTagsJson TEXT NOT NULL DEFAULT '[]',
+    heroLocation TEXT NOT NULL DEFAULT '',
+    heroMetaJson TEXT NOT NULL DEFAULT '[]',
     richTextHtml TEXT NOT NULL DEFAULT '',
     schemaVersion INTEGER NOT NULL DEFAULT 1,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -162,6 +181,10 @@ const statements = [
     ON detail_page_configs(ownerType, ownerId)`,
   `CREATE INDEX IF NOT EXISTS detail_page_configs_ownerType_idx
     ON detail_page_configs(ownerType)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_configs_name_idx
+    ON detail_page_configs(name)`,
+  `CREATE INDEX IF NOT EXISTS detail_page_configs_pageType_idx
+    ON detail_page_configs(pageType)`,
   `CREATE TABLE IF NOT EXISTS detail_page_banner_media (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     detailPageConfigId INTEGER NOT NULL,
@@ -243,6 +266,13 @@ async function ensureArtistColumns(prisma: AppPrismaClient) {
   if (!names.has("badge")) {
     await prisma.$executeRawUnsafe("ALTER TABLE artists ADD COLUMN badge TEXT NOT NULL DEFAULT ''");
   }
+}
+
+function isDeferredDetailPageIndex(statement: string) {
+  return (
+    /CREATE INDEX IF NOT EXISTS (announcements|banners|artists|activity_cases)_detailPageId_idx/.test(statement) ||
+    /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS detail_page_configs_/.test(statement)
+  );
 }
 
 function storagePath(uploadDir: string, row: LegacyMediaRow) {
@@ -418,6 +448,7 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
   }
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
   for (const statement of statements) {
+    if (isDeferredDetailPageIndex(statement)) continue;
     await prisma.$executeRawUnsafe(statement);
   }
   await ensureArtistColumns(prisma);

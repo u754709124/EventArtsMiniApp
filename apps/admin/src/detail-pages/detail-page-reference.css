@@ -1,0 +1,24 @@
+.detail-page-reference-field {
+  display: flex;
+  width: 100%;
+}
+
+.detail-page-reference-select {
+  min-width: 0;
+  flex: 1;
+}
+
+.detail-page-reference-field .ant-btn,
+.detail-page-reference-field .ant-select-selector {
+  min-height: 40px;
+}
+
+@media (max-width: 680px) {
+  .detail-page-reference-field {
+    flex-wrap: wrap;
+  }
+
+  .detail-page-reference-select {
+    flex-basis: 100%;
+  }
+}

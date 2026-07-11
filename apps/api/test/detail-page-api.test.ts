@@ -41,7 +41,33 @@ async function createAsset(id: number, mediaType: "image" | "video", dimensions?
   });
 }
 
-function artistPayload(avatarAssetId: number, bannerAssetId: number, contentAssetId?: number) {
+function bannerDetailPagePayload(name: string, bannerAssetId: number, contentAssetId?: number) {
+  return {
+    name,
+    type: "banner_rich_text" as const,
+    hero: {
+      title: name.replace("详情", ""),
+      typeLabel: "测试详情",
+      subtitle: "温暖・专业",
+      badge: "推荐",
+      tags: ["回归测试"],
+      location: "杭州",
+      metaItems: [{ label: "来源", value: "API" }]
+    },
+    bannerAssetIds: [bannerAssetId],
+    richTextHtml: `<p>接口富文本</p>${contentAssetId ? `<video data-media-asset-id="${contentAssetId}"></video>` : ""}`
+  };
+}
+
+function richDetailPagePayload(name: string, contentAssetId?: number) {
+  return {
+    name,
+    type: "rich_text" as const,
+    richTextHtml: `<p>接口富文本</p>${contentAssetId ? `<img data-media-asset-id="${contentAssetId}">` : ""}`
+  };
+}
+
+function artistPayload(avatarAssetId: number, detailPageId: number | null) {
   return {
     name: "接口详情主持人",
     type: "host",
@@ -50,14 +76,9 @@ function artistPayload(avatarAssetId: number, bannerAssetId: number, contentAsse
     badge: "金牌主持",
     tags: ["婚礼主持", "控场力强"],
     summary: "接口测试人员简介",
+    detailPageId,
     sortOrder: 91,
-    status: "enabled",
-    detailPage: {
-      type: "banner_rich_text",
-      heroSubtitle: "温暖・专业",
-      bannerAssetIds: [bannerAssetId],
-      richTextHtml: `<p>接口富文本</p>${contentAssetId ? `<video data-media-asset-id="${contentAssetId}"></video>` : ""}`
-    }
+    status: "enabled"
   };
 }
 
@@ -104,12 +125,12 @@ describe("seed asset recovery commands", () => {
   });
 });
 
-describe("detail page API integration", () => {
+describe("standalone detail page API integration", () => {
   beforeEach(async () => {
     await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001", reset: true });
   });
 
-  it("seeds both page types for artists and cases without duplicate configs", async () => {
+  it("seeds reusable detail pages and linked/unlinked business examples idempotently", async () => {
     const before = await Promise.all([
       prisma.mediaAsset.count(),
       prisma.seedRecord.count(),
@@ -117,46 +138,36 @@ describe("detail page API integration", () => {
       prisma.detailPageBannerMedia.count(),
       prisma.detailPageContentMedia.count()
     ]);
+
     const linran = await prisma.artist.findFirstOrThrow({ where: { name: "林然" } });
-    const artistConfig = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: linran.id } },
-      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: { include: { mediaAsset: true } } }
+    const linranDetail = await prisma.detailPageConfig.findFirstOrThrow({
+      where: { name: "林然个人详情" },
+      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: true }
     });
-    expect(artistConfig).toMatchObject({ pageType: "banner_rich_text", heroSubtitle: "温暖・专业・掌控全场" });
-    expect(artistConfig.banners).toHaveLength(3);
-    expect(artistConfig.richTextHtml).toContain("个人简介");
-    expect(artistConfig.richTextHtml).toContain("常见问题");
-    expect(artistConfig.banners.map((banner) => banner.mediaAsset.originalName)).toEqual([
+    expect(linran.detailPageId).toBe(linranDetail.id);
+    expect(linranDetail).toMatchObject({
+      ownerType: null,
+      ownerId: null,
+      pageType: "banner_rich_text",
+      heroTitle: "林然",
+      heroSubtitle: "温暖・专业・掌控全场"
+    });
+    expect(linranDetail.banners.map((banner) => banner.mediaAsset.originalName)).toEqual([
       "banner-linran-balanced.png",
       "banner-linran-close.png",
       "banner-linran-wide.png"
     ]);
 
-    const bannerCase = await prisma.activityCase.findFirstOrThrow({ where: { title: "浪漫粉色系户外婚礼" } });
-    const bannerCaseConfig = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: bannerCase.id } },
-      include: { banners: true, contentMedia: { include: { mediaAsset: true } } }
-    });
-    expect(bannerCaseConfig.banners).toHaveLength(2);
-    expect(bannerCaseConfig.contentMedia.map((relation) => relation.mediaAsset.mediaType)).toContain("video");
-
-    const richTextCase = await prisma.activityCase.findFirstOrThrow({ where: { title: "企业年会歌手演出" } });
-    const richTextCaseConfig = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: richTextCase.id } },
-      include: { banners: true, contentMedia: true }
-    });
-    expect(richTextCaseConfig).toMatchObject({ pageType: "rich_text", banners: [] });
-    expect(richTextCaseConfig.contentMedia.length).toBeGreaterThan(0);
-
-    const ownerTypes = await prisma.detailPageConfig.groupBy({ by: ["ownerType", "pageType"], _count: true });
-    expect(ownerTypes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ ownerType: "artist", pageType: "rich_text" }),
-        expect.objectContaining({ ownerType: "artist", pageType: "banner_rich_text" }),
-        expect.objectContaining({ ownerType: "activity_case", pageType: "rich_text" }),
-        expect.objectContaining({ ownerType: "activity_case", pageType: "banner_rich_text" })
-      ])
-    );
+    const businessCounts = [
+      [await prisma.announcement.count({ where: { detailPageId: { not: null } } }), await prisma.announcement.count({ where: { detailPageId: null } })],
+      [await prisma.banner.count({ where: { detailPageId: { not: null } } }), await prisma.banner.count({ where: { detailPageId: null } })],
+      [await prisma.artist.count({ where: { detailPageId: { not: null } } }), await prisma.artist.count({ where: { detailPageId: null } })],
+      [await prisma.activityCase.count({ where: { detailPageId: { not: null } } }), await prisma.activityCase.count({ where: { detailPageId: null } })]
+    ];
+    for (const [linked, unlinked] of businessCounts) {
+      expect(linked).toBeGreaterThan(0);
+      expect(unlinked).toBeGreaterThan(0);
+    }
 
     await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001" });
     expect(
@@ -168,19 +179,6 @@ describe("detail page API integration", () => {
         prisma.detailPageContentMedia.count()
       ])
     ).toEqual(before);
-
-    const reseededArtistConfig = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: linran.id } },
-      include: { banners: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } }, contentMedia: { include: { mediaAsset: true } } }
-    });
-    expect(reseededArtistConfig.banners.map((banner) => banner.mediaAsset.originalName)).toEqual([
-      "banner-linran-balanced.png",
-      "banner-linran-close.png",
-      "banner-linran-wide.png"
-    ]);
-    expect(reseededArtistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()).toEqual(
-      artistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()
-    );
   });
 
   it("previews with production validation without writing config rows", async () => {
@@ -191,132 +189,135 @@ describe("detail page API integration", () => {
       method: "POST",
       url: "/api/admin/detail-pages/preview",
       headers: { authorization: `Bearer ${auth}` },
-      payload: {
-        detailPage: {
-          type: "banner_rich_text",
-          heroSubtitle: "预览宣传语",
-          bannerAssetIds: [banner.id],
-          richTextHtml: "<p>预览正文</p>"
-        }
-      }
+      payload: { detailPage: bannerDetailPagePayload("预览详情", banner.id) }
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toMatchObject({ type: "banner_rich_text", rendererKey: "bannerRichText" });
+    expect(response.json().data).toMatchObject({
+      name: "预览详情",
+      type: "banner_rich_text",
+      rendererKey: "bannerRichText",
+      hero: expect.objectContaining({ subtitle: "温暖・专业" })
+    });
     expect(await prisma.detailPageConfig.count()).toBe(configCount);
   });
 
-  it("creates an artist and detail config atomically, then returns unified admin and client DTOs", async () => {
+  it("creates a reusable detail page, links an artist, serves the public detail, and protects deletion", async () => {
     const auth = await token();
     const avatar = await createAsset(101, "image");
     const banner = await createAsset(102, "image");
     const video = await createAsset(103, "video");
+    const detail = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: bannerDetailPagePayload("接口主持人详情", banner.id, video.id)
+    });
+    expect(detail.statusCode).toBe(200);
+    const detailPage = detail.json().data;
+
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/artists",
       headers: { authorization: `Bearer ${auth}` },
-      payload: artistPayload(avatar.id, banner.id, video.id)
+      payload: artistPayload(avatar.id, detailPage.id)
     });
-
     expect(response.statusCode).toBe(200);
     const created = response.json().data;
-    expect(created.detailPage).toMatchObject({
-      type: "banner_rich_text",
-      heroSubtitle: "温暖・专业",
-      banners: [expect.objectContaining({ assetId: banner.id })]
-    });
-    expect(created.detail).toBe(created.detailPage.richTextHtml);
-
-    const adminList = await app.inject({
-      method: "GET",
-      url: "/api/admin/artists",
-      headers: { authorization: `Bearer ${auth}` }
-    });
-    const adminItem = adminList.json().data.items.find((item: { id: number }) => item.id === created.id);
-    expect(adminItem).toMatchObject({
-      detailPageType: "banner_rich_text",
-      detailPageTypeLabel: "BANNER + 富文本",
+    expect(created).toMatchObject({
+      detailPageId: detailPage.id,
+      detailPageSummary: { id: detailPage.id, name: "接口主持人详情", type: "banner_rich_text" },
       bannerCount: 1,
       detailMediaCount: 1,
       hasRichText: true
     });
 
-    const client = await app.inject({ method: "GET", url: `/api/client/artists/${created.id}` });
+    const client = await app.inject({ method: "GET", url: `/api/client/detail-pages/${detailPage.id}` });
     expect(client.statusCode).toBe(200);
-    expect(client.json().data.detailPage.blocks.map((block: { type: string }) => block.type)).toEqual(["richText", "video"]);
+    expect(client.json().data.blocks.map((block: { type: string }) => block.type)).toEqual(["richText", "video"]);
 
-    const bannerReference = await app.inject({
+    const artistDetail = await app.inject({ method: "GET", url: `/api/client/artists/${created.id}` });
+    expect(artistDetail.json().data.detailPage.id).toBe(detailPage.id);
+
+    const references = await app.inject({
       method: "GET",
-      url: `/api/admin/media-assets/${banner.id}`,
+      url: `/api/admin/detail-pages/${detailPage.id}/references`,
       headers: { authorization: `Bearer ${auth}` }
     });
-    const contentReference = await app.inject({
-      method: "GET",
-      url: `/api/admin/media-assets/${video.id}`,
-      headers: { authorization: `Bearer ${auth}` }
-    });
-    expect(bannerReference.json().data).toMatchObject({
-      inUse: true,
-      referenceCount: 1,
-      referenceSources: [expect.objectContaining({ type: "detail_page_banner", label: "详情页 BANNER", count: 1 })]
-    });
-    expect(contentReference.json().data).toMatchObject({
-      inUse: true,
-      referenceCount: 1,
-      referenceSources: [expect.objectContaining({ type: "detail_page_content", label: "详情页富文本", count: 1 })]
-    });
+    expect(references.json().data.items).toEqual([
+      expect.objectContaining({ sourceType: "artist", sourceId: created.id, sourceName: "接口详情主持人" })
+    ]);
 
     const blocked = await app.inject({
       method: "DELETE",
-      url: `/api/admin/media-assets/${banner.id}`,
+      url: `/api/admin/detail-pages/${detailPage.id}`,
       headers: { authorization: `Bearer ${auth}` }
     });
     expect(blocked.statusCode).toBe(409);
-    expect(blocked.json().error.message).toContain("详情页 BANNER");
+    expect(blocked.json().error.code).toBe("DETAIL_PAGE_IN_USE");
   });
 
-  it("rolls back the owner when detail validation fails", async () => {
+  it("lets business forms switch or clear a detailPageId without editing detail content", async () => {
     const auth = await token();
     const avatar = await createAsset(104, "image");
     const banner = await createAsset(105, "image");
-    const response = await app.inject({
+    const content = await createAsset(106, "image");
+    const bannerDetail = await app.inject({
       method: "POST",
-      url: "/api/admin/artists",
+      url: "/api/admin/detail-pages",
       headers: { authorization: `Bearer ${auth}` },
-      payload: artistPayload(avatar.id, banner.id, 99999)
+      payload: bannerDetailPagePayload("可视详情", banner.id)
     });
-    expect(response.statusCode).toBe(400);
-    expect(await prisma.artist.count({ where: { name: "接口详情主持人" } })).toBe(0);
-  });
-
-  it("switches artist type to rich text on save and clears banner references", async () => {
-    const auth = await token();
-    const avatar = await createAsset(106, "image");
-    const banner = await createAsset(107, "image");
+    const richDetail = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: richDetailPagePayload("图文详情", content.id)
+    });
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/artists",
       headers: { authorization: `Bearer ${auth}` },
-      payload: artistPayload(avatar.id, banner.id)
+      payload: artistPayload(avatar.id, bannerDetail.json().data.id)
     });
-    const id = created.json().data.id;
-    const updated = await app.inject({
+
+    const switched = await app.inject({
       method: "PUT",
-      url: `/api/admin/artists/${id}`,
+      url: `/api/admin/artists/${created.json().data.id}`,
       headers: { authorization: `Bearer ${auth}` },
-      payload: { detailPage: { type: "rich_text", richTextHtml: "<p>保留并切换</p>" } }
+      payload: { detailPageId: richDetail.json().data.id }
     });
-    expect(updated.statusCode).toBe(200);
-    expect(updated.json().data.detailPage).toMatchObject({ type: "rich_text", heroSubtitle: "", banners: [] });
-    const config = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: id } }
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json().data).toMatchObject({
+      detailPageId: richDetail.json().data.id,
+      detailPageType: "rich_text",
+      bannerCount: 0,
+      detailMediaCount: 1
     });
-    expect(await prisma.detailPageBannerMedia.count({ where: { detailPageConfigId: config.id } })).toBe(0);
+
+    const cleared = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${created.json().data.id}`,
+      headers: { authorization: `Bearer ${auth}` },
+      payload: { detailPageId: null }
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().data).toMatchObject({
+      detailPageId: null,
+      detailPageSummary: null,
+      detailPageType: null
+    });
   });
 
-  it("creates, serves and deletes a case with its common detail config", async () => {
+  it("links cases to reusable detail pages and leaves detail pages after case deletion", async () => {
     const auth = await token();
-    const cover = await createAsset(108, "image", { width: 460, height: 320 });
-    const banner = await createAsset(109, "image");
+    const cover = await createAsset(107, "image", { width: 460, height: 320 });
+    const content = await createAsset(108, "image");
+    const detail = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: richDetailPagePayload("接口案例详情", content.id)
+    });
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/cases",
@@ -333,18 +334,20 @@ describe("detail page API integration", () => {
         featuredSortOrder: 9,
         sortOrder: 9,
         status: "enabled",
-        detailPage: {
-          type: "banner_rich_text",
-          heroSubtitle: "精彩现场",
-          bannerAssetIds: [banner.id],
-          richTextHtml: "<p>案例正文</p>"
-        }
+        detailPageId: detail.json().data.id
       }
     });
     expect(created.statusCode).toBe(200);
     const id = created.json().data.id;
+    const list = await app.inject({ method: "GET", url: "/api/client/cases" });
+    expect(list.json().data.find((item: { id: number }) => item.id === id)).toMatchObject({
+      detailPageId: detail.json().data.id,
+      hasDetailPage: true
+    });
+    expect(list.json().data.find((item: { id: number }) => item.id === id)).not.toHaveProperty("detailPage");
+
     const client = await app.inject({ method: "GET", url: `/api/client/cases/${id}` });
-    expect(client.json().data.detailPage).toMatchObject({ type: "banner_rich_text" });
+    expect(client.json().data.detailPage).toMatchObject({ id: detail.json().data.id, type: "rich_text" });
 
     const removed = await app.inject({
       method: "DELETE",
@@ -352,21 +355,30 @@ describe("detail page API integration", () => {
       headers: { authorization: `Bearer ${auth}` }
     });
     expect(removed.statusCode).toBe(200);
-    expect(await prisma.detailPageConfig.count({ where: { ownerType: "activity_case", ownerId: id } })).toBe(0);
+    expect(await prisma.detailPageConfig.count({ where: { id: detail.json().data.id } })).toBe(1);
   });
 
-  it("returns controlled client errors for missing configs and unknown stored types", async () => {
-    const artist = await prisma.artist.findFirstOrThrow();
-    await prisma.detailPageConfig.deleteMany({ where: { ownerType: "artist", ownerId: artist.id } });
-    const missing = await app.inject({ method: "GET", url: `/api/client/artists/${artist.id}` });
-    expect(missing.statusCode).toBe(404);
-    expect(missing.json().error.code).toBe("DETAIL_PAGE_CONFIG_NOT_FOUND");
-
-    await prisma.detailPageConfig.create({
-      data: { ownerType: "artist", ownerId: artist.id, pageType: "future_type", richTextHtml: "<p>未来内容</p>" }
+  it("returns controlled errors for invalid references and unknown stored detail types", async () => {
+    const auth = await token();
+    const avatar = await createAsset(109, "image");
+    const invalidReference = await app.inject({
+      method: "POST",
+      url: "/api/admin/artists",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: artistPayload(avatar.id, 999999)
     });
-    const unknown = await app.inject({ method: "GET", url: `/api/client/artists/${artist.id}` });
-    expect(unknown.statusCode).toBe(400);
-    expect(unknown.json().error.code).toBe("UNKNOWN_DETAIL_PAGE_TYPE");
+    expect(invalidReference.statusCode).toBe(400);
+    expect(invalidReference.json().error.code).toBe("DETAIL_PAGE_REFERENCE_NOT_FOUND");
+
+    const missing = await app.inject({ method: "GET", url: "/api/client/detail-pages/999999" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("DETAIL_PAGE_NOT_FOUND");
+
+    const unknown = await prisma.detailPageConfig.create({
+      data: { name: "未来类型详情", pageType: "future_type", richTextHtml: "<p>未来内容</p>" }
+    });
+    const response = await app.inject({ method: "GET", url: `/api/client/detail-pages/${unknown.id}` });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("UNKNOWN_DETAIL_PAGE_TYPE");
   });
 });

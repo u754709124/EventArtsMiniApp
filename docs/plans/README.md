@@ -10,6 +10,7 @@ These files preserve execution details outside chat context. Agents must read `A
 - `05-e2e-and-design-review-plan.md`
 - `06-release-integration-plan.md`
 - `07-home-visual-calibration-plan.md`
+- `08-standalone-detail-page-management-plan.md`
 - `agent-handoffs.md`
 
 When implementation changes a plan, update the matching file and the stage document in `docs/stages`.

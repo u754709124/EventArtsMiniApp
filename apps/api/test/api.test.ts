@@ -347,7 +347,7 @@ describe("artist client and admin contracts", () => {
         badge: "金牌主持",
         tags: ["婚礼主持", "婚礼主持", "高端晚宴"],
         summary: "专业稳重的主持人。",
-        detailPage: { type: "rich_text", richTextHtml: "<p>详情内容</p>" },
+        detailPageId: null,
         sortOrder: 99,
         status: "enabled"
       }
@@ -704,6 +704,17 @@ describe("media upload and references", () => {
     const first = await uploadMedia(token, await pngBuffer(180, 180), { resourceName: "案例详情一" });
     const second = await uploadMedia(token, await pngBuffer(190, 190), { resourceName: "案例详情二" });
     const cover = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "case-1.png" } });
+    const detailPage = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: "含详情媒体案例详情",
+        type: "rich_text",
+        richTextHtml: `<p>详情</p><img data-media-asset-id="${second.json().data.asset.id}"><img data-media-asset-id="${first.json().data.asset.id}">`
+      }
+    });
+    expect(detailPage.statusCode).toBe(200);
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/cases",
@@ -716,10 +727,7 @@ describe("media upload and references", () => {
         summary: "简介",
         eventDate: "2026-07-10T00:00:00.000Z",
         location: "杭州",
-        detailPage: {
-          type: "rich_text",
-          richTextHtml: `<p>详情</p><img data-media-asset-id="${second.json().data.asset.id}"><img data-media-asset-id="${first.json().data.asset.id}">`
-        },
+        detailPageId: detailPage.json().data.id,
         isFeatured: false,
         featuredSortOrder: 0,
         sortOrder: 999,

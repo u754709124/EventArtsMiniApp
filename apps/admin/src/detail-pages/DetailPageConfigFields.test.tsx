@@ -194,6 +194,7 @@ describe("DetailPageConfigFields", () => {
     expect(form.getFieldValue(["detailPage", "richTextHtml"])).toBe("<p>保留的正文</p>");
     expect(screen.queryByTestId("detail-banner-field")).toBeNull();
     expect(normalizeDetailPageFormValue(form.getFieldValue("detailPage"))).toEqual({
+      name: "兼容详情页",
       type: "rich_text",
       richTextHtml: "<p>保留的正文</p>"
     });
@@ -221,10 +222,21 @@ describe("DetailPageConfigFields", () => {
 
   it("hydrates a migrated DTO through the component and clears it when the next record has no detail", async () => {
     const dto: DetailPageConfigDto = {
+      id: 12,
+      name: "迁移详情",
       type: "banner_rich_text",
       typeLabel: "BANNER + 富文本",
       rendererKey: "bannerRichText",
       schemaVersion: 1,
+      hero: {
+        title: "迁移标题",
+        typeLabel: "主持人",
+        subtitle: "迁移宣传语",
+        badge: "推荐",
+        tags: ["婚礼主持"],
+        location: "杭州",
+        metaItems: [{ label: "经验", value: "10年" }]
+      },
       heroSubtitle: "迁移宣传语",
       banners: [
         { id: 2, assetId: 22, url: "/uploads/22.webp", width: 1500, height: 760, sortOrder: 1 },
@@ -237,6 +249,15 @@ describe("DetailPageConfigFields", () => {
     expect(await screen.findByTestId("detail-banner-field")).toBeTruthy();
     await waitFor(() => expect(form.getFieldValue(["detailPage"])).toEqual({
       type: "banner_rich_text",
+      hero: {
+        title: "迁移标题",
+        typeLabel: "主持人",
+        subtitle: "迁移宣传语",
+        badge: "推荐",
+        tags: ["婚礼主持"],
+        location: "杭州",
+        metaItems: [{ label: "经验", value: "10年" }]
+      },
       heroSubtitle: "迁移宣传语",
       bannerAssetIds: [21, 22],
       richTextHtml: "<p>迁移正文</p>"

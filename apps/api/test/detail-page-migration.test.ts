@@ -8,7 +8,6 @@ import {
   runDetailPageMigration
 } from "../src/detail-pages/detail-page-migration";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
-import { mediaReferenceCount } from "../src/media";
 
 const root = path.join(process.cwd(), ".tmp/detail-page-migration-tests");
 
@@ -21,7 +20,7 @@ async function createDatabase(name: string) {
   return prisma;
 }
 
-async function createAsset(prisma: AppPrismaClient, id: number, mediaType: "image" | "video") {
+async function createAsset(prisma: AppPrismaClient, id: number, mediaType: "image" | "video" = "image") {
   const extension = mediaType === "image" ? "png" : "mp4";
   return prisma.mediaAsset.create({
     data: {
@@ -41,237 +40,199 @@ async function createAsset(prisma: AppPrismaClient, id: number, mediaType: "imag
   });
 }
 
+async function createArtist(prisma: AppPrismaClient, id = 1) {
+  return prisma.artist.create({
+    data: {
+      id,
+      name: `旧人员-${id}`,
+      type: "host",
+      location: "杭州",
+      badge: "金牌主持",
+      summary: "简介",
+      tagsJson: '["婚礼主持"]',
+      detail: "旧详情",
+      sortOrder: id,
+      status: "enabled"
+    }
+  });
+}
+
+async function createCase(prisma: AppPrismaClient, coverAssetId: number, id = 1) {
+  return prisma.activityCase.create({
+    data: {
+      id,
+      title: `旧案例-${id}`,
+      category: "婚礼",
+      tag: "户外",
+      coverAssetId,
+      summary: "简介",
+      eventDate: new Date("2024-05-18T00:00:00.000Z"),
+      location: "杭州",
+      detail: "旧详情",
+      legacyMediaJson: "[]",
+      isFeatured: false,
+      featuredSortOrder: 0,
+      sortOrder: id,
+      status: "enabled"
+    }
+  });
+}
+
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe("legacy business detail migration", () => {
-  it("converts artist plain text into safe paragraphs without changing the legacy field", async () => {
-    const prisma = await createDatabase("artist-text");
-    const artist = await prisma.artist.create({
+describe("standalone detail-page migration", () => {
+  it("backfills old owner configs into business detailPageId and self-contained hero fields", async () => {
+    const prisma = await createDatabase("owner-backfill");
+    const cover = await createAsset(prisma, 10);
+    const artist = await createArtist(prisma, 1);
+    const activityCase = await createCase(prisma, cover.id, 1);
+    const artistConfig = await prisma.detailPageConfig.create({
       data: {
-        name: "旧主持人",
-        type: "host",
-        location: "杭州",
-        badge: "主持人",
-        summary: "旧简介",
-        tagsJson: "[]",
-        detail: "第一段 <安全>\n第二段 & 内容",
-        sortOrder: 1,
-        status: "enabled"
-      }
-    });
-
-    await runDetailPageMigration(prisma);
-
-    const config = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } }
-    });
-    expect(config).toMatchObject({ pageType: "rich_text", heroSubtitle: "", schemaVersion: 1 });
-    expect(config.richTextHtml).toBe("<p>第一段 &lt;安全&gt;</p><p>第二段 &amp; 内容</p>");
-    expect((await prisma.artist.findUniqueOrThrow({ where: { id: artist.id } })).detail).toBe(
-      "第一段 <安全>\n第二段 & 内容"
-    );
-    expect(await auditDetailPageOrphans(prisma)).toEqual([]);
-    await prisma.$disconnect();
-  });
-
-  it("migrates ordered case image and video nodes into HTML and unique content relations", async () => {
-    const prisma = await createDatabase("case-media");
-    const cover = await createAsset(prisma, 10, "image");
-    const image = await createAsset(prisma, 11, "image");
-    const video = await createAsset(prisma, 12, "video");
-    const repeated = await createAsset(prisma, 13, "image");
-    const activityCase = await prisma.activityCase.create({
-      data: {
-        title: "旧案例",
-        category: "婚礼",
-        tag: "现场",
-        coverAssetId: cover.id,
-        summary: "旧简介",
-        eventDate: new Date("2024-05-18T00:00:00.000Z"),
-        location: "杭州",
-        detail: '<p>旧 HTML</p><img data-media-asset-id="13" src="/wrong.png">',
-        legacyMediaJson: "[]",
-        isFeatured: false,
-        featuredSortOrder: 0,
-        sortOrder: 1,
-        status: "enabled",
-        media: {
-          create: [
-            { mediaAssetId: image.id, sortOrder: 0 },
-            { mediaAssetId: video.id, sortOrder: 1 },
-            { mediaAssetId: repeated.id, sortOrder: 2 }
-          ]
-        }
-      }
-    });
-
-    await runDetailPageMigration(prisma);
-
-    const config = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } },
-      include: { contentMedia: { orderBy: { mediaAssetId: "asc" } } }
-    });
-    expect(config.contentMedia.map((item) => item.mediaAssetId)).toEqual([11, 12, 13]);
-    expect(config.richTextHtml).toContain('<img src="/uploads/migration-13.png" data-media-asset-id="13"');
-    expect(config.richTextHtml.match(/data-media-asset-id="13"/g)).toHaveLength(1);
-    const imagePosition = config.richTextHtml.indexOf('data-media-asset-id="11"');
-    const videoPosition = config.richTextHtml.indexOf('data-media-asset-id="12"');
-    expect(imagePosition).toBeGreaterThan(config.richTextHtml.indexOf("旧 HTML"));
-    expect(videoPosition).toBeGreaterThan(imagePosition);
-    expect(await prisma.activityCaseMedia.count({ where: { activityCaseId: activityCase.id } })).toBe(0);
-    expect((await prisma.activityCase.findUniqueOrThrow({ where: { id: activityCase.id } })).detail).toContain("旧 HTML");
-    await prisma.$disconnect();
-  });
-
-  it("does not overwrite an existing config and remains idempotent without duplicate links", async () => {
-    const prisma = await createDatabase("idempotent");
-    const artist = await prisma.artist.create({
-      data: {
-        name: "已有配置",
-        type: "singer",
-        location: "上海",
-        badge: "歌手",
-        summary: "简介",
-        tagsJson: "[]",
-        detail: "旧内容",
-        sortOrder: 1,
-        status: "enabled"
-      }
-    });
-    await prisma.detailPageConfig.create({
-      data: {
+        name: "",
         ownerType: "artist",
         ownerId: artist.id,
         pageType: "rich_text",
-        richTextHtml: "<p>保留新内容</p>"
+        richTextHtml: "<p>人员旧详情</p>"
+      }
+    });
+    const caseConfig = await prisma.detailPageConfig.create({
+      data: {
+        name: "",
+        ownerType: "activity_case",
+        ownerId: activityCase.id,
+        pageType: "rich_text",
+        richTextHtml: "<p>案例旧详情</p>"
       }
     });
 
     await runDetailPageMigration(prisma);
+
+    expect((await prisma.artist.findUniqueOrThrow({ where: { id: artist.id } })).detailPageId).toBe(artistConfig.id);
+    expect((await prisma.activityCase.findUniqueOrThrow({ where: { id: activityCase.id } })).detailPageId).toBe(caseConfig.id);
+    expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: artistConfig.id } })).toMatchObject({
+      name: "人员-旧人员-1-详情",
+      heroTitle: "旧人员-1",
+      heroTypeLabel: "主持人",
+      heroBadge: "金牌主持",
+      heroTagsJson: '["婚礼主持"]',
+      heroLocation: "杭州"
+    });
+    expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: caseConfig.id } })).toMatchObject({
+      name: "案例-旧案例-1-详情",
+      heroTitle: "旧案例-1",
+      heroTypeLabel: "婚礼",
+      heroBadge: "户外",
+      heroLocation: "杭州",
+      heroMetaJson: '[{"label":"日期","value":"2024-05-18"}]'
+    });
+    await prisma.$disconnect();
+  });
+
+  it("preserves detail IDs, HTML and media relation rows while adding business references", async () => {
+    const prisma = await createDatabase("preserve-relations");
+    const cover = await createAsset(prisma, 20);
+    const banner = await createAsset(prisma, 21);
+    const content = await createAsset(prisma, 22);
+    const activityCase = await createCase(prisma, cover.id, 2);
+    const config = await prisma.detailPageConfig.create({
+      data: {
+        name: "保留关系详情",
+        ownerType: "activity_case",
+        ownerId: activityCase.id,
+        pageType: "banner_rich_text",
+        heroTitle: "已有标题",
+        heroSubtitle: "已有宣传语",
+        richTextHtml: `<p>保留 HTML</p><img data-media-asset-id="${content.id}" src="${content.url}">`,
+        banners: { create: [{ mediaAssetId: banner.id, sortOrder: 3 }] },
+        contentMedia: { create: [{ mediaAssetId: content.id }] }
+      }
+    });
+    const beforeBanners = await prisma.detailPageBannerMedia.findMany({ orderBy: { id: "asc" } });
+    const beforeContent = await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } });
+
+    await runDetailPageMigration(prisma);
     await runDetailPageMigration(prisma);
 
-    expect(await prisma.detailPageConfig.count()).toBe(1);
-    expect((await prisma.detailPageConfig.findFirstOrThrow()).richTextHtml).toBe("<p>保留新内容</p>");
+    expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: config.id } })).toMatchObject({
+      id: config.id,
+      richTextHtml: `<p>保留 HTML</p><img data-media-asset-id="${content.id}" src="${content.url}">`,
+      heroTitle: "已有标题",
+      heroSubtitle: "已有宣传语"
+    });
+    expect(await prisma.detailPageBannerMedia.findMany({ orderBy: { id: "asc" } })).toEqual(beforeBanners);
+    expect(await prisma.detailPageContentMedia.findMany({ orderBy: { id: "asc" } })).toEqual(beforeContent);
+    expect((await prisma.activityCase.findUniqueOrThrow({ where: { id: activityCase.id } })).detailPageId).toBe(config.id);
+    await prisma.$disconnect();
+  });
+
+  it("maps legacy banner links only when the target business object already has a detail page", async () => {
+    const prisma = await createDatabase("banner-link-map");
+    const cover = await createAsset(prisma, 30);
+    const bannerAsset = await createAsset(prisma, 31);
+    const mappedCase = await createCase(prisma, cover.id, 1);
+    await createCase(prisma, cover.id, 2);
+    const detail = await prisma.detailPageConfig.create({
+      data: {
+        name: "可映射案例详情",
+        ownerType: "activity_case",
+        ownerId: mappedCase.id,
+        pageType: "rich_text",
+        richTextHtml: "<p>可映射</p>"
+      }
+    });
+    const mappedBanner = await prisma.banner.create({
+      data: {
+        title: "旧案例跳转",
+        imageAssetId: bannerAsset.id,
+        linkType: "case",
+        linkTarget: String(mappedCase.id),
+        switchDurationMs: 3000,
+        sortOrder: 1,
+        status: "enabled"
+      }
+    });
+    const unmappedBanner = await prisma.banner.create({
+      data: {
+        title: "无法映射跳转",
+        imageAssetId: bannerAsset.id,
+        linkType: "case",
+        linkTarget: "2",
+        switchDurationMs: 3000,
+        sortOrder: 2,
+        status: "enabled"
+      }
+    });
+
+    await runDetailPageMigration(prisma);
+
+    expect((await prisma.banner.findUniqueOrThrow({ where: { id: mappedBanner.id } })).detailPageId).toBe(detail.id);
+    expect((await prisma.banner.findUniqueOrThrow({ where: { id: unmappedBanner.id } })).detailPageId).toBeNull();
+    await prisma.$disconnect();
+  });
+
+  it("records the migration exactly once and passes SQLite foreign-key validation", async () => {
+    const prisma = await createDatabase("ledger-and-fk");
+    await runDetailPageMigration(prisma);
+    await runDetailPageMigration(prisma);
+
     expect(
       await prisma.$queryRawUnsafe<Array<{ total: number }>>(
         "SELECT COUNT(*) AS total FROM schema_migrations WHERE id = ?",
         DETAIL_PAGE_MIGRATION_ID
       )
     ).toEqual([{ total: 1n }]);
+    expect(await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>("PRAGMA foreign_key_check")).toEqual([]);
     await prisma.$disconnect();
   });
 
-  it("keeps an existing case config authoritative and removes stale legacy media references", async () => {
-    const prisma = await createDatabase("existing-case-config");
-    const cover = await createAsset(prisma, 30, "image");
-    const content = await createAsset(prisma, 31, "image");
-    const activityCase = await prisma.activityCase.create({
-      data: {
-        title: "已有新配置案例",
-        category: "活动",
-        tag: "权威配置",
-        coverAssetId: cover.id,
-        summary: "简介",
-        eventDate: new Date("2026-07-11T00:00:00.000Z"),
-        location: "杭州",
-        detail: "旧详情不得覆盖新内容",
-        legacyMediaJson: "[]",
-        isFeatured: false,
-        featuredSortOrder: 0,
-        sortOrder: 1,
-        status: "enabled",
-        media: { create: [{ mediaAssetId: content.id, sortOrder: 0 }] }
-      }
-    });
-    await prisma.detailPageConfig.create({
-      data: {
-        ownerType: "activity_case",
-        ownerId: activityCase.id,
-        pageType: "rich_text",
-        richTextHtml: `<p>权威新内容</p><img data-media-asset-id="${content.id}" src="${content.url}">`,
-        contentMedia: { create: [{ mediaAssetId: content.id }] }
-      }
-    });
-
-    expect(await mediaReferenceCount(prisma, content.id)).toBe(1);
-
-    await runDetailPageMigration(prisma);
-
-    const config = await prisma.detailPageConfig.findUniqueOrThrow({
-      where: { ownerType_ownerId: { ownerType: "activity_case", ownerId: activityCase.id } }
-    });
-    expect(config.richTextHtml).toContain("权威新内容");
-    expect(config.richTextHtml).not.toContain("旧详情不得覆盖新内容");
-    expect(await prisma.activityCaseMedia.count({ where: { activityCaseId: activityCase.id } })).toBe(0);
-    expect(await mediaReferenceCount(prisma, content.id)).toBe(1);
-    await prisma.$disconnect();
-  });
-
-  it("rolls back a previously written owner when validating the next owner's existing config fails", async () => {
-    const prisma = await createDatabase("mid-transaction-rollback");
-    const artist = await prisma.artist.create({
-      data: {
-        name: "事务内第一位人员",
-        type: "actor",
-        location: "宁波",
-        badge: "演员",
-        summary: "简介",
-        tagsJson: "[]",
-        detail: "第一位人员详情",
-        sortOrder: 1,
-        status: "enabled"
-      }
-    });
-    const cover = await createAsset(prisma, 40, "image");
-    const legacy = await createAsset(prisma, 41, "image");
-    const activityCase = await prisma.activityCase.create({
-      data: {
-        title: "事务内第二个案例",
-        category: "活动",
-        tag: "异常配置",
-        coverAssetId: cover.id,
-        summary: "简介",
-        eventDate: new Date("2026-07-11T00:00:00.000Z"),
-        location: "杭州",
-        detail: "案例详情",
-        legacyMediaJson: "[]",
-        isFeatured: false,
-        featuredSortOrder: 0,
-        sortOrder: 1,
-        status: "enabled",
-        media: { create: [{ mediaAssetId: legacy.id, sortOrder: 0 }] }
-      }
-    });
-    await prisma.detailPageConfig.create({
-      data: {
-        ownerType: "activity_case",
-        ownerId: activityCase.id,
-        pageType: "future_type",
-        richTextHtml: "<p>不能解释的新配置</p>"
-      }
-    });
-
-    await expect(runDetailPageMigration(prisma)).rejects.toThrow(/activity_case.*事务内第二个案例.*未知详情页类型/s);
-
-    expect(await prisma.detailPageConfig.findUnique({
-      where: { ownerType_ownerId: { ownerType: "artist", ownerId: artist.id } }
-    })).toBeNull();
-    expect(await prisma.activityCaseMedia.count({ where: { activityCaseId: activityCase.id } })).toBe(1);
-    expect(await prisma.$queryRawUnsafe<Array<{ total: number }>>(
-      "SELECT COUNT(*) AS total FROM schema_migrations WHERE id = ?",
-      DETAIL_PAGE_MIGRATION_ID
-    )).toEqual([{ total: 0n }]);
-    await prisma.$disconnect();
-  });
-
-  it("reports unknown owner types and missing polymorphic owners in the orphan audit", async () => {
+  it("reports unknown owner types and missing owners in the orphan audit", async () => {
     const prisma = await createDatabase("orphan-audit");
     await prisma.detailPageConfig.createMany({
       data: [
-        { ownerType: "future_owner", ownerId: 7, pageType: "rich_text", richTextHtml: "<p>未知业务</p>" },
-        { ownerType: "artist", ownerId: 999, pageType: "rich_text", richTextHtml: "<p>人员不存在</p>" }
+        { name: "未知业务详情", ownerType: "future_owner", ownerId: 7, pageType: "rich_text", richTextHtml: "<p>未知业务</p>" },
+        { name: "缺失人员详情", ownerType: "artist", ownerId: 999, pageType: "rich_text", richTextHtml: "<p>人员不存在</p>" }
       ]
     });
 
@@ -282,48 +243,24 @@ describe("legacy business detail migration", () => {
     await prisma.$disconnect();
   });
 
-  it("rolls back all configs and legacy media changes when a case has unsafe legacyMediaJson", async () => {
-    const prisma = await createDatabase("rollback");
-    await prisma.artist.create({
+  it("enforces restrictive detailPageId foreign keys after backfill", async () => {
+    const prisma = await createDatabase("restrict-delete");
+    const artist = await createArtist(prisma, 1);
+    const detail = await prisma.detailPageConfig.create({
       data: {
-        name: "应回滚人员",
-        type: "actor",
-        location: "宁波",
-        badge: "演员",
-        summary: "简介",
-        tagsJson: "[]",
-        detail: "人员详情",
-        sortOrder: 1,
-        status: "enabled"
-      }
-    });
-    const cover = await createAsset(prisma, 20, "image");
-    await prisma.activityCase.create({
-      data: {
-        title: "无法解释案例",
-        category: "活动",
-        tag: "异常",
-        coverAssetId: cover.id,
-        summary: "简介",
-        eventDate: new Date(),
-        location: "杭州",
-        detail: "案例详情",
-        legacyMediaJson: '[{"url":"unknown"}]',
-        isFeatured: false,
-        featuredSortOrder: 0,
-        sortOrder: 1,
-        status: "enabled"
+        name: "受保护详情",
+        ownerType: "artist",
+        ownerId: artist.id,
+        pageType: "rich_text",
+        richTextHtml: "<p>受保护</p>"
       }
     });
 
-    await expect(runDetailPageMigration(prisma)).rejects.toThrow(/activity_case.*无法解释案例|案例.*无法解释案例/);
-    expect(await prisma.detailPageConfig.count()).toBe(0);
-    expect(
-      await prisma.$queryRawUnsafe<Array<{ total: number }>>(
-        "SELECT COUNT(*) AS total FROM schema_migrations WHERE id = ?",
-        DETAIL_PAGE_MIGRATION_ID
-      )
-    ).toEqual([{ total: 0n }]);
+    await runDetailPageMigration(prisma);
+
+    await expect(prisma.detailPageConfig.delete({ where: { id: detail.id } })).rejects.toMatchObject({ code: "P2003" });
+    await prisma.artist.update({ where: { id: artist.id }, data: { detailPageId: null } });
+    await expect(prisma.detailPageConfig.delete({ where: { id: detail.id } })).resolves.toMatchObject({ id: detail.id });
     await prisma.$disconnect();
   });
 });

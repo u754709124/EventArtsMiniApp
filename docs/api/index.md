@@ -14,24 +14,36 @@
 
 - `GET /api/client/home`
 - `GET /api/client/announcements/:id`
+- `GET /api/client/detail-pages/:id`
 - `GET /api/client/cases`
 - `GET /api/client/cases/:id`
 - `GET /api/client/artists?type=host|singer|actor&q=&location=&tag=`（`type` 省略时默认为 `host`）
 - `GET /api/client/artists/:id`
 - `POST /api/client/track/page-view`
 
-案例详情的兼容 `media` 从公共详情配置派生；小程序以 `detailPage.blocks` 为准，不直接渲染兼容列表。
+案例详情的兼容 `media` 从独立详情页派生；小程序以公共 `/api/client/detail-pages/:id` 返回的 `blocks` 为准，不直接渲染兼容列表。
 
 ### Common detail-page response
 
-`GET /api/client/artists/:id` 和 `GET /api/client/cases/:id` 都返回同一 `detailPage` 契约：
+`GET /api/client/detail-pages/:id` 返回独立、自包含的 `DetailPageConfigDto`。业务列表、首页、人员详情和案例详情只携带 `detailPageId`/`hasDetailPage`；兼容详情接口会在有引用时附带 `detailPage`，但新小程序入口统一使用公共详情路由。
 
 ```json
 {
+  "id": 1,
+  "name": "林然个人详情",
   "type": "banner_rich_text",
   "typeLabel": "BANNER + 富文本",
   "rendererKey": "bannerRichText",
   "schemaVersion": 1,
+  "hero": {
+    "title": "林然",
+    "typeLabel": "主持人",
+    "subtitle": "温暖・专业・掌控全场",
+    "badge": "金牌主持",
+    "tags": ["10年经验", "婚礼主持"],
+    "location": "杭州",
+    "metaItems": []
+  },
   "heroSubtitle": "温暖・专业・掌控全场",
   "banners": [
     {
@@ -58,7 +70,7 @@
 }
 ```
 
-`rich_text` 使用 `rendererKey: "richText"`，并保证 `heroSubtitle: ""`、`banners: []`；它没有 BANNER DOM 或占位高度。客户端兼容 `detail` 从 `detailPage.richTextHtml` 派生。详情配置不存在返回 `DETAIL_PAGE_CONFIG_NOT_FOUND`，未知持久化类型返回 `UNKNOWN_DETAIL_PAGE_TYPE`。
+`rich_text` 使用 `rendererKey: "richText"`，并保证空 Hero、`heroSubtitle: ""`、`banners: []`；它没有 BANNER DOM 或占位高度。公共详情不存在返回 `DETAIL_PAGE_NOT_FOUND`，未知持久化类型返回 `UNKNOWN_DETAIL_PAGE_TYPE`。
 
 ### Artist client APIs
 
@@ -78,6 +90,8 @@
   "tags": ["10年经验", "婚礼主持", "高端晚宴", "控场力强"],
   "summary": "风格大气沉稳，擅长情感共鸣，深受新人喜爱，让每一场仪式都温暖动人。",
   "detail": "详情接口中从 detailPage.richTextHtml 派生的兼容字段",
+  "detailPageId": 1,
+  "hasDetailPage": true,
   "sortOrder": 1,
   "status": "enabled"
 }
@@ -123,9 +137,13 @@
 - `GET|POST|PUT|DELETE /api/admin/menu-items`
 - `GET|POST|PUT|DELETE /api/admin/cases`
 - `GET|POST|PUT|DELETE /api/admin/artists`
+- `GET /api/admin/detail-pages`
+- `GET /api/admin/detail-pages/options`
+- `GET|POST|PUT|DELETE /api/admin/detail-pages/:id`
+- `GET /api/admin/detail-pages/:id/references`
 - `POST /api/admin/detail-pages/preview`
 
-人员和案例创建请求都必须提交 `detailPage`。更新时如提交 `detailPage` 则事务性替换公共配置；旧 `detail` 和 `detailMediaAssetIds` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。
+公告、首页 BANNER、人员和案例创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。
 
 ### Detail-page admin input and preview
 
@@ -133,8 +151,17 @@
 
 ```json
 {
+  "name": "林然个人详情",
   "type": "banner_rich_text",
-  "heroSubtitle": "专业策划・精彩呈现",
+  "hero": {
+    "title": "林然",
+    "typeLabel": "主持人",
+    "subtitle": "专业策划・精彩呈现",
+    "badge": "金牌主持",
+    "tags": ["婚礼主持"],
+    "location": "杭州",
+    "metaItems": []
+  },
   "bannerAssetIds": [10, 11, 12],
   "richTextHtml": "<section class=\"ea-detail-card\"><p>内容</p></section>"
 }
@@ -142,12 +169,13 @@
 
 ```json
 {
+  "name": "普通图文详情",
   "type": "rich_text",
   "richTextHtml": "<section class=\"ea-detail-card\"><p>内容</p></section>"
 }
 ```
 
-`POST /api/admin/detail-pages/preview` body 为 `{ "detailPage": <上述输入> }`，响应为公共 `DetailPageConfigDto`。预览与保存使用同一套服务端媒体查库、HTML 清洗、URL 重写、语义空验证和 blocks parser。
+`POST /api/admin/detail-pages/preview` body 为 `{ "detailPage": <上述输入> }`，响应为公共 `DetailPageConfigDto`。`POST /api/admin/detail-pages` 与 `PUT /api/admin/detail-pages/:id` 使用同一输入。预览与保存使用同一套服务端媒体查库、HTML 清洗、URL 重写、语义空验证和 blocks parser。
 
 `banner_rich_text` 要求 trim 后非空宣传语、1–6 个唯一图片 ID 和语义非空富文本。`rich_text` 只接受 `richTextHtml`，不接受宣传语或 BANNER。HTML 中图片/视频必须提供正整数 `data-media-asset-id`；API 不信任客户端 `src`，会从 `MediaAsset.url` 重写。允许协议、HTML/CSS 白名单和迁移细节见 `docs/design/detail-page-system.md`。
 
@@ -164,18 +192,13 @@
   "badge": "金牌主持",
   "tags": ["10年经验", "婚礼主持"],
   "summary": "不超过 120 字的人员描述",
-  "detailPage": {
-    "type": "banner_rich_text",
-    "heroSubtitle": "温暖・专业・掌控全场",
-    "bannerAssetIds": [10, 11, 12],
-    "richTextHtml": "<section class=\"ea-detail-card\"><p>详情内容</p></section>"
-  },
+  "detailPageId": 1,
   "sortOrder": 1,
   "status": "enabled"
 }
 ```
 
-`name`、`location`、`badge`、`summary` 均会 trim 后校验非空；`location` 最长 30 字，`badge` 和单个标签最长 12 字，`tags` 为去空、去重后的 1 至 4 项。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。新建时 `detailPage` 必填且必须显式选择类型；`PUT /api/admin/artists/:id` 支持基础字段局部更新，提交 `detailPage` 时按同一公共契约完整校验。
+`name`、`location`、`badge`、`summary` 均会 trim 后校验非空；`location` 最长 30 字，`badge` 和单个标签最长 12 字，`tags` 为去空、去重后的 1 至 4 项。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。`detailPageId` 可为 `null`，非空时必须引用已存在详情页；`PUT /api/admin/artists/:id` 支持基础字段和 `detailPageId` 局部更新。
 
 后台人员列表和创建/更新响应都会返回安全的 `tags: string[]`，同时保留已解析为数组的兼容 `tagsJson`；服务端只通过统一的标签序列化方法写入一次 JSON，避免双重编码。
 

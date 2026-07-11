@@ -178,6 +178,10 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   box-sizing: border-box;
 }
 
+.artist-card--clickable {
+  cursor: pointer;
+}
+
 .artist-card__cover-wrap {
   position: relative;
   width: 100%;

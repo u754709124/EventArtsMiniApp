@@ -86,11 +86,14 @@ model Announcement {
   summary           String
   content           String
   displayDurationMs Int
+  detailPageId      Int?
+  detailPage        DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
   sortOrder         Int      @default(0)
   status            String   @default("enabled")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  @@index([detailPageId])
   @@map("announcements")
 }
 
@@ -101,12 +104,15 @@ model Banner {
   imageAsset       MediaAsset @relation(fields: [imageAssetId], references: [id])
   linkType         String     @default("none")
   linkTarget       String?
+  detailPageId     Int?
+  detailPage       DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
   switchDurationMs Int
   sortOrder        Int        @default(0)
   status           String     @default("enabled")
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
+  @@index([detailPageId])
   @@map("banners")
 }
 
@@ -136,11 +142,14 @@ model Artist {
   summary       String
   tagsJson      String
   detail        String
+  detailPageId  Int?
+  detailPage    DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
   sortOrder     Int         @default(0)
   status        String      @default("enabled")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  @@index([detailPageId])
   @@map("artists")
 }
 
@@ -155,6 +164,8 @@ model ActivityCase {
   eventDate         DateTime
   location          String
   detail            String
+  detailPageId      Int?
+  detailPage        DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
   legacyMediaJson   String      @default("[]") @map("mediaJson")
   media             ActivityCaseMedia[]
   isFeatured        Boolean    @default(false)
@@ -164,6 +175,7 @@ model ActivityCase {
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
+  @@index([detailPageId])
   @@map("activity_cases")
 }
 
@@ -182,19 +194,32 @@ model ActivityCaseMedia {
 
 model DetailPageConfig {
   id            Int      @id @default(autoincrement())
-  ownerType     String
-  ownerId       Int
+  name          String
+  ownerType     String?
+  ownerId       Int?
   pageType      String
+  heroTitle     String   @default("")
+  heroTypeLabel String   @default("")
   heroSubtitle  String   @default("")
+  heroBadge     String   @default("")
+  heroTagsJson  String   @default("[]")
+  heroLocation  String   @default("")
+  heroMetaJson  String   @default("[]")
   richTextHtml  String   @default("")
   schemaVersion Int      @default(1)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  banners      DetailPageBannerMedia[]
-  contentMedia DetailPageContentMedia[]
+  banners       DetailPageBannerMedia[]
+  contentMedia  DetailPageContentMedia[]
+  announcements Announcement[]
+  homeBanners   Banner[]
+  artists       Artist[]
+  activityCases ActivityCase[]
 
   @@unique([ownerType, ownerId])
+  @@index([name])
+  @@index([pageType])
   @@index([ownerType])
   @@map("detail_page_configs")
 }

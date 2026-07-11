@@ -6,7 +6,16 @@ export const detailOwnerTypeValues = ["artist", "activity_case"] as const;
 export type DetailPageType = (typeof detailPageTypeValues)[number];
 export type DetailOwnerType = (typeof detailOwnerTypeValues)[number];
 
-export type DetailPageConfigField = "heroSubtitle" | "banners" | "richText";
+export type DetailPageConfigField =
+  | "heroTitle"
+  | "heroTypeLabel"
+  | "heroSubtitle"
+  | "heroBadge"
+  | "heroTags"
+  | "heroLocation"
+  | "heroMetaItems"
+  | "banners"
+  | "richText";
 export type DetailPageRendererKey = "bannerRichText" | "richText";
 
 export type DetailPageTypeDefinition = {
@@ -34,7 +43,17 @@ export const detailPageTypeDefinitions = {
     minBannerCount: 1,
     maxBannerCount: 6,
     bannerAllowedMediaTypes: ["image"],
-    configFields: ["heroSubtitle", "banners", "richText"],
+    configFields: [
+      "heroTitle",
+      "heroTypeLabel",
+      "heroSubtitle",
+      "heroBadge",
+      "heroTags",
+      "heroLocation",
+      "heroMetaItems",
+      "banners",
+      "richText"
+    ],
     schemaVersion: 1
   },
   rich_text: {
@@ -61,12 +80,52 @@ export const DetailPageTypeSchema = z.enum(detailPageTypeValues);
 export const DetailOwnerTypeSchema = z.enum(detailOwnerTypeValues);
 
 const positiveAssetIdSchema = z.coerce.number().int().positive();
+const positiveIdSchema = z.number().int().positive();
+const detailPageNameSchema = z.string().trim().min(1, "请输入详情页名称").max(100, "详情页名称不能超过 100 个字符");
 const richTextHtmlSchema = z.string().trim().min(1, "请填写富文本详情");
+const heroTextSchema = z.string().trim().max(80);
+const heroRequiredTextSchema = z.string().trim().min(1).max(80);
+const heroTagSchema = z.string().trim().max(12);
+const heroMetaItemSchema = z
+  .object({
+    label: z.string().trim().min(1, "请输入元数据名称").max(16, "元数据名称不能超过 16 个字符"),
+    value: z.string().trim().min(1, "请输入元数据内容").max(40, "元数据内容不能超过 40 个字符")
+  })
+  .strict();
+
+export const DetailPageHeroInputSchema = z
+  .object({
+    title: heroRequiredTextSchema,
+    typeLabel: heroTextSchema.default(""),
+    subtitle: z.string().trim().min(1, "请输入 BANNER 宣传语").max(80, "BANNER 宣传语不能超过 80 个字符"),
+    badge: heroTextSchema.default(""),
+    tags: z
+      .array(heroTagSchema)
+      .default([])
+      .transform((values) => {
+        const seen = new Set<string>();
+        return values
+          .map((value) => value.trim())
+          .filter((value) => {
+            const key = value.toLocaleLowerCase("zh-CN");
+            if (!value || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .slice(0, 8);
+      }),
+    location: z.string().trim().max(30).default(""),
+    metaItems: z.array(heroMetaItemSchema).max(8, "元数据最多 8 项").default([])
+  })
+  .strict();
+
+export type DetailPageHeroInput = z.infer<typeof DetailPageHeroInputSchema>;
 
 export const BannerRichTextDetailPageInputSchema = z
   .object({
+    name: detailPageNameSchema,
     type: z.literal("banner_rich_text"),
-    heroSubtitle: z.string().trim().min(1, "请输入 BANNER 宣传语").max(80, "BANNER 宣传语不能超过 80 个字符"),
+    hero: DetailPageHeroInputSchema,
     bannerAssetIds: z
       .array(positiveAssetIdSchema)
       .min(detailPageTypeDefinitions.banner_rich_text.minBannerCount, "请至少选择一张 BANNER")
@@ -78,6 +137,7 @@ export const BannerRichTextDetailPageInputSchema = z
 
 export const RichTextDetailPageInputSchema = z
   .object({
+    name: detailPageNameSchema,
     type: z.literal("rich_text"),
     richTextHtml: richTextHtmlSchema
   })
@@ -100,6 +160,33 @@ export const DetailPageInputSchema = z.discriminatedUnion("type", detailPageInpu
 export type BannerRichTextDetailPageInput = z.infer<typeof BannerRichTextDetailPageInputSchema>;
 export type RichTextDetailPageInput = z.infer<typeof RichTextDetailPageInputSchema>;
 export type DetailPageInput = z.infer<typeof DetailPageInputSchema>;
+
+export const LegacyBannerRichTextDetailPageInputSchema = z
+  .object({
+    type: z.literal("banner_rich_text"),
+    heroSubtitle: z.string().trim().min(1, "请输入 BANNER 宣传语").max(80, "BANNER 宣传语不能超过 80 个字符"),
+    bannerAssetIds: z
+      .array(positiveAssetIdSchema)
+      .min(detailPageTypeDefinitions.banner_rich_text.minBannerCount, "请至少选择一张 BANNER")
+      .max(detailPageTypeDefinitions.banner_rich_text.maxBannerCount, "BANNER 最多选择六张")
+      .refine((ids) => new Set(ids).size === ids.length, "BANNER 资源不能重复"),
+    richTextHtml: richTextHtmlSchema
+  })
+  .strict();
+
+export const LegacyRichTextDetailPageInputSchema = z
+  .object({
+    type: z.literal("rich_text"),
+    richTextHtml: richTextHtmlSchema
+  })
+  .strict();
+
+export const LegacyDetailPageInputSchema = z.discriminatedUnion("type", [
+  LegacyBannerRichTextDetailPageInputSchema,
+  LegacyRichTextDetailPageInputSchema
+]);
+
+export type LegacyDetailPageInput = z.infer<typeof LegacyDetailPageInputSchema>;
 
 export type DetailPageBannerDto = {
   id: number;
@@ -125,15 +212,59 @@ export type DetailPageBlockDto =
     };
 
 export type DetailPageConfigDto = {
+  id: number;
+  name: string;
   type: DetailPageType;
   typeLabel: string;
   rendererKey: DetailPageRendererKey;
   schemaVersion: number;
+  hero: {
+    title: string;
+    typeLabel: string;
+    subtitle: string;
+    badge: string;
+    tags: string[];
+    location: string;
+    metaItems: Array<{
+      label: string;
+      value: string;
+    }>;
+  };
+  /** @deprecated Use hero.subtitle. */
   heroSubtitle: string;
   banners: DetailPageBannerDto[];
   richTextHtml: string;
   blocks: DetailPageBlockDto[];
+  references?: DetailPageReferenceDto[];
+  createdAt?: string;
+  updatedAt?: string;
 };
+
+export type DetailPageSummaryDto = {
+  id: number;
+  name: string;
+  type: DetailPageType;
+  typeLabel: string;
+  bannerCount: number;
+  detailMediaCount: number;
+  referenceCount: number;
+  updatedAt: string;
+};
+
+export type DetailPageOptionDto = {
+  id: number;
+  name: string;
+  type: DetailPageType;
+  typeLabel: string;
+};
+
+export type DetailPageReferenceDto = {
+  sourceType: "announcement" | "banner" | "artist" | "activity_case";
+  sourceId: number;
+  sourceName: string;
+};
+
+export const DetailPageReferenceIdSchema = positiveIdSchema.nullable();
 
 export const detailContentTemplates = {
   artistProfile: { label: "人员参考模板", ownerType: "artist" },

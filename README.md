@@ -42,7 +42,7 @@ pnpm db:push
 pnpm db:seed
 ```
 
-`db:push` 会创建公共详情配置表并执行幂等 SQLite 兼容迁移；`db:seed` 可重复运行，并按稳定 seed key 写入人员/案例的两类详情示例。旧人员 `detail`、旧案例 `detail`/`legacyMediaJson` 会迁入公共详情配置，旧列仅作为 deprecated 兼容数据保留。升级前请同时备份 SQLite 文件和 `uploads`；无法解释的非空旧媒体或缺失物理文件会中止预检，不会静默丢弃。
+`db:push` 会创建独立详情页表并执行幂等 SQLite 兼容迁移；`db:seed` 可重复运行，并按稳定 seed key 写入公告、首页 BANNER、人员和案例的已绑定/未绑定详情示例。旧 `DetailPageConfig.ownerType/ownerId` 只作为 deprecated 迁移痕迹保留，运行时由四张业务表的可空 `detailPageId` 外键引用独立详情页。升级前请同时备份 SQLite 文件和 `uploads`。
 
 默认管理员账号：
 
@@ -88,11 +88,21 @@ pnpm assets:slice:artists
 
 脚本会验证参考图尺寸，并输出固定 `690 × 480` 的人员封面资源及资源清单；种子数据会按媒体库方式注册这些资源。
 
-## 公共详情页与参考资源
+## 独立详情页管理
 
-人员和活动案例共用 `detailPage` 契约、Admin 动态表单、API 清洗/媒体关系与 Taro renderer。支持：
+详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员和案例可以共享同一详情页；被任一业务记录引用的详情页不能删除。
 
-- `banner_rich_text`：宣传语、1–6 张有序图片 BANNER 和富文本。
+小程序所有新入口统一跳转到：
+
+```text
+/pages/detail/index?id=<detailPageId>
+```
+
+`detailPageId` 为空时入口不可点击，也不会回退旧 `linkType/linkTarget` 或 owner 详情页。旧人员/案例详情路由仅作为兼容跳板。
+
+支持：
+
+- `banner_rich_text`：独立名称、Hero、1–6 张有序图片 BANNER 和富文本。
 - `rich_text`：只有富文本，没有 BANNER DOM、高度、页码或负重叠。
 
 重新生成详情参考资源：

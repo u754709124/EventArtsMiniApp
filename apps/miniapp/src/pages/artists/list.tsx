@@ -5,6 +5,7 @@ import type { ArtistListItemDto, ArtistType } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { request } from "../../services/api";
+import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import "./list.scss";
 
 type ArtistListItem = ArtistListItemDto;
@@ -62,10 +63,6 @@ function getFilterOptions(items: ArtistListItem[]): FilterOptions {
   return { locations: [...locations], tags: [...tags] };
 }
 
-function ignoreNavigationError(result: Promise<unknown> | void) {
-  if (result && typeof result.catch === "function") result.catch(() => undefined);
-}
-
 function getNavigationMetrics() {
   const fallback = { safeTop: 33, headerHeight: 44 };
   if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return fallback;
@@ -82,14 +79,15 @@ function getNavigationMetrics() {
   }
 }
 
-function openArtist(id: number) {
-  ignoreNavigationError(Taro.navigateTo({ url: `/pages/artists/detail?id=${id}` }));
-}
-
 function ArtistCard({ item, type }: { item: ArtistListItem; type: ArtistType }) {
   const tags = getTags(item).slice(0, 4);
+  const clickable = Boolean(item.detailPageId);
   return (
-    <View className="artist-card" data-testid="artist-card" onClick={() => openArtist(item.id)}>
+    <View
+      className={`artist-card ${clickable ? "artist-card--clickable" : "artist-card--static"}`}
+      data-testid="artist-card"
+      onClick={clickable ? () => navigateToDetailPage(item.detailPageId) : undefined}
+    >
       <View className="artist-card__cover-wrap">
         <AppImage
           className="artist-card__cover"

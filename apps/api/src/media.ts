@@ -82,8 +82,8 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
      FROM activity_case_media cm
      WHERE cm.mediaAssetId = ?
        AND NOT EXISTS (
-         SELECT 1 FROM detail_page_configs dpc
-         WHERE dpc.ownerType = 'activity_case' AND dpc.ownerId = cm.activityCaseId
+         SELECT 1 FROM activity_cases ac
+         WHERE ac.id = cm.activityCaseId AND ac.detailPageId IS NOT NULL
        )`,
     id
   ).then((rows) => Number(rows[0]?.count ?? 0));
@@ -165,8 +165,8 @@ const mediaReferenceSql = `
   (SELECT COUNT(*) FROM activity_case_media cm
    WHERE cm.mediaAssetId = m.id
      AND NOT EXISTS (
-       SELECT 1 FROM detail_page_configs dpc
-       WHERE dpc.ownerType = 'activity_case' AND dpc.ownerId = cm.activityCaseId
+       SELECT 1 FROM activity_cases ac
+       WHERE ac.id = cm.activityCaseId AND ac.detailPageId IS NOT NULL
      )) +
   (SELECT COUNT(*) FROM detail_page_banner_media dbm WHERE dbm.mediaAssetId = m.id) +
   (SELECT COUNT(*) FROM detail_page_content_media dcm WHERE dcm.mediaAssetId = m.id)

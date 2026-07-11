@@ -12,18 +12,21 @@ type Announcement = {
   displayDurationMs: number;
   sortOrder: number;
   status: string;
+  detailPageId: number | null;
 };
-type Banner = { id: number; status: string };
+type Banner = { id: number; status: string; detailPageId: number | null };
 type MediaAsset = { id: number; resourceName: string };
 type Menu = { id: number; text: string; status: string };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
-type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor" };
-type CaseListItem = { id: number; title: string };
+type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor"; detailPageId: number | null };
+type CaseListItem = { id: number; title: string; detailPageId: number | null };
+type LinkedArtistListItem = ArtistListItem & { detailPageId: number };
+type LinkedCaseListItem = CaseListItem & { detailPageId: number };
 type DetailFixtures = {
-  artistBanner: ArtistListItem;
-  artistRich: ArtistListItem;
-  caseBanner: CaseListItem;
-  caseRich: CaseListItem;
+  artistBanner: LinkedArtistListItem;
+  artistRich: LinkedArtistListItem;
+  caseBanner: LinkedCaseListItem;
+  caseRich: LinkedCaseListItem;
 };
 type HomeResponse = {
   site: {
@@ -75,11 +78,26 @@ async function setBannerStatus(request: APIRequestContext, status: "enabled" | "
   );
 }
 
-async function createAnnouncement(request: APIRequestContext, summary: string, sortOrder: number, displayDurationMs = 300) {
+async function createRichTextDetailPage(request: APIRequestContext, name: string, richTextHtml: string) {
+  return adminApi<{ id: number; name: string; type: string }>(request, "POST", "/api/admin/detail-pages", {
+    name,
+    type: "rich_text",
+    richTextHtml
+  });
+}
+
+async function createAnnouncement(
+  request: APIRequestContext,
+  summary: string,
+  sortOrder: number,
+  displayDurationMs = 300,
+  detailPageId: number | null = null
+) {
   return adminApi<Announcement>(request, "POST", "/api/admin/announcements", {
     summary,
     content: `${summary} 内容`,
     displayDurationMs,
+    detailPageId,
     sortOrder,
     status: "enabled"
   });
@@ -87,13 +105,12 @@ async function createAnnouncement(request: APIRequestContext, summary: string, s
 
 async function createBanner(
   request: APIRequestContext,
-  input: { title: string; imageAssetId: number; sortOrder: number; switchDurationMs: number; linkTarget?: string }
+  input: { title: string; imageAssetId: number; sortOrder: number; switchDurationMs: number; detailPageId?: number | null }
 ) {
   return adminApi<Banner>(request, "POST", "/api/admin/banners", {
     title: input.title,
     imageAssetId: input.imageAssetId,
-    linkType: input.linkTarget ? "announcement" : "none",
-    linkTarget: input.linkTarget ?? null,
+    detailPageId: input.detailPageId ?? null,
     switchDurationMs: input.switchDurationMs,
     sortOrder: input.sortOrder,
     status: "enabled"
@@ -195,21 +212,29 @@ async function resolveDetailFixtures(request: APIRequestContext): Promise<Detail
   const artistRich = artists.find((item) => item.name === "Jessica");
   const caseBanner = cases.find((item) => item.title === "浪漫粉色系户外婚礼");
   const caseRich = cases.find((item) => item.title === "企业年会歌手演出");
-  if (!artistBanner || !artistRich || !caseBanner || !caseRich) {
+  if (
+    !artistBanner?.detailPageId ||
+    !artistRich?.detailPageId ||
+    !caseBanner?.detailPageId ||
+    !caseRich?.detailPageId
+  ) {
     throw new Error("详情页 E2E seed 不完整；请先运行 pnpm db:seed");
   }
-  return { artistBanner, artistRich, caseBanner, caseRich };
+  return {
+    artistBanner: artistBanner as LinkedArtistListItem,
+    artistRich: artistRich as LinkedArtistListItem,
+    caseBanner: caseBanner as LinkedCaseListItem,
+    caseRich: caseRich as LinkedCaseListItem
+  };
 }
 
-function detailRoute(owner: "artists" | "cases", id: number) {
-  return `/#/pages/${owner}/detail?id=${id}`;
+function detailRoute(id: number) {
+  return `/#/pages/detail/index?id=${id}`;
 }
 
-async function openDetail(page: Page, owner: "artists" | "cases", id: number) {
-  await page.goto(detailRoute(owner, id));
-  await expect(
-    page.getByTestId(owner === "artists" ? "artist-detail-page" : "case-detail-page")
-  ).toBeVisible();
+async function openDetail(page: Page, id: number) {
+  await page.goto(detailRoute(id));
+  await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
   await clearDevOverlay(page);
 }
 
@@ -438,7 +463,8 @@ test("多条公告按相同时长持续自动循环切换", async ({ page, reque
 test("公告与 BANNER 支持双向手动滑动且不会误触跳转", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await setBannerStatus(request, "disabled");
-  const firstAnnouncement = await createAnnouncement(request, "E2E 手滑公告一", 700, 60_000);
+  const detail = await createRichTextDetailPage(request, `E2E 手滑详情 ${Date.now()}`, "<p>E2E 手滑详情正文</p>");
+  await createAnnouncement(request, "E2E 手滑公告一", 700, 60_000, detail.id);
   await createAnnouncement(request, "E2E 手滑公告二", 701, 60_000);
   const [firstAsset, secondAsset] = await resolveHomeBannerAssets(request);
   await createBanner(request, {
@@ -446,14 +472,14 @@ test("公告与 BANNER 支持双向手动滑动且不会误触跳转", async ({ 
     imageAssetId: firstAsset.id,
     sortOrder: 700,
     switchDurationMs: 60_000,
-    linkTarget: String(firstAnnouncement.id)
+    detailPageId: detail.id
   });
   await createBanner(request, {
     title: "E2E 手滑 BANNER 二",
     imageAssetId: secondAsset.id,
     sortOrder: 701,
     switchDurationMs: 60_000,
-    linkTarget: String(firstAnnouncement.id)
+    detailPageId: detail.id
   });
   await openHome(page);
 
@@ -480,7 +506,8 @@ test("公告与 BANNER 支持双向手动滑动且不会误触跳转", async ({ 
 test("单条公告和 BANNER 保持静止且公告点击仍可进入详情", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await setBannerStatus(request, "disabled");
-  const announcement = await createAnnouncement(request, "E2E 单条公告", 800, 400);
+  const detail = await createRichTextDetailPage(request, `E2E 单条公告详情 ${Date.now()}`, "<p>E2E 单条公告详情正文</p>");
+  await createAnnouncement(request, "E2E 单条公告", 800, 400, detail.id);
   const [bannerAsset] = await resolveHomeBannerAssets(request);
   await createBanner(request, {
     title: "E2E 单条 BANNER",
@@ -493,7 +520,7 @@ test("单条公告和 BANNER 保持静止且公告点击仍可进入详情", asy
   await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "0");
   await expect(page.getByTestId("home-banner-state")).toHaveAttribute("data-current-index", "0");
   await tap(page, page.locator(".notice__slide").first());
-  await expect(page).toHaveURL(new RegExp(`/pages/announcement/detail\\?id=${announcement.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/pages/detail/index\\?id=${detail.id}$`));
 });
 
 test("无 Banner 时显示默认图且有指示点", async ({ page, request }) => {
@@ -598,12 +625,12 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
   await expect(cards.first()).toContainText("杭州");
 
   await tap(page, cards.first());
-  await expect(page.getByTestId("artist-detail-page")).toBeVisible();
+  await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
 });
 
 test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", async ({ page, request }) => {
   const { artistBanner } = await resolveDetailFixtures(request);
-  await openDetail(page, "artists", artistBanner.id);
+  await openDetail(page, artistBanner.detailPageId);
   await waitForDetailVisuals(page);
   await expectBannerDetail(page, artistBanner.name, "主持人");
   await expect(page.getByTestId("detail-banner-image")).toHaveCount(3);
@@ -615,21 +642,21 @@ test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", a
     page.getByTestId("detail-rich-text-block").first().locator("img").first()
   ).toBeVisible();
   await expectCommonDetailQuality(page);
-  await expectDetailBackFallback(page, "category-page");
+  await expectDetailBackFallback(page, "miniapp-home");
 });
 
 test("人员单富文本详情完全移除 BANNER DOM、占高和负重叠", async ({ page, request }) => {
   const { artistRich } = await resolveDetailFixtures(request);
-  await openDetail(page, "artists", artistRich.id);
+  await openDetail(page, artistRich.detailPageId);
   await waitForDetailVisuals(page);
   await expectRichOnlyDetail(page, artistRich.name);
   await expectCommonDetailQuality(page);
-  await expectDetailBackFallback(page, "category-page");
+  await expectDetailBackFallback(page, "miniapp-home");
 });
 
 test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节点", async ({ page, request }) => {
   const { caseBanner } = await resolveDetailFixtures(request);
-  await openDetail(page, "cases", caseBanner.id);
+  await openDetail(page, caseBanner.detailPageId);
   await waitForDetailVisuals(page);
   await expectBannerDetail(page, caseBanner.title, "婚礼主持");
   await expect(page.getByTestId("detail-hero")).toContainText("杭州・西湖区");
@@ -640,29 +667,29 @@ test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节�
   await expect(video).not.toHaveAttribute("loop");
   await expect(page.getByTestId("detail-rich-text-block").locator("video")).toHaveCount(0);
   await expectCommonDetailQuality(page);
-  await expectDetailBackFallback(page, "case-list-page");
+  await expectDetailBackFallback(page, "miniapp-home");
 });
 
 test("案例单富文本详情从导航后正常起始且没有轮播残留", async ({ page, request }) => {
   const { caseRich } = await resolveDetailFixtures(request);
-  await openDetail(page, "cases", caseRich.id);
+  await openDetail(page, caseRich.detailPageId);
   await waitForDetailVisuals(page);
   await expectRichOnlyDetail(page, caseRich.title);
   await expect(
     page.getByTestId("detail-rich-text-block").first().locator("img").first()
   ).toBeVisible();
   await expectCommonDetailQuality(page);
-  await expectDetailBackFallback(page, "case-list-page");
+  await expectDetailBackFallback(page, "miniapp-home");
 });
 
 test("详情路由切换 ID 不显示上一条数据", async ({ page, request }) => {
   const { artistBanner, artistRich } = await resolveDetailFixtures(request);
-  await page.route(`**/api/client/artists/${artistBanner.id}`, async (route) => {
+  await page.route(`**/api/client/detail-pages/${artistBanner.detailPageId}`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await route.continue();
   });
-  await openDetail(page, "artists", artistBanner.id);
-  await page.goto(detailRoute("artists", artistRich.id));
+  await openDetail(page, artistBanner.detailPageId);
+  await page.goto(detailRoute(artistRich.detailPageId));
   await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
   await expect(page.getByTestId("detail-navigation")).toContainText(artistRich.name);
   await expect(page.getByText(artistBanner.name)).toHaveCount(0);
@@ -672,7 +699,7 @@ test("详情路由切换 ID 不显示上一条数据", async ({ page, request })
 test("详情接口错误展示重试并可恢复", async ({ page, request }) => {
   const { artistRich } = await resolveDetailFixtures(request);
   let failed = false;
-  await page.route(`**/api/client/artists/${artistRich.id}`, async (route) => {
+  await page.route(`**/api/client/detail-pages/${artistRich.detailPageId}`, async (route) => {
     if (!failed) {
       failed = true;
       await route.fulfill({
@@ -687,7 +714,7 @@ test("详情接口错误展示重试并可恢复", async ({ page, request }) => 
     }
     await route.continue();
   });
-  await openDetail(page, "artists", artistRich.id);
+  await openDetail(page, artistRich.detailPageId);
   await expect(page.getByTestId("detail-state-error")).toBeVisible();
   await expect(page.getByText("页面加载失败")).toBeVisible();
   await tap(page, page.getByTestId("detail-retry"));
@@ -698,13 +725,13 @@ test("详情接口错误展示重试并可恢复", async ({ page, request }) => 
 test("四种详情页视觉截图与人员详情对齐差异图", async ({ page, request }) => {
   const fixtures = await resolveDetailFixtures(request);
   const captures = [
-    ["artists", fixtures.artistBanner.id, "actual-artist-banner-rich-text.png"],
-    ["artists", fixtures.artistRich.id, "actual-artist-rich-text.png"],
-    ["cases", fixtures.caseBanner.id, "actual-case-banner-rich-text.png"],
-    ["cases", fixtures.caseRich.id, "actual-case-rich-text.png"]
+    [fixtures.artistBanner.detailPageId, "actual-artist-banner-rich-text.png"],
+    [fixtures.artistRich.detailPageId, "actual-artist-rich-text.png"],
+    [fixtures.caseBanner.detailPageId, "actual-case-banner-rich-text.png"],
+    [fixtures.caseRich.detailPageId, "actual-case-rich-text.png"]
   ] as const;
-  for (const [owner, id, filename] of captures) {
-    await openDetail(page, owner, id);
+  for (const [id, filename] of captures) {
+    await openDetail(page, id);
     await waitForDetailVisuals(page);
     await page.screenshot({
       path: `docs/design/${filename}`,
@@ -762,7 +789,7 @@ test("精选案例展示并可进入详情页", async ({ page }) => {
   await expect(page.getByTestId("home-featured-cases")).toBeVisible();
   await expect(page.getByTestId("home-case-card").first()).toBeVisible();
   await tap(page, page.getByTestId("home-case-card").first());
-  await expect(page.getByTestId("case-detail-page")).toBeVisible();
+  await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
 });
 
 test("首页接口失败展示异常页，重新加载可恢复", async ({ page }) => {

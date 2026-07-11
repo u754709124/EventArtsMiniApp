@@ -4,15 +4,60 @@ import { adminApi, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillCon
 
 test.describe.configure({ mode: "serial" });
 
+type DetailPageSummary = { id: number; name: string; type: string; typeLabel: string; referenceCount: number };
+
 async function createUniqueLibraryUploadPng() {
+  const seed = Date.now();
   return sharp({
     create: {
       width: 2,
       height: 2,
       channels: 4,
-      background: { r: 122, g: 52, b: 18, alpha: 1 }
+      background: {
+        r: seed % 251,
+        g: Math.floor(seed / 3) % 251,
+        b: Math.floor(seed / 7) % 251,
+        alpha: 1
+      }
     }
   }).png().toBuffer();
+}
+
+async function deleteDetailPagesByName(request: Parameters<typeof adminApi>[0], name: string) {
+  const existing = await adminApi<{ items: DetailPageSummary[] }>(
+    request,
+    "GET",
+    `/api/admin/detail-pages?q=${encodeURIComponent(name)}&pageSize=100`
+  );
+  for (const detail of existing.items.filter((item) => item.name === name && item.referenceCount === 0)) {
+    await adminApi(request, "DELETE", `/api/admin/detail-pages/${detail.id}`);
+  }
+}
+
+async function findDetailPageByName(request: Parameters<typeof adminApi>[0], name: string) {
+  const data = await adminApi<{ items: DetailPageSummary[] }>(
+    request,
+    "GET",
+    `/api/admin/detail-pages?q=${encodeURIComponent(name)}&pageSize=100`
+  );
+  return data.items.find((item) => item.name === name);
+}
+
+async function createRichTextDetailPage(request: Parameters<typeof adminApi>[0], name: string, richTextHtml: string) {
+  await deleteDetailPagesByName(request, name);
+  return adminApi<{ id: number; name: string; type: string }>(request, "POST", "/api/admin/detail-pages", {
+    name,
+    type: "rich_text",
+    richTextHtml
+  });
+}
+
+async function selectDetailPageReference(page: Parameters<typeof selectOption>[0], name: string) {
+  await page.getByTestId("detail-page-reference-select").click();
+  await page.keyboard.type(name);
+  const option = visibleSelectOption(page, name);
+  await expect(option).toBeVisible();
+  await option.click();
 }
 
 test("登录页展示", async ({ page }) => {
@@ -76,7 +121,7 @@ test("新增 Banner", async ({ page, request }) => {
   await expect(page.getByTestId("banner-image-select-preview").locator("img")).toHaveCSS("object-fit", "contain");
   await page.getByTestId("banner-image-select-preview").hover();
   await expect(page.getByText("banner-default.png").last()).toBeVisible();
-  await selectOption(page, "banner-link-type", "none");
+  await expect(page.getByTestId("detail-page-reference-select")).toBeVisible();
   await fillNumber(page, "banner-switch-duration", 1500);
   await fillNumber(page, "sort-order", 77);
   await selectOption(page, "status-select", "启用");
@@ -114,7 +159,7 @@ test("新增菜单项并验证五种类型和动态配置", async ({ page }) => 
   await expect(page.getByRole("row", { name: /E2E 联系我们/ })).toBeVisible();
 });
 
-test("人员管理保留列表字段并要求主动选择详情页类型", async ({ page }) => {
+test("人员管理保留列表字段并只选择详情页引用", async ({ page }) => {
   await loginAdminUi(page);
   await page.getByTestId("sidebar-artists").click();
   await page.getByTestId("artists-create").click();
@@ -127,34 +172,26 @@ test("人员管理保留列表字段并要求主动选择详情页类型", async
   await expect(page.getByTestId("artist-tags")).toBeVisible();
   await expect(page.getByTestId("artist-summary")).toBeVisible();
   await expect(page.getByTestId("artist-detail")).toHaveCount(0);
-  await expect(page.getByTestId("detail-page-empty-hint")).toContainText("请先选择详情页类型");
+  await expect(page.getByTestId("detail-page-reference-select")).toBeVisible();
+  await expect(page.getByTestId("detail-page-empty-hint")).toHaveCount(0);
+  await expect(page.getByTestId("detail-page-type")).toHaveCount(0);
   await expect(page.getByTestId("detail-rich-text-editor")).toHaveCount(0);
 });
 
-test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换为单富文本", async ({ page, request }) => {
+test("详情页管理可创建 BANNER 富文本并被人员引用", async ({ page, request }) => {
   const existingArtists = await adminApi<{ items: Array<{ id: number; name: string }> }>(request, "GET", "/api/admin/artists?pageSize=100");
   for (const artist of existingArtists.items.filter((item) => item.name === "E2E 共享详情演员")) {
     await adminApi(request, "DELETE", `/api/admin/artists/${artist.id}`);
   }
+  await deleteDetailPagesByName(request, "E2E 共享详情演员页");
   await loginAdminUi(page);
-  await page.getByTestId("sidebar-artists").click();
-  await page.getByTestId("artists-create").click();
-  await page.getByTestId("artist-name").fill("E2E 共享详情演员");
-  await selectOption(page, "artist-type", "演员");
-  await chooseMediaFromLibrary(page, "artist-cover-select", /artist-cover-01\.png/);
-  await page.getByTestId("artist-location").fill("杭州 E2E");
-  await page.getByTestId("artist-badge").fill("测试主持");
-  const tagsInput = page.getByTestId("artist-tags").locator("input");
-  for (const [index, tag] of ["标签一", "标签二", "标签三"].entries()) {
-    await tagsInput.fill(tag);
-    await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content", { hasText: tag }).click();
-    await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(index + 1);
-  }
-  await page.getByTestId("artist-summary").fill("后台自动化验证列表封面、地点、左上标签和四个下方标签。");
-  await fillNumber(page, "sort-order", 0);
-  await selectOption(page, "status-select", "启用");
 
+  await page.getByTestId("sidebar-detail-pages").click();
+  await page.getByTestId("detail-page-create").click();
+  await page.getByTestId("detail-page-name").fill("E2E 共享详情演员页");
   await selectOption(page, "detail-page-type", "BANNER + 富文本");
+  await page.getByTestId("detail-hero-title").fill("E2E 共享详情演员");
+  await page.getByTestId("detail-hero-type-label").fill("演员");
   await page.getByTestId("detail-hero-subtitle").fill("E2E 专业舞台表达");
   await chooseDetailMediaFromLibrary(page, page.getByTestId("detail-banner-add"), "banner-linran-balanced.png");
   await chooseDetailMediaFromLibrary(page, page.getByTestId("detail-banner-add"), "banner-linran-close.png");
@@ -178,24 +215,47 @@ test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换
   await expect(editor.locator("img[data-media-asset-id]")).toHaveCount(1);
   await expect(editor.locator("video[data-media-asset-id]")).toHaveCount(1);
 
-  await page.getByTestId("detail-page-preview").click();
-  const preview = page.getByRole("dialog", { name: "移动端安全预览" });
-  await expect(preview).toBeVisible();
-  await expect(preview).toContainText("E2E 共享详情演员");
-  await expect(preview.locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "contain");
-  await expect(preview.locator("video")).toHaveCount(1);
-  await preview.getByRole("button", { name: "关闭预览" }).click();
+  await expect(page.getByTestId("detail-designer-live-preview")).toContainText("E2E 共享详情演员");
+  await expect(page.getByTestId("detail-designer-live-preview").locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "contain");
+  await expect(page.getByTestId("detail-designer-live-preview").locator("video")).toHaveCount(1);
 
+  await page.getByTestId("detail-designer-save").click();
+  await waitForToast(page, "保存成功");
+
+  const detail = await findDetailPageByName(request, "E2E 共享详情演员页");
+  expect(detail?.type).toBe("banner_rich_text");
+  if (!detail) throw new Error("新建详情页未出现在后台列表接口");
+
+  const savedDetail = await adminApi<{ banners: Array<{ assetId: number }>; richTextHtml: string }>(request, "GET", `/api/admin/detail-pages/${detail.id}`);
+  expect(savedDetail.banners.map((banner) => banner.assetId)).toEqual([balanced.id, wide.id, close.id]);
+  expect(savedDetail.richTextHtml).toContain("data-media-asset-id");
+
+  await page.getByTestId("sidebar-artists").click();
+  await page.getByTestId("artists-create").click();
+  await page.getByTestId("artist-name").fill("E2E 共享详情演员");
+  await selectOption(page, "artist-type", "演员");
+  await chooseMediaFromLibrary(page, "artist-cover-select", /artist-cover-01\.png/);
+  await page.getByTestId("artist-location").fill("杭州 E2E");
+  await page.getByTestId("artist-badge").fill("测试主持");
+  const tagsInput = page.getByTestId("artist-tags").locator("input");
+  for (const [index, tag] of ["标签一", "标签二", "标签三"].entries()) {
+    await tagsInput.fill(tag);
+    await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content", { hasText: tag }).click();
+    await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(index + 1);
+  }
+  await page.getByTestId("artist-summary").fill("后台自动化验证列表封面、地点、左上标签和四个下方标签。");
+  await fillNumber(page, "sort-order", 0);
+  await selectOption(page, "status-select", "启用");
+  await selectDetailPageReference(page, "E2E 共享详情演员页");
   await page.getByTestId("artists-save").click();
   await waitForToast(page, "保存成功");
 
-  const record = await adminApi<{ items: Array<{ id: number; name: string; location: string; badge: string; tags: string[]; tagsJson: string[]; detailPage: { type: string; banners: Array<{ assetId: number }>; richTextHtml: string } }> }>(request, "GET", "/api/admin/artists?pageSize=100");
+  const record = await adminApi<{ items: Array<{ id: number; name: string; location: string; badge: string; tags: string[]; tagsJson: string[]; detailPageId: number | null; detailPageType: string | null; detailPageSummary: { id: number; name: string; type: string } | null }> }>(request, "GET", "/api/admin/artists?pageSize=100");
   const created = record.items.find((item) => item.name === "E2E 共享详情演员");
-  expect(created).toMatchObject({ location: "杭州 E2E", badge: "测试主持", tags: ["标签一", "标签二", "标签三"] });
+  expect(created).toMatchObject({ location: "杭州 E2E", badge: "测试主持", tags: ["标签一", "标签二", "标签三"], detailPageId: detail.id });
   expect(created?.tagsJson).toEqual(["标签一", "标签二", "标签三"]);
-  expect(created?.detailPage.type).toBe("banner_rich_text");
-  expect(created?.detailPage.banners.map((banner) => banner.assetId)).toEqual([balanced.id, wide.id, close.id]);
-  expect(created?.detailPage.richTextHtml).toContain("data-media-asset-id");
+  expect(created?.detailPageType).toBe("banner_rich_text");
+  expect(created?.detailPageSummary).toMatchObject({ id: detail.id, name: "E2E 共享详情演员页", type: "banner_rich_text" });
   if (!created) throw new Error("新建人员未出现在后台列表接口");
 
   const row = page.getByTestId(`artists-row-${created.id}`);
@@ -205,34 +265,20 @@ test("人员 BANNER 富文本可排序、插入媒体、预览、回填并切换
   await expect(row.locator("img.artist-cover-thumb")).toHaveCSS("object-fit", "contain");
   await row.getByTestId("artists-edit").click();
   await expect(page.getByTestId("artist-tags").locator(".ant-select-selection-item")).toHaveCount(3);
-  await expect(page.getByTestId(`detail-banner-order-${balanced.id}`)).toHaveText("第 1 张");
-  await expect(page.getByTestId(`detail-banner-order-${wide.id}`)).toHaveText("第 2 张");
-  await expect(page.getByRole("textbox", { name: "详情页富文本内容" }).locator("video[data-media-asset-id]")).toHaveCount(1);
-
-  await selectOption(page, "detail-page-type", "单富文本");
-  const switchDialog = page.getByRole("dialog", { name: "切换为单富文本？" });
-  await expect(switchDialog).toBeVisible();
-  await switchDialog.getByRole("button", { name: "取消" }).click();
-  await expect(page.getByTestId("detail-banner-field")).toBeVisible();
-  await selectOption(page, "detail-page-type", "单富文本");
-  await page.getByRole("dialog", { name: "切换为单富文本？" }).getByRole("button", { name: "确认切换" }).click();
-  await expect(page.getByTestId("detail-banner-field")).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "详情页富文本内容" })).toContainText("E2E 人员详情正文");
+  await expect(page.getByTestId("detail-page-reference-select")).toContainText("E2E 共享详情演员页");
   await page.getByTestId("artists-save").click();
   await waitForToast(page, "保存成功");
 
-  const switched = await adminApi<{ items: Array<{ id: number; detailPage: { type: string; banners: unknown[]; richTextHtml: string } }> }>(request, "GET", "/api/admin/artists?pageSize=100");
-  const switchedArtist = switched.items.find((item) => item.id === created.id);
-  expect(switchedArtist?.detailPage.type).toBe("rich_text");
-  expect(switchedArtist?.detailPage.banners).toEqual([]);
-  expect(switchedArtist?.detailPage.richTextHtml).toContain("E2E 人员详情正文");
+  const referenceCount = await findDetailPageByName(request, "E2E 共享详情演员页");
+  expect(referenceCount?.referenceCount).toBeGreaterThanOrEqual(1);
 });
 
-test("案例单富文本回填后切换 BANNER，展示中文校验并成功保存", async ({ page, request }) => {
+test("案例表单可引用单富文本详情页并保留业务字段", async ({ page, request }) => {
   const existingCases = await adminApi<{ items: Array<{ id: number; title: string }> }>(request, "GET", "/api/admin/cases?pageSize=100");
   for (const caseItem of existingCases.items.filter((item) => item.title === "E2E 共享详情案例")) {
     await adminApi(request, "DELETE", `/api/admin/cases/${caseItem.id}`);
   }
+  const detail = await createRichTextDetailPage(request, "E2E 共享详情案例页", "<p>E2E 案例详情正文</p>");
   await loginAdminUi(page);
   await page.getByTestId("sidebar-cases").click();
   await page.getByTestId("cases-create").click();
@@ -248,43 +294,30 @@ test("案例单富文本回填后切换 BANNER，展示中文校验并成功保�
   await fillNumber(page, "case-featured-sort-order", 66);
   await fillNumber(page, "sort-order", 66);
   await selectOption(page, "status-select", "启用");
-  await expect(page.getByTestId("detail-page-empty-hint")).toBeVisible();
-  await page.getByTestId("cases-save").click();
-  await expect(page.getByText("请选择详情页类型").last()).toBeVisible();
-
-  await selectOption(page, "detail-page-type", "单富文本");
-  await expect(page.getByTestId("detail-banner-field")).toHaveCount(0);
-  const editor = page.getByRole("textbox", { name: "详情页富文本内容" });
-  await editor.fill("E2E 案例详情正文");
-  await chooseDetailMediaFromLibrary(page, page.getByRole("button", { name: "插入图片" }), "case-brand-launch.png");
-  await chooseDetailMediaFromLibrary(page, page.getByRole("button", { name: "插入视频" }), "detail-case-demo.mp4");
+  await expect(page.getByTestId("detail-page-reference-select")).toBeVisible();
+  await selectDetailPageReference(page, "E2E 共享详情案例页");
   await page.getByTestId("cases-save").click();
   await waitForToast(page, "保存成功");
 
-  const cases = await adminApi<{ items: Array<{ id: number; title: string; detailPage: { type: string; banners: Array<{ assetId: number }>; richTextHtml: string } }> }>(request, "GET", "/api/admin/cases?pageSize=100");
+  const cases = await adminApi<{ items: Array<{ id: number; title: string; detailPageId: number | null; detailPageType: string | null; detailPageSummary: { id: number; name: string; type: string } | null }> }>(request, "GET", "/api/admin/cases?pageSize=100");
   const created = cases.items.find((item) => item.title === "E2E 共享详情案例");
-  expect(created?.detailPage.type).toBe("rich_text");
-  expect(created?.detailPage.banners).toEqual([]);
-  expect(created?.detailPage.richTextHtml).toContain("data-media-asset-id");
+  expect(created?.detailPageId).toBe(detail.id);
+  expect(created?.detailPageType).toBe("rich_text");
+  expect(created?.detailPageSummary).toMatchObject({ id: detail.id, name: "E2E 共享详情案例页", type: "rich_text" });
   if (!created) throw new Error("新建案例未出现在后台列表接口");
 
   const row = page.getByTestId(`cases-row-${created.id}`);
   await expect(row).toContainText("单富文本");
   await row.getByTestId("cases-edit").click();
-  await expect(page.getByRole("textbox", { name: "详情页富文本内容" })).toContainText("E2E 案例详情正文");
-  await selectOption(page, "detail-page-type", "BANNER + 富文本");
-  await page.getByTestId("detail-hero-subtitle").fill("E2E 案例 BANNER 宣传语");
-  await page.getByTestId("cases-save").click();
-  await expect(page.getByText("请至少选择 1 张详情页 BANNER").last()).toBeVisible();
-  await expect(page.getByTestId("cases-drawer")).toBeVisible();
-
-  await chooseDetailMediaFromLibrary(page, page.getByTestId("detail-banner-add"), "banner-linran-wide.png");
+  await expect(page.getByTestId("detail-page-reference-select")).toContainText("E2E 共享详情案例页");
+  await page.getByTestId("detail-page-reference-select").hover();
+  await page.getByTestId("detail-page-reference-select").locator(".ant-select-clear").click();
   await page.getByTestId("cases-save").click();
   await waitForToast(page, "保存成功");
-  const updatedCases = await adminApi<{ items: Array<{ id: number; detailPage: { type: string; banners: Array<{ assetId: number }> } }> }>(request, "GET", "/api/admin/cases?pageSize=100");
+  const updatedCases = await adminApi<{ items: Array<{ id: number; detailPageId: number | null; detailPageSummary: unknown | null }> }>(request, "GET", "/api/admin/cases?pageSize=100");
   const updated = updatedCases.items.find((item) => item.id === created.id);
-  expect(updated?.detailPage.type).toBe("banner_rich_text");
-  expect(updated?.detailPage.banners).toHaveLength(1);
+  expect(updated?.detailPageId).toBeNull();
+  expect(updated?.detailPageSummary).toBeNull();
 });
 
 test("表单本地上传在客户端拦截错误尺寸，引用资源不可删除", async ({ page, request }) => {

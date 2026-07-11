@@ -1,0 +1,130 @@
+.detail-designer {
+  display: grid;
+  grid-template-columns: minmax(360px, 44%) minmax(480px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-designer__preview {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  justify-content: center;
+  min-height: 640px;
+  padding: 18px;
+  border: 1px solid #eadfd3;
+  border-radius: 8px;
+  background: #f7f2ec;
+}
+
+.detail-designer__panel {
+  min-width: 0;
+}
+
+.detail-designer__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin: 0 -24px 24px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #efe5dc;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.detail-designer__toolbar span {
+  color: #7a6d61;
+  text-align: right;
+}
+
+.detail-live-preview-shell {
+  position: relative;
+  width: 375px;
+  max-width: 100%;
+  min-height: 620px;
+}
+
+.detail-live-preview-shell .detail-mobile-preview {
+  min-height: 620px;
+  box-shadow: 0 14px 38px rgba(42, 31, 22, 0.16);
+}
+
+.detail-live-preview-empty,
+.detail-live-preview-error {
+  display: grid;
+  place-items: center;
+  min-height: 620px;
+  padding: 24px;
+  border: 1px dashed #d8c9b9;
+  border-radius: 18px;
+  color: #71675c;
+  background: #fffdfa;
+  text-align: center;
+}
+
+.detail-live-preview-error {
+  align-content: center;
+  gap: 10px;
+  color: #9a3412;
+}
+
+.detail-live-preview-loading {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 20px rgba(36, 26, 18, 0.12);
+}
+
+.detail-meta-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.detail-meta-list > label {
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.detail-meta-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.5fr) auto;
+  gap: 8px;
+}
+
+.detail-references {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #efe5dc;
+}
+
+.detail-references h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.detail-page-list-filters {
+  margin-bottom: 16px;
+}
+
+.detail-page-name-link {
+  padding: 0;
+}
+
+@media (max-width: 1080px) {
+  .detail-designer {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-designer__preview {
+    position: static;
+  }
+}

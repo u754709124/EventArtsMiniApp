@@ -6,10 +6,16 @@ import {
   type DetailPageInput,
   type DetailPageType
 } from "@event-arts/shared";
-import type { DetailPageFormValue, DetailTemplateAsset } from "./types";
+import type { DetailPageFormValue, DetailTemplateAsset, StandaloneDetailPageFormValue } from "./types";
 
 export const detailFormFieldNameByConfigField = {
+  heroTitle: "hero",
+  heroTypeLabel: "hero",
   heroSubtitle: "heroSubtitle",
+  heroBadge: "hero",
+  heroTags: "hero",
+  heroLocation: "hero",
+  heroMetaItems: "hero",
   banners: "bannerAssetIds",
   richText: "richTextHtml"
 } as const satisfies Record<DetailPageConfigField, keyof DetailPageFormValue>;
@@ -18,9 +24,27 @@ export function detailPageConfigDtoToFormValue(dto: DetailPageConfigDto): Detail
   if (dto.type === "rich_text") {
     return { type: "rich_text", richTextHtml: dto.richTextHtml };
   }
+  const hero = dto.hero ?? {
+    title: "",
+    typeLabel: "",
+    subtitle: dto.heroSubtitle,
+    badge: "",
+    tags: [],
+    location: "",
+    metaItems: []
+  };
   return {
     type: "banner_rich_text",
-    heroSubtitle: dto.heroSubtitle,
+    hero: {
+      title: hero.title,
+      typeLabel: hero.typeLabel,
+      subtitle: hero.subtitle,
+      badge: hero.badge,
+      tags: hero.tags,
+      location: hero.location,
+      metaItems: hero.metaItems
+    },
+    heroSubtitle: hero.subtitle || dto.heroSubtitle,
     bannerAssetIds: [...dto.banners]
       .sort((left, right) => left.sortOrder - right.sortOrder)
       .map((banner) => banner.assetId),
@@ -35,12 +59,60 @@ export function normalizeDetailPageFormValue(value: unknown): DetailPageInput {
     throw new Error("请先选择详情页类型");
   }
   const formValue = value as DetailPageFormValue;
-  const visibleValue: Record<string, unknown> = { type };
-  for (const configField of detailPageTypeDefinitions[type].configFields) {
-    const formField = detailFormFieldNameByConfigField[configField];
-    visibleValue[formField] = formValue[formField];
-  }
+  const visibleValue: Record<string, unknown> = type === "banner_rich_text"
+    ? {
+        type,
+        name: "兼容详情页",
+        hero: {
+          title: formValue.hero?.title ?? "",
+          typeLabel: formValue.hero?.typeLabel ?? "",
+          subtitle: formValue.hero?.subtitle ?? formValue.heroSubtitle ?? "",
+          badge: formValue.hero?.badge ?? "",
+          tags: formValue.hero?.tags ?? [],
+          location: formValue.hero?.location ?? "",
+          metaItems: formValue.hero?.metaItems ?? []
+        },
+        bannerAssetIds: formValue.bannerAssetIds,
+        richTextHtml: formValue.richTextHtml
+      }
+    : { type, name: "兼容详情页", richTextHtml: formValue.richTextHtml };
   return detailPageInputSchemas[type].parse(visibleValue) as DetailPageInput;
+}
+
+export function detailPageDtoToStandaloneFormValue(dto: DetailPageConfigDto): StandaloneDetailPageFormValue {
+  return {
+    name: dto.name,
+    detailPage: detailPageConfigDtoToFormValue(dto)
+  };
+}
+
+export function normalizeStandaloneDetailPageFormValue(values: StandaloneDetailPageFormValue): DetailPageInput {
+  if (!values.detailPage || typeof values.detailPage !== "object") throw new Error("请先选择详情页类型");
+  const type = values.detailPage.type;
+  if (type !== "banner_rich_text" && type !== "rich_text") throw new Error("请先选择详情页类型");
+  const name = typeof values.name === "string" ? values.name.trim() : "";
+  if (type === "rich_text") {
+    return detailPageInputSchemas.rich_text.parse({
+      name,
+      type,
+      richTextHtml: values.detailPage.richTextHtml
+    }) as DetailPageInput;
+  }
+  return detailPageInputSchemas.banner_rich_text.parse({
+    name,
+    type,
+    hero: {
+      title: values.detailPage.hero?.title,
+      typeLabel: values.detailPage.hero?.typeLabel ?? "",
+      subtitle: values.detailPage.hero?.subtitle ?? values.detailPage.heroSubtitle,
+      badge: values.detailPage.hero?.badge ?? "",
+      tags: values.detailPage.hero?.tags ?? [],
+      location: values.detailPage.hero?.location ?? "",
+      metaItems: values.detailPage.hero?.metaItems ?? []
+    },
+    bannerAssetIds: values.detailPage.bannerAssetIds,
+    richTextHtml: values.detailPage.richTextHtml
+  }) as DetailPageInput;
 }
 
 export function isMeaningfulRichText(value: unknown) {
@@ -86,11 +158,19 @@ export function hydrateTemplateMediaSources(html: string, assets: readonly Detai
 }
 
 export function detailFieldPaths(type: DetailPageType) {
+  const fieldPaths = {
+    heroTitle: ["detailPage", "hero", "title"],
+    heroTypeLabel: ["detailPage", "hero", "typeLabel"],
+    heroSubtitle: ["detailPage", "hero", "subtitle"],
+    heroBadge: ["detailPage", "hero", "badge"],
+    heroTags: ["detailPage", "hero", "tags"],
+    heroLocation: ["detailPage", "hero", "location"],
+    heroMetaItems: ["detailPage", "hero", "metaItems"],
+    banners: ["detailPage", "bannerAssetIds"],
+    richText: ["detailPage", "richTextHtml"]
+  } as const satisfies Record<DetailPageConfigField, readonly string[]>;
   return [
     ["detailPage", "type"],
-    ...detailPageTypeDefinitions[type].configFields.map((configField) => [
-      "detailPage",
-      detailFormFieldNameByConfigField[configField]
-    ])
+    ...detailPageTypeDefinitions[type].configFields.map((field) => [...fieldPaths[field]])
   ];
 }

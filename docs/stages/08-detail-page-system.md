@@ -1,8 +1,18 @@
-# Stage 08 — 通用详情页系统
+# Stage 08 — 独立详情页统一管理
 
 ## 阶段目标
 
-为人员与案例建立公共详情配置、服务端安全富文本、统一后台表单和 Taro 渲染器，并保留 SQLite 历史数据兼容能力。
+将详情页从人员/案例 owner-bound 配置升级为独立、自包含、可复用、可统一管理的内容实体。公告、首页 BANNER、人员和案例通过可空 `detailPageId` 引用详情页；小程序统一跳转 `/pages/detail/index?id=<detailPageId>`。
+
+## 2026-07-11 刷新目标
+
+- 新增 `docs/plans/08-standalone-detail-page-management-plan.md`，由 planner 重新生成长期目标和验收基线。
+- `DetailPageConfig` 保留物理表和媒体关系，新增名称与完整 Hero 字段；`ownerType/ownerId` 改为 nullable deprecated。
+- `announcements`、`banners`、`artists`、`activity_cases` 新增可空、索引、Restrict 的 `detailPageId` 外键。
+- 后台新增“详情页管理”列表和设计器；四类业务表单使用统一 `DetailPageReferenceField`，不再嵌入完整详情配置。
+- API 新增后台详情页 CRUD/options/references/preview 和客户端 `GET /api/client/detail-pages/:id`。
+- 小程序新增公共 `pages/detail/index`，首页公告、BANNER、人员卡片、案例卡片、精选案例全部用统一跳转 helper；未绑定记录不可点击。
+- 旧人员/案例详情路由改为兼容跳板：有 `detailPageId` 则 redirect 到公共详情页，无引用显示“暂无详情”。
 
 ## 当前基线
 
@@ -49,8 +59,8 @@
 - `DetailPageTypeSelect`、`DetailPageConfigFields` 和 `DetailPagePreview` 已提交为 `92cd5eb`；未选类型时仅挂载类型选择和空提示，提交被必填校验阻止。
 - 动态字段完全由 shared registry 驱动；BANNER→单富文本有确认/取消路径，确认只改表单草稿，保存后由服务端清理关系；单富文本→BANNER 保留 HTML 并要求宣传语和 BANNER。
 - 参考模板在覆盖已有富文本前确认，并先按真实选中媒体 ID 拉取 `MediaAsset` 后回填 canonical URL，不使用临时路径。
-- 移动端预览提交未保存的 nested `detailPage` 到 `/api/admin/detail-pages/preview`，以服务端清洗后的 DTO 渲染 375px 预览，关闭/重试不修改表单草稿。
-- 人员和案例表单已在 `1c309d5` 接入公共组件，保留基础字段，删除旧 `detail`/`detailMediaAssetIds` 新表单来源，列表展示详情类型和摘要；保存 payload 只包含规范化 nested `detailPage`。
+- 独立详情页设计器提交未保存的详情草稿到 `/api/admin/detail-pages/preview`，以服务端清洗后的 DTO 渲染 375px 预览，关闭/重试不修改表单草稿。
+- 人员和案例表单保留基础字段，删除旧 `detail`/`detailMediaAssetIds` 新表单来源，改为使用统一详情页选择控件；保存 payload 只包含 `detailPageId` 引用。
 - `tests/e2e/admin.spec.ts` 覆盖显式选择、BANNER 排序、图片/视频插入、预览、回填、双向切换和中文校验；最终外部 Playwright run 已通过，沙箱内 `tsx` IPC 限制已记录为环境例外。
 
 ## 已完成：Taro 公共详情 renderer
@@ -80,18 +90,25 @@
 
 ## 当前验证证据
 
+- 2026-07-11 最终完成审计基线：
+  - `git branch --show-current`：`codex/phase-one-delivery`。
+  - `git rev-parse HEAD`：`e86c9d8574b5e953bdbfbdced6c04705e754d5c4`。
+  - `git log -1 --oneline`：`e86c9d8 fix(ui): repair carousels and image previews`。
+  - `git status --short --branch`：工作区包含本阶段修改和既有 `AGENTS.md` 本地修改；未执行 stage/commit。
+- `pnpm release:check`：2026-07-11 在沙箱外真实执行通过；串行完成 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter api build`、`pnpm --filter admin build`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp`。
+- `pnpm test`：通过；shared 2 files / 22 tests，miniapp 1 file / 13 tests，admin 9 files / 36 tests，api 9 files / 81 tests。
+- `pnpm e2e`：通过；37/37 Playwright tests passed，其中 admin 12/12，miniapp-h5 25/25。E2E 覆盖独立详情页设计器、四类业务引用、公告/BANNER/人员/案例统一跳转、未绑定不跳转、旧路由兼容、公共详情 renderer、图片/视频、错误重试和视觉截图。
+- `pnpm --filter api build`：通过，Prisma generate + `tsc --noEmit`。
+- `pnpm --filter admin build`：通过，`tsc --noEmit && vite build`。
+- `pnpm --filter miniapp build:h5`：通过。
+- `pnpm build:weapp`：通过。
+- `git diff --check`：通过。
+- 端口清理确认：最终审计后 `3001`、`5173`、`10086` 均无监听进程。
 - `pnpm install`：Already up to date，pnpm `11.3.0`，无 lockfile 变更。
 - `pnpm assets:slice:artist-detail`：连续运行两次，均生成 26 个 deterministic artist detail assets；两次 SHA-256 清单 `diff` 无输出。
 - `pnpm db:push`：沙箱内因 `tsx` IPC pipe `listen EPERM` 失败；按权限规则在沙箱外重跑通过，输出 `SQLite schema ready`。
 - `pnpm db:seed`：沙箱内因 `tsx` IPC pipe `listen EPERM` 失败；按权限规则在沙箱外重跑通过，输出 `Seed complete: admin/admin123456`。
 - `pnpm lint`：通过。
-- `pnpm test`：通过；shared 2 files / 22 tests，miniapp 1 file / 13 tests，admin 9 files / 36 tests，api 9 files / 83 tests。
-- `pnpm e2e`：通过；35/35 Playwright tests passed，其中 admin 12/12，miniapp-h5 23/23。
-- `pnpm --filter api build`：通过，Prisma generate + `tsc --noEmit`。
-- `pnpm --filter admin build`：通过，已无 Vite 大 chunk warning。
-- `pnpm --filter miniapp build:h5`：通过，已无 Webpack asset/entrypoint size warnings。
-- `pnpm build:weapp`：通过，已无大图 size warning 与 no async chunks warning。
-- `pnpm release:check`：通过；串行完成 lint、test、E2E 35/35、API build、Admin build、H5 build、WeApp build。
 - focused admin E2E：`pnpm e2e --project=admin --grep "人员 BANNER 富文本"`、`pnpm e2e --project=admin --grep "表单本地上传"`、`pnpm e2e --project=admin --grep "资源库上传"` 均通过。
 - focused miniapp E2E：`pnpm e2e --project=miniapp-h5 --grep "人员 BANNER 富文本详情"` 与 `pnpm e2e --project=miniapp-h5 --grep "人员单富文本详情"` 均通过。
 - focused admin unit：`pnpm --filter admin exec vitest run src/detail-pages/RichTextEditorField.test.tsx src/detail-pages/DetailPageConfigFields.test.tsx` 2 files / 15 tests passed。
@@ -121,7 +138,7 @@
 
 ## 待完成
 
-- 无代码/验证待完成项；最终回复需按源规格第 44 节输出 26 段结构化实施报告。
+- 无代码、迁移、测试、构建或文档待完成项；最终回复需按源规格“最终回复格式”输出结构化实施报告。
 
 ## 已知取舍
 

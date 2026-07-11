@@ -16,11 +16,13 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let assetSequence = 0;
 
 async function resetDatabase() {
-  await prisma.detailPageConfig.deleteMany();
   await prisma.activityCaseMedia.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.activityCase.deleteMany();
   await prisma.artist.deleteMany();
+  await prisma.banner.deleteMany();
+  await prisma.announcement.deleteMany();
+  await prisma.detailPageConfig.deleteMany();
   await prisma.mediaAsset.deleteMany();
   await prisma.adminUser.deleteMany();
   await prisma.adminUser.create({
@@ -68,7 +70,26 @@ async function createAsset(
   });
 }
 
-function artistPayload(avatarAssetId: number, contentAssetId: number) {
+function richDetailPagePayload(name: string, contentAssetId: number) {
+  return {
+    name,
+    type: "rich_text",
+    richTextHtml: `<p>${name}</p><img data-media-asset-id="${contentAssetId}">`
+  };
+}
+
+async function createRichDetailPage(headers: { authorization: string }, name: string, contentAssetId: number) {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/admin/detail-pages",
+    headers,
+    payload: richDetailPagePayload(name, contentAssetId)
+  });
+  expect(response.statusCode).toBe(200);
+  return response.json().data as { id: number };
+}
+
+function artistPayload(avatarAssetId: number, detailPageId: number | null) {
   return {
     name: "审查回归人员",
     type: "host",
@@ -77,16 +98,13 @@ function artistPayload(avatarAssetId: number, contentAssetId: number) {
     badge: "主持人",
     tags: ["回归测试"],
     summary: "人员详情引用回归",
+    detailPageId,
     sortOrder: 1,
-    status: "enabled",
-    detailPage: {
-      type: "rich_text",
-      richTextHtml: `<p>人员正文</p><img data-media-asset-id="${contentAssetId}">`
-    }
+    status: "enabled"
   };
 }
 
-function casePayload(coverAssetId: number, contentAssetId: number) {
+function casePayload(coverAssetId: number, detailPageId: number | null) {
   return {
     title: "审查回归案例",
     category: "发布会",
@@ -99,10 +117,7 @@ function casePayload(coverAssetId: number, contentAssetId: number) {
     featuredSortOrder: 1,
     sortOrder: 1,
     status: "enabled",
-    detailPage: {
-      type: "rich_text",
-      richTextHtml: `<p>案例正文</p><img data-media-asset-id="${contentAssetId}">`
-    }
+    detailPageId
   };
 }
 
@@ -147,17 +162,19 @@ describe("detail page review regressions", () => {
     });
   });
 
-  it("updates case detail content relations without leaving the replaced asset referenced", async () => {
+  it("switches case detailPageId without mutating reusable detail media", async () => {
     const auth = await token();
     const headers = { authorization: `Bearer ${auth}` };
     const cover = await createAsset("案例封面", "image", { width: 460, height: 320 });
     const first = await createAsset("案例旧正文图");
     const second = await createAsset("案例新正文图");
+    const firstDetail = await createRichDetailPage(headers, "案例旧详情", first.id);
+    const secondDetail = await createRichDetailPage(headers, "案例新详情", second.id);
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/cases",
       headers,
-      payload: casePayload(cover.id, first.id)
+      payload: casePayload(cover.id, firstDetail.id)
     });
     expect(created.statusCode).toBe(200);
 
@@ -165,16 +182,12 @@ describe("detail page review regressions", () => {
       method: "PUT",
       url: `/api/admin/cases/${created.json().data.id}`,
       headers,
-      payload: {
-        detailPage: {
-          type: "rich_text",
-          richTextHtml: `<p>更新正文</p><img data-media-asset-id="${second.id}">`
-        }
-      }
+      payload: { detailPageId: secondDetail.id }
     });
 
     expect(updated.statusCode).toBe(200);
-    expect(await mediaReferenceCount(prisma, first.id)).toBe(0);
+    expect(updated.json().data.detailPageId).toBe(secondDetail.id);
+    expect(await mediaReferenceCount(prisma, first.id)).toBe(1);
     expect(await mediaReferenceCount(prisma, second.id)).toBe(1);
   });
 
@@ -183,11 +196,12 @@ describe("detail page review regressions", () => {
     const headers = { authorization: `Bearer ${auth}` };
     const avatar = await createAsset("人员封面");
     const content = await createAsset("人员正文图");
+    const detailPage = await createRichDetailPage(headers, "人员正文详情", content.id);
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/artists",
       headers,
-      payload: artistPayload(avatar.id, content.id)
+      payload: artistPayload(avatar.id, detailPage.id)
     });
     expect(created.statusCode).toBe(200);
 
@@ -210,9 +224,15 @@ describe("detail page review regressions", () => {
       headers
     });
     expect(deletedArtist.statusCode).toBe(200);
-    expect(await prisma.detailPageConfig.count({
-      where: { ownerType: "artist", ownerId: created.json().data.id }
-    })).toBe(0);
+    expect(await prisma.detailPageConfig.count({ where: { id: detailPage.id } })).toBe(1);
+    expect(await mediaReferenceCount(prisma, content.id)).toBe(1);
+
+    const deletedDetailPage = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/detail-pages/${detailPage.id}`,
+      headers
+    });
+    expect(deletedDetailPage.statusCode).toBe(200);
     expect(await mediaReferenceCount(prisma, content.id)).toBe(0);
 
     const unusedScan = await app.inject({ method: "POST", url: "/api/admin/media-assets/scan-unused", headers });
@@ -232,11 +252,12 @@ describe("detail page review regressions", () => {
     const headers = { authorization: `Bearer ${auth}` };
     const cover = await createAsset("列表案例封面", "image", { width: 460, height: 320 });
     const content = await createAsset("列表案例正文图");
+    const detailPage = await createRichDetailPage(headers, "列表案例详情", content.id);
     const created = await app.inject({
       method: "POST",
       url: "/api/admin/cases",
       headers,
-      payload: casePayload(cover.id, content.id)
+      payload: casePayload(cover.id, detailPage.id)
     });
     const id = created.json().data.id;
 

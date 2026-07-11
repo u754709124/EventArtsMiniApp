@@ -189,8 +189,17 @@ describe("DetailPageService", () => {
     const prisma = await createDatabase("preview");
     await createAsset(prisma, 10, "image");
     const dto = await previewDetailPageConfig(prisma, {
+      name: "预览详情",
       type: "banner_rich_text",
-      heroSubtitle: "预览",
+      hero: {
+        title: "预览标题",
+        typeLabel: "",
+        subtitle: "预览",
+        badge: "",
+        tags: [],
+        location: "",
+        metaItems: []
+      },
       bannerAssetIds: [10],
       richTextHtml: "<p>未保存内容</p>"
     });
@@ -219,7 +228,7 @@ describe("DetailPageService", () => {
       code: "DETAIL_PAGE_CONFIG_NOT_FOUND"
     });
     await prisma.detailPageConfig.create({
-      data: { ownerType: "artist", ownerId: 1, pageType: "future_type", richTextHtml: "<p>内容</p>" }
+      data: { name: "未知类型详情", ownerType: "artist", ownerId: 1, pageType: "future_type", richTextHtml: "<p>内容</p>" }
     });
     await expect(getRequiredDetailPageConfig(prisma, "artist", 1)).rejects.toMatchObject({
       code: "UNKNOWN_DETAIL_PAGE_TYPE"

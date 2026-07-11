@@ -38,7 +38,17 @@ describe("detail page registry", () => {
       minBannerCount: 1,
       maxBannerCount: 6,
       bannerAllowedMediaTypes: ["image"],
-      configFields: ["heroSubtitle", "banners", "richText"],
+      configFields: [
+        "heroTitle",
+        "heroTypeLabel",
+        "heroSubtitle",
+        "heroBadge",
+        "heroTags",
+        "heroLocation",
+        "heroMetaItems",
+        "banners",
+        "richText"
+      ],
       schemaVersion: 1
     });
     expect(detailPageTypeDefinitions.rich_text).toMatchObject({
@@ -71,14 +81,32 @@ describe("detail page input union", () => {
   it("normalizes a valid banner and rich-text request", () => {
     expect(
       DetailPageInputSchema.parse({
+        name: " 林然详情 ",
         type: "banner_rich_text",
-        heroSubtitle: " 温暖・专业・掌控全场 ",
+        hero: {
+          title: " 林然 ",
+          typeLabel: " 主持人 ",
+          subtitle: " 温暖・专业・掌控全场 ",
+          badge: " 金牌主持 ",
+          tags: ["婚礼主持", "婚礼主持", "高端晚宴"],
+          location: " 杭州 ",
+          metaItems: [{ label: "经验", value: "10年" }]
+        },
         bannerAssetIds: [10, 11, 12],
         richTextHtml
       })
     ).toEqual({
+      name: "林然详情",
       type: "banner_rich_text",
-      heroSubtitle: "温暖・专业・掌控全场",
+      hero: {
+        title: "林然",
+        typeLabel: "主持人",
+        subtitle: "温暖・专业・掌控全场",
+        badge: "金牌主持",
+        tags: ["婚礼主持", "高端晚宴"],
+        location: "杭州",
+        metaItems: [{ label: "经验", value: "10年" }]
+      },
       bannerAssetIds: [10, 11, 12],
       richTextHtml
     });
@@ -86,13 +114,22 @@ describe("detail page input union", () => {
 
   it("requires one to six unique image IDs and a non-empty subtitle", () => {
     const base = {
+      name: "详情页",
       type: "banner_rich_text" as const,
-      heroSubtitle: "宣传语",
+      hero: {
+        title: "标题",
+        typeLabel: "",
+        subtitle: "宣传语",
+        badge: "",
+        tags: [],
+        location: "",
+        metaItems: []
+      },
       bannerAssetIds: [1],
       richTextHtml
     };
-    expect(() => DetailPageInputSchema.parse({ ...base, heroSubtitle: "   " })).toThrow();
-    expect(() => DetailPageInputSchema.parse({ ...base, heroSubtitle: "甲".repeat(81) })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ ...base, hero: { ...base.hero, subtitle: "   " } })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ ...base, hero: { ...base.hero, subtitle: "甲".repeat(81) } })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [] })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [1, 2, 3, 4, 5, 6, 7] })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [1, 1] })).toThrow();
@@ -100,26 +137,27 @@ describe("detail page input union", () => {
   });
 
   it("accepts rich text without banner fields and rejects hidden banner data", () => {
-    expect(DetailPageInputSchema.parse({ type: "rich_text", richTextHtml })).toEqual({
+    expect(DetailPageInputSchema.parse({ name: "普通详情", type: "rich_text", richTextHtml })).toEqual({
+      name: "普通详情",
       type: "rich_text",
       richTextHtml
     });
-    expect(() => DetailPageInputSchema.parse({ type: "rich_text", richTextHtml, bannerAssetIds: [1] })).toThrow();
-    expect(() => DetailPageInputSchema.parse({ type: "rich_text", richTextHtml, heroSubtitle: "仍然生效" })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ name: "普通详情", type: "rich_text", richTextHtml, bannerAssetIds: [1] })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ name: "普通详情", type: "rich_text", richTextHtml, hero: { title: "标题", subtitle: "仍然生效" } })).toThrow();
   });
 
   it("rejects missing and unknown types instead of selecting a fallback", () => {
-    expect(() => DetailPageInputSchema.parse({ richTextHtml })).toThrow();
-    expect(() => DetailPageInputSchema.parse({ type: "unknown", richTextHtml })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ name: "普通详情", richTextHtml })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ name: "普通详情", type: "unknown", richTextHtml })).toThrow();
   });
 
   it("requires structurally non-empty HTML before the API semantic sanitizer runs", () => {
-    expect(() => DetailPageInputSchema.parse({ type: "rich_text", richTextHtml: "   " })).toThrow();
+    expect(() => DetailPageInputSchema.parse({ name: "普通详情", type: "rich_text", richTextHtml: "   " })).toThrow();
   });
 });
 
 describe("business request integration", () => {
-  it("requires nested detailPage for new artists and rejects the deprecated detail input", () => {
+  it("accepts nullable detailPageId for artists and rejects nested detail config", () => {
     const payload = {
       name: "林然",
       type: "host",
@@ -128,15 +166,17 @@ describe("business request integration", () => {
       badge: "金牌主持",
       tags: ["婚礼主持"],
       summary: "风格大气沉稳。",
+      detailPageId: 12,
       sortOrder: 1,
-      status: "enabled",
-      detailPage: { type: "rich_text", richTextHtml }
+      status: "enabled"
     };
-    expect(ArtistCreateRequestSchema.parse(payload).detailPage).toEqual(payload.detailPage);
+    expect(ArtistCreateRequestSchema.parse(payload).detailPageId).toBe(12);
+    expect(ArtistCreateRequestSchema.parse({ ...payload, detailPageId: null }).detailPageId).toBeNull();
+    expect(() => ArtistCreateRequestSchema.parse({ ...payload, detailPage: { type: "rich_text", richTextHtml } })).toThrow();
     expect(() => ArtistCreateRequestSchema.parse({ ...payload, detail: "旧详情" })).toThrow();
   });
 
-  it("requires nested detailPage for new cases", () => {
+  it("accepts nullable detailPageId for cases", () => {
     const parsed = ActivityCaseCreateRequestSchema.parse({
       title: "品牌发布会",
       category: "商业活动",
@@ -149,10 +189,11 @@ describe("business request integration", () => {
       featuredSortOrder: 1,
       sortOrder: 1,
       status: "enabled",
-      detailPage: { type: "banner_rich_text", heroSubtitle: "精彩现场", bannerAssetIds: [21], richTextHtml }
+      detailPageId: null
     });
-    expect(parsed.detailPage.type).toBe("banner_rich_text");
+    expect(parsed.detailPageId).toBeNull();
     expect(parsed).not.toHaveProperty("detail");
+    expect(parsed).not.toHaveProperty("detailPage");
     expect(parsed).not.toHaveProperty("detailMediaAssetIds");
   });
 
@@ -163,10 +204,21 @@ describe("business request integration", () => {
 
   it("types the stable detail page DTO shape", () => {
     const dto: DetailPageConfigDto = {
+      id: 1,
+      name: "普通详情",
       type: "rich_text",
       typeLabel: "单富文本",
       rendererKey: "richText",
       schemaVersion: 1,
+      hero: {
+        title: "",
+        typeLabel: "",
+        subtitle: "",
+        badge: "",
+        tags: [],
+        location: "",
+        metaItems: []
+      },
       heroSubtitle: "",
       banners: [],
       richTextHtml,
