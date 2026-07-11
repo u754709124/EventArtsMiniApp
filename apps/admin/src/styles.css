@@ -28,8 +28,11 @@ body {
 .admin-layout .ant-layout-sider {
   position: sticky;
   top: 0;
+  z-index: 20;
+  align-self: flex-start;
   height: 100dvh;
   border-right: 1px solid #eee5dc;
+  background: #fff;
 }
 
 .admin-layout .ant-layout-sider-children {
@@ -67,6 +70,10 @@ body {
   width: calc(100% - 24px);
 }
 
+.admin-main {
+  min-width: 0;
+}
+
 .admin-header {
   position: sticky;
   top: 0;
@@ -76,13 +83,8 @@ body {
   background: #fff;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   border-bottom: 1px solid #eee5dc;
-}
-
-.admin-header > div:first-child {
-  display: grid;
-  gap: 2px;
 }
 
 .admin-header span {
@@ -97,27 +99,40 @@ body {
 }
 
 .admin-content {
+  min-width: 0;
   padding: 24px;
 }
 
 .page-stack {
   display: grid;
+  min-width: 0;
   gap: 16px;
 }
 
 .page-header {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.page-header h2.ant-typography {
+  margin: 0;
+}
+
+.page-header__breadcrumb {
+  font-size: 12px;
+}
+
+.page-header__body {
   display: flex;
+  min-width: 0;
   gap: 16px;
   align-items: flex-start;
   justify-content: space-between;
 }
 
-.page-header h2.ant-typography {
-  margin: 2px 0 0;
-}
-
-.page-header__breadcrumb {
-  font-size: 12px;
+.page-header__copy {
+  min-width: 0;
 }
 
 .page-header__description {
@@ -127,7 +142,13 @@ body {
 
 .page-header__extra {
   display: flex;
+  flex-shrink: 0;
   justify-content: flex-end;
+}
+
+.list-card,
+.list-card .ant-card-body {
+  min-width: 0;
 }
 
 .list-toolbar,
@@ -350,7 +371,7 @@ video.media-thumb {
     padding: 16px;
   }
 
-  .page-header,
+  .page-header__body,
   .form-action-bar {
     align-items: stretch;
     flex-direction: column;

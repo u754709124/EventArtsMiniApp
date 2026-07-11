@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { adminApi, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
@@ -109,6 +109,74 @@ async function selectDetailPageReference(page: Parameters<typeof selectOption>[0
   const option = visibleSelectOption(page, name);
   await expect(option).toBeVisible();
   await option.click();
+}
+
+async function locatorBox(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("布局目标不可见");
+  return box;
+}
+
+async function expectNoDocumentHorizontalScroll(page: Page) {
+  const geometry = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    scrollX: window.scrollX
+  }));
+  expect(geometry.scrollX).toBe(0);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+}
+
+async function expectTableHorizontalScrollIsScoped(
+  page: Page,
+  input: { path: string; title: string; tableTestId: string; actionTestId: string }
+) {
+  await page.goto(input.path);
+  await expect(page.getByTestId(input.tableTestId)).toBeVisible();
+  await expect(page.locator(".admin-header")).not.toContainText(input.title);
+  await expect(page.getByRole("heading", { level: 2, name: input.title })).toHaveCount(1);
+  await expectNoDocumentHorizontalScroll(page);
+
+  const sider = page.locator(".admin-layout .ant-layout-sider");
+  const header = page.locator(".admin-header");
+  const pageHeader = page.locator(".page-header");
+  const action = page.getByTestId(input.actionTestId);
+  const tableScroll = page.getByTestId(input.tableTestId).locator(".ant-table-content").first();
+
+  const scrollGeometry = await tableScroll.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    scrollLeft: element.scrollLeft
+  }));
+  expect(scrollGeometry.scrollWidth).toBeGreaterThan(scrollGeometry.clientWidth);
+
+  const before = {
+    sider: await locatorBox(sider),
+    header: await locatorBox(header),
+    pageHeader: await locatorBox(pageHeader),
+    action: await locatorBox(action)
+  };
+
+  await tableScroll.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  const afterScrollLeft = await tableScroll.evaluate((element) => element.scrollLeft);
+  expect(afterScrollLeft).toBeGreaterThan(0);
+  await expectNoDocumentHorizontalScroll(page);
+
+  const after = {
+    sider: await locatorBox(sider),
+    header: await locatorBox(header),
+    pageHeader: await locatorBox(pageHeader),
+    action: await locatorBox(action)
+  };
+
+  for (const key of Object.keys(before) as Array<keyof typeof before>) {
+    expect(Math.abs(after[key].x - before[key].x)).toBeLessThanOrEqual(1);
+  }
 }
 
 test("登录页展示", async ({ page }) => {
@@ -483,7 +551,26 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await expect(page.getByText(/已删除 1 项/).last()).toBeVisible();
 });
 
-test("后台分层导航和表单布局视觉截图", async ({ page }) => {
+test("后台布局横向滚动只作用于右侧表格内容", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await loginAdminUi(page);
+  await page.evaluate(() => localStorage.setItem("event-arts-admin-sider-collapsed", "false"));
+
+  for (const target of [
+    { path: "/artists", title: "人员管理", tableTestId: "artists-table", actionTestId: "artists-create" },
+    { path: "/media-assets", title: "素材库", tableTestId: "media-table", actionTestId: "media-upload-button" },
+    { path: "/detail-pages", title: "详情页管理", tableTestId: "detail-page-table", actionTestId: "detail-page-create" }
+  ]) {
+    await expectTableHorizontalScrollIsScoped(page, target);
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/artists");
+  await expect(page.getByTestId("artists-table")).toBeVisible();
+  await expectNoDocumentHorizontalScroll(page);
+});
+
+test("后台分层导航和表单视觉截图", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginAdminUi(page);
   await page.screenshot({ path: "docs/design/admin-navigation-expanded.png", fullPage: true });

@@ -216,7 +216,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
         breadcrumbs={[breadcrumbGroup, config.title]}
         extra={<Button data-testid={`${config.testid}-create`} type="primary" onClick={openCreate}>新增</Button>}
       />
-      <Card>
+      <Card className="list-card">
         <Space className="list-toolbar" wrap>
           <Input.Search
             data-testid={`${config.testid}-search`}

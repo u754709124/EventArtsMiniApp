@@ -96,7 +96,7 @@ export function DetailPageList() {
         breadcrumbs={["内容管理", "详情页管理"]}
         extra={<Button data-testid="detail-page-create" type="primary" onClick={() => navigate("/detail-pages/new")}>新建详情页</Button>}
       />
-      <Card>
+      <Card className="list-card">
       <Space className="detail-page-list-filters" wrap>
         <Input.Search
           data-testid="detail-page-search"
@@ -127,6 +127,7 @@ export function DetailPageList() {
         loading={loading}
         columns={columns}
         dataSource={items}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: page,
           pageSize,

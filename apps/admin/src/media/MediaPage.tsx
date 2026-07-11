@@ -178,7 +178,7 @@ export function MediaPage() {
         </Space>
         }
       />
-      <Card>
+      <Card className="list-card">
       <Tabs
         activeKey={mediaType}
         onChange={(key) => setMediaType(key as MediaType)}
@@ -211,6 +211,7 @@ export function MediaPage() {
         loading={loading}
         dataSource={data.items}
         columns={columns}
+        scroll={{ x: "max-content" }}
         pagination={{ current: data.page, pageSize: data.pageSize, total: data.total, showSizeChanger: false, onChange: (page) => void load(page) }}
         locale={{ emptyText: <Empty description="暂无资源" /> }}
       />
@@ -239,6 +240,7 @@ export function MediaPage() {
           dataSource={unused ?? []}
           rowSelection={{ selectedRowKeys: selectedUnused, onChange: (keys) => setSelectedUnused(keys.map(Number)) }}
           columns={columns.slice(0, 6)}
+          scroll={{ x: "max-content" }}
           pagination={false}
           locale={{ emptyText: <Empty description="没有未使用资源" /> }}
         />

@@ -103,12 +103,8 @@ export function AdminLayout() {
           {collapsed ? "" : "收起菜单"}
         </Button>
       </Layout.Sider>
-      <Layout>
+      <Layout className="admin-main">
         <Layout.Header className="admin-header">
-          <div>
-            <strong>{routeMatch.title}</strong>
-            <span>{routeMatch.breadcrumbs.join(" / ")}</span>
-          </div>
           <div className="admin-header__account">
             <span>管理员</span>
             <Button data-testid="logout-button" icon={<LogoutOutlined />} onClick={logout}>
