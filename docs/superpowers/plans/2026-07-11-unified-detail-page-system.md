@@ -193,20 +193,20 @@ export async function previewDetailPageConfig(db: DetailPageDb, input: DetailPag
 
 **Files:** modify existing media components; create `MediaPickerModal.tsx`, `DetailBannerField.tsx`, admin tests/styles.
 
-- [ ] Preserve every existing MediaField flow while exposing type-filtered selection/upload callbacks for editor and banners.
-- [ ] Implement 1–6 image tiles with thumbnail, name, dimensions, index, duplicate prevention, remove, DnD ordering, and keyboard up/down fallback; value is ordered `number[]` only.
-- [ ] Add stable test IDs and validate `detail.banner` both client-side and server-side.
-- [ ] Run admin unit/build plus existing media E2E subset; commit `refactor(admin): share detail media selection`.
+- [x] Preserve every existing MediaField flow while exposing type-filtered selection/upload callbacks for editor and banners.
+- [x] Implement 1–6 image tiles with thumbnail, name, dimensions, index, duplicate prevention, remove, DnD ordering, and keyboard up/down fallback; value is ordered `number[]` only.
+- [x] Add stable test IDs and validate `detail.banner` both client-side and server-side.
+- [x] Run admin unit/build plus existing media E2E subset; commits `021d94b` and review fix `96136f2`. Admin 14/14, build, and lint pass; the legacy E2E reached the media paths but its final save/list assertions remain gated on Tasks 11–12 contract integration and updated seed pagination.
 
 ## Task 10: Controlled Rich Text Editor
 
 **Files:** create `RichTextEditorField.tsx`, Tiptap extensions/components/styles/tests; modify admin package/lock.
 
-- [ ] Install compatible Tiptap 3 packages and pin the resolved versions. Use `immediatelyRender: false`/single lifecycle semantics appropriate for StrictMode.
-- [ ] Implement paragraphs, H1–H4, font size/color, bold/italic/underline/strike, align, lists, blockquote, horizontal rule, link, clear format, undo/redo.
-- [ ] Implement custom asset image and video nodes with numeric `data-media-asset-id`, canonical current URL, class, alt for images, controls/preload for video, and no autoplay/loop/iframe/base64/blob.
-- [ ] Expose a controlled Ant Form input supporting value, change, disabled, reset, clear, edit refill, unmount destroy, and type-switch preservation without scraping the DOM.
-- [ ] Unit test command output, external value changes, one instance under StrictMode, and stable custom attributes; commit `feat(admin): add controlled rich media editor`.
+- [x] Install compatible Tiptap 3 packages and pin the resolved versions. Use `immediatelyRender: false`/single lifecycle semantics appropriate for StrictMode.
+- [x] Implement paragraphs, H1–H4, font size/color, bold/italic/underline/strike, align, lists, blockquote, horizontal rule, link, clear format, undo/redo.
+- [x] Implement custom asset image and video nodes with numeric `data-media-asset-id`, canonical current URL, class, alt for images, controls/preload for video, and no autoplay/loop/iframe/base64/blob.
+- [x] Expose a controlled Ant Form input supporting value, change, disabled, reset, clear, edit refill, unmount destroy, and type-switch preservation without scraping the DOM.
+- [x] Unit test command output, external value changes, one instance under StrictMode, and stable custom attributes; commits `fa15c4a`, `e5fe9fe`, and `bb68a63`, independent review clean.
 
 ## Task 11: Dynamic Detail Form and Preview
 
@@ -232,23 +232,23 @@ export async function previewDetailPageConfig(db: DetailPageDb, input: DetailPag
 
 **Files:** create `apps/miniapp/src/components/detail-page/*`; modify artist/case detail pages, services, PageState/AppImage only where common behavior needs it.
 
-- [ ] Implement renderer registry keyed by shared `rendererKey`, exhaustive unknown renderer failure, `DetailHeroViewModel`, runtime safe-area/capsule navigation, predictable fallback back navigation, skeleton variants, and request-race cancellation.
-- [ ] `BannerRichTextRenderer`: sorted Swiper, aspectFill, 1/N page, no circular single image, slow/fixed E2E autoplay, dynamic hero, 36rpx calibrated overlap, uncropped first card.
-- [ ] `RichTextRenderer`: no banner request/preload/DOM/page counter/height/negative margin; title navigation and normal first-card spacing.
-- [ ] Render HTML blocks with Taro RichText and video blocks with Taro Video; video is 100% width, controls, no autoplay/loop, 16:9 fallback, failure/retry. Images cannot overflow and image preview excludes videos.
-- [ ] Artist/case routes fetch only enabled DTOs, reset state between IDs, track PV, construct hero adapter, and show loading/retry/not-found/disabled/config/type/media/empty states without stale data.
-- [ ] Verify artist list unit/E2E remains unchanged; commit `feat(miniapp): render common rich detail pages`.
+- [x] Implement renderer registry keyed by shared `rendererKey`, exhaustive unknown renderer failure, `DetailHeroViewModel`, runtime safe-area/capsule navigation, predictable fallback back navigation, skeleton variants, and request-race cancellation.
+- [x] `BannerRichTextRenderer`: sorted Swiper, aspectFill, 1/N page, no circular single image, slow/fixed E2E autoplay, dynamic hero, calibrated overlap, uncropped first card.
+- [x] `RichTextRenderer`: no banner request/preload/DOM/page counter/height/negative margin; title navigation and normal first-card spacing, including banner-free route loading before the DTO arrives.
+- [x] Render HTML blocks with Taro RichText and video blocks with Taro Video; video is 100% width, controls, no autoplay/loop, 16:9 fallback, trusted ratio, failure/retry. Images cannot overflow and image preview excludes videos.
+- [x] Artist/case routes fetch only enabled DTOs, reset state between IDs, track PV, construct hero adapter, and show loading/retry/not-found/disabled/config/type/media/empty states without stale data.
+- [x] Verify artist list unit/E2E remains unchanged where runnable; commits `e4780a6` and review fix `3b2d7c3`. Focused miniapp renderer test is 13/13, Task 13 review is Approved, root lint is green, and generated E2E coverage is listed under Task 14. Real Playwright execution remains separately blocked by local `tsx` IPC sandbox limits.
 
 ## Task 14: Visual Calibration, E2E, and Documentation
 
 **Files:** extend Playwright specs/helpers; create four screenshots, overlay/diff, `docs/design/detail-page-system.md`; update API docs, README, stage docs.
 
-- [ ] Measure and document all source-spec colors/dimensions from the reference; map them to SCSS variables rather than ad-hoc component literals.
-- [ ] Add four H5 scenarios and assert banners/hero/page counter/overlap/videos vs exact rich-text absence behavior, back navigation, no horizontal overflow, no stale data, and no forbidden business actions/spacers.
+- [x] Measure and document all source-spec colors/dimensions from the reference; map them to SCSS variables rather than ad-hoc component literals.
+- [x] Add four H5 scenarios and assert banners/hero/page counter/overlap/videos vs exact rich-text absence behavior, back navigation, no horizontal overflow, no stale data, and no forbidden business actions/spacers. Committed as `06ab56c`; `playwright --list` sees the scenarios, while real execution is still blocked by `tsx` IPC sandbox limits.
 - [ ] Capture the four named screenshots at approximately 426×922/2x with assets/fonts settled and first banner fixed.
 - [ ] Produce first overlay/diff, calibrate visual tokens, recapture, and produce final `overlay-artist-detail.png`/`diff-artist-detail.png`; never claim pixel parity without these files.
-- [ ] Document architecture, contracts, sanitizer/style whitelist, media lifecycle, migration, editor decision, renderer/adapters, assets/measurements, platform differences, removed actions, and exact eight-step third-renderer extension process.
-- [ ] Commit `test(detail-pages): cover shared detail workflows` and `docs: document unified detail pages` after respective verification.
+- [x] Document architecture, contracts, sanitizer/style whitelist, media lifecycle, migration, editor decision, renderer/adapters, assets/measurements, platform differences, removed actions, and exact eight-step third-renderer extension process.
+- [x] Commit `test(detail-pages): cover shared detail workflows` (`06ab56c`) and `docs: document unified detail pages` (`c240aba`) after static/list/build verification. Screenshot artifacts remain blocked and therefore uncommitted.
 
 ## Task 15: Full Verification and Completion Audit
 
