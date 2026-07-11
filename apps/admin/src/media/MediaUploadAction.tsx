@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Button, Form, Input, Modal, Progress, Select, message } from "antd";
-import { mediaFieldRules, type MediaAssetDto, type MediaFieldKey, type MediaUploadConfigDto } from "@event-arts/shared";
+import { type MediaAssetDto, type MediaFieldKey, type MediaType, type MediaUploadConfigDto } from "@event-arts/shared";
 import { request } from "../api";
 import { prepareMediaFile, validateMediaCandidate, type PreparedMediaFile } from "./media-file";
+import { resolveAllowedMediaTypes } from "./MediaLibraryModal";
 
 let configPromise: Promise<MediaUploadConfigDto> | null = null;
 function loadConfig() {
@@ -13,13 +14,22 @@ function loadConfig() {
   return configPromise;
 }
 
+export function mediaAcceptForTypes(allowedTypes: readonly MediaType[]) {
+  const accept: string[] = [];
+  if (allowedTypes.includes("image")) accept.push("image/jpeg", "image/png", "image/webp");
+  if (allowedTypes.includes("video")) accept.push("video/mp4");
+  return accept.join(",");
+}
+
 export function MediaUploadAction({
   fieldKey,
+  allowedTypes: requestedTypes,
   onAsset,
   testid = "media-action-upload",
   label = "从本地上传"
 }: {
   fieldKey?: MediaFieldKey;
+  allowedTypes?: readonly MediaType[];
   onAsset: (asset: MediaAssetDto) => void;
   testid?: string;
   label?: string;
@@ -30,13 +40,14 @@ export function MediaUploadAction({
   const [tags, setTags] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
+  const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
 
   async function choose(file: File) {
     setBusy(true);
     setProgress(0);
     try {
       const config = await loadConfig();
-      const prepared = await prepareMediaFile(file, config, fieldKey, setProgress);
+      const prepared = await prepareMediaFile(file, config, fieldKey, setProgress, allowedTypes);
       const duplicate = await request<{ asset: MediaAssetDto | null }>("/api/admin/media-assets/lookup", {
         method: "POST",
         body: JSON.stringify({ md5: prepared.md5, size: prepared.size })
@@ -51,7 +62,8 @@ export function MediaUploadAction({
             height: duplicate.asset.height ?? 0
           },
           config,
-          fieldKey
+          fieldKey,
+          allowedTypes
         );
         if (problem) throw new Error(problem);
         message.info("已存在相同资源，已直接复用");
@@ -98,11 +110,7 @@ export function MediaUploadAction({
     }
   }
 
-  const accept = fieldKey
-    ? mediaFieldRules[fieldKey].allowedTypes.includes("video")
-      ? "image/jpeg,image/png,image/webp,video/mp4"
-      : "image/jpeg,image/png,image/webp"
-    : "image/jpeg,image/png,image/webp,video/mp4";
+  const accept = mediaAcceptForTypes(allowedTypes);
   const missingResourceName = Boolean(draft) && !resourceName.trim();
 
   return (

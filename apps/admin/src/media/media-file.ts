@@ -18,7 +18,8 @@ export type PreparedMediaFile = MediaCandidate & { file: File; md5: string };
 export function validateMediaCandidate(
   candidate: MediaCandidate,
   config: ClientUploadConfig,
-  fieldKey?: MediaFieldKey
+  fieldKey?: MediaFieldKey,
+  allowedTypes?: readonly MediaType[]
 ) {
   const typeConfig = config[candidate.mediaType];
   if (!typeConfig.mimeTypes.includes(candidate.mimeType)) {
@@ -28,6 +29,10 @@ export function validateMediaCandidate(
     return `文件大小不能超过 ${Math.floor(typeConfig.maxBytes / 1024 / 1024)}MB`;
   }
   if (!candidate.width || !candidate.height) return "无法读取资源尺寸";
+  if (allowedTypes && !allowedTypes.includes(candidate.mediaType)) {
+    const label = allowedTypes.map((type) => (type === "image" ? "图片" : "视频")).join("或");
+    return `当前选择器仅支持${label}`;
+  }
   if (!fieldKey) return null;
   const rule = mediaFieldRules[fieldKey];
   if (!rule.allowedTypes.includes(candidate.mediaType)) return `${rule.label}不支持该资源类型`;
@@ -93,10 +98,11 @@ export async function prepareMediaFile(
   file: File,
   config: ClientUploadConfig,
   fieldKey?: MediaFieldKey,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  allowedTypes?: readonly MediaType[]
 ): Promise<PreparedMediaFile> {
   const candidate = await probeMediaFile(file);
-  const problem = validateMediaCandidate(candidate, config, fieldKey);
+  const problem = validateMediaCandidate(candidate, config, fieldKey, allowedTypes);
   if (problem) throw new Error(problem);
   const md5 = await calculateFileMd5(file, onProgress);
   return { ...candidate, file, md5 };

@@ -1,23 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Button, Empty, Input, Modal, Pagination, Select, Space, Spin, Tabs, Tag, message } from "antd";
-import { mediaFieldRules, type MediaAssetDto, type MediaFieldKey, type MediaType } from "@event-arts/shared";
+import { mediaFieldRules, mediaTypeValues, type MediaAssetDto, type MediaFieldKey, type MediaType } from "@event-arts/shared";
 import { request } from "../api";
 
 type MediaListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
 
+export function resolveAllowedMediaTypes(fieldKey?: MediaFieldKey, requestedTypes?: readonly MediaType[]) {
+  const fieldTypes = fieldKey ? mediaFieldRules[fieldKey].allowedTypes : [...mediaTypeValues];
+  const allowedTypes = requestedTypes
+    ? fieldTypes.filter((type) => requestedTypes.includes(type))
+    : fieldTypes;
+  if (!allowedTypes.length) throw new Error("当前媒体字段没有可用的资源类型");
+  return allowedTypes;
+}
+
 export function MediaLibraryModal({
   open,
   fieldKey,
+  allowedTypes: requestedTypes,
+  headerAction,
   onCancel,
   onSelect
 }: {
   open: boolean;
   fieldKey?: MediaFieldKey;
+  allowedTypes?: readonly MediaType[];
+  headerAction?: ReactNode;
   onCancel: () => void;
   onSelect: (asset: MediaAssetDto) => void;
 }) {
   const rule = fieldKey ? mediaFieldRules[fieldKey] : null;
-  const allowedTypes = rule?.allowedTypes ?? (["image", "video"] as MediaType[]);
+  const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
+  const allowedTypesKey = allowedTypes.join(",");
   const [mediaType, setMediaType] = useState<MediaType>(allowedTypes[0]);
   const [q, setQ] = useState("");
   const [tag, setTag] = useState<string>();
@@ -51,14 +65,20 @@ export function MediaLibraryModal({
     void request<{ items: Array<{ label: string; count: number }> }>("/api/admin/media-assets/tags")
       .then((value) => setTags(value.items))
       .catch((error) => message.error(error instanceof Error ? error.message : "标签加载失败"));
-  }, [open, fieldKey]);
+  }, [open, fieldKey, allowedTypesKey]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   return (
-    <Modal title="从资源库导入" open={open} footer={null} width={860} onCancel={onCancel}>
+    <Modal
+      title={<div className="media-library-title"><span>从资源库导入</span>{headerAction}</div>}
+      open={open}
+      footer={null}
+      width={860}
+      onCancel={onCancel}
+    >
       <div data-testid="media-library-modal">
       {allowedTypes.length > 1 && (
         <Tabs

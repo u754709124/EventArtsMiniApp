@@ -1,0 +1,112 @@
+.detail-banner-field {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-banner-list {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-banner-item {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 96px;
+  padding: 8px;
+  border: 1px solid #e3d9cf;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.detail-banner-thumbnail {
+  display: block;
+  width: 148px;
+  height: 76px;
+  border-radius: 6px;
+  background: #f6f3ef;
+  object-fit: cover;
+}
+
+.detail-banner-metadata {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.detail-banner-metadata strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-banner-metadata span {
+  color: #696969;
+  font-size: 13px;
+}
+
+.detail-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.detail-banner-actions .ant-btn,
+.detail-banner-add.ant-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.detail-banner-drag {
+  cursor: grab;
+  touch-action: none;
+}
+
+.detail-banner-drag:active {
+  cursor: grabbing;
+}
+
+.detail-banner-actions .ant-btn:focus-visible,
+.detail-banner-add.ant-btn:focus-visible {
+  outline: 3px solid #b77836;
+  outline-offset: 2px;
+}
+
+.detail-banner-hint,
+.detail-banner-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.detail-banner-hint {
+  color: #696969;
+}
+
+.detail-banner-error {
+  color: #cf1322;
+}
+
+.media-library-title {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 32px;
+}
+
+@media (max-width: 720px) {
+  .detail-banner-item {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+
+  .detail-banner-thumbnail {
+    width: 112px;
+    height: 64px;
+  }
+
+  .detail-banner-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
