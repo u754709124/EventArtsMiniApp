@@ -212,21 +212,21 @@ export async function previewDetailPageConfig(db: DetailPageDb, input: DetailPag
 
 **Files:** create `DetailPageTypeSelect.tsx`, `DetailPageConfigFields.tsx`, `DetailPagePreview.tsx`, utilities/types/styles; modify API client.
 
-- [ ] When type is absent render only `detail-page-type` and `detail-page-empty-hint`; do not mount editor/banner/subtitle/preview and block submit.
-- [ ] Render exact fields per registry config. On banner→rich switch with banners, confirm; cancel restores type; confirm changes form draft only; save removes relations. Rich→banner preserves HTML and requires subtitle/banner.
-- [ ] Apply artist/case reference templates only after overwrite confirmation, with real selected MediaAsset IDs.
-- [ ] Preview posts the unsaved nested input to the production sanitizer endpoint, renders a 375px shared mobile structure, and never mutates form data.
-- [ ] Add required stable test IDs and accessibility labels/focus feedback; commit `feat(admin): add dynamic detail configuration`.
+- [x] When type is absent render only `detail-page-type` and `detail-page-empty-hint`; do not mount editor/banner/subtitle/preview and block submit.
+- [x] Render exact fields per registry config. On banner→rich switch with banners, confirm; cancel restores type; confirm changes form draft only; save removes relations. Rich→banner preserves HTML and requires subtitle/banner.
+- [x] Apply artist/case reference templates only after overwrite confirmation, with real selected MediaAsset IDs.
+- [x] Preview posts the unsaved nested input to the production sanitizer endpoint, renders a 375px shared mobile structure, and never mutates form data.
+- [x] Add required stable test IDs and accessibility labels/focus feedback; commit `92cd5eb feat(admin): add dynamic detail configuration`. Focused admin verification is 14/14 and admin build passes.
 
 ## Task 12: Artist and Case Admin Integration
 
 **Files:** split/create artist/case CRUD modules as needed, modify `main.tsx`, styles and E2E.
 
-- [ ] Preserve all artist list fields and case basic fields; remove new-form `detail` TextArea and `detailMediaAssetIds` controls.
-- [ ] Add common `DetailPageConfigFields` after status/order, auto-fill migrated detail DTOs, and show detail-type summary columns.
-- [ ] Ensure saved payload contains only `detailPage` nested detail data and hidden fields do not leak.
-- [ ] Cover explicit selection, banner sorting, image/video insertion, preview, refill, both switch directions, and Chinese validation in Playwright.
-- [ ] Run admin build/E2E and commit `feat(admin): integrate shared artist and case details`.
+- [x] Preserve all artist list fields and case basic fields; remove new-form `detail` TextArea and `detailMediaAssetIds` controls.
+- [x] Add common `DetailPageConfigFields` after status/order, auto-fill migrated detail DTOs, and show detail-type summary columns.
+- [x] Ensure saved payload contains only `detailPage` nested detail data and hidden fields do not leak.
+- [x] Cover explicit selection, banner sorting, image/video insertion, preview, refill, both switch directions, and Chinese validation in Playwright spec. Real Playwright execution remains blocked by the shared `tsx` IPC sandbox issue.
+- [x] Run admin build and commit `1c309d5 feat(admin): integrate shared artist and case details`; after Task 11 files were committed, focused integration verification is 14/14 and admin build passes. Admin E2E is listed but not executed because of the same webServer blocker.
 
 ## Task 13: Common Taro Renderer and Route Integration
 

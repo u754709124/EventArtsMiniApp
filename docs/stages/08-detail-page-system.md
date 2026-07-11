@@ -44,6 +44,15 @@
 - 自定义 section/div/strong/span 与媒体节点保留参考模板白名单结构、class 和有界 style；完整人员模板编辑后 6 个 section 与嵌套顺序不丢。
 - 媒体只接受受控 API HTML 或资源选择器建立的精确 type+ID+normalized URL 映射；拒绝临时协议、伪造 ID 换源、反斜杠/百分号伪装远程路径。
 
+## 已完成：后台动态详情表单与人员/案例接入
+
+- `DetailPageTypeSelect`、`DetailPageConfigFields` 和 `DetailPagePreview` 已提交为 `92cd5eb`；未选类型时仅挂载类型选择和空提示，提交被必填校验阻止。
+- 动态字段完全由 shared registry 驱动；BANNER→单富文本有确认/取消路径，确认只改表单草稿，保存后由服务端清理关系；单富文本→BANNER 保留 HTML 并要求宣传语和 BANNER。
+- 参考模板在覆盖已有富文本前确认，并先按真实选中媒体 ID 拉取 `MediaAsset` 后回填 canonical URL，不使用临时路径。
+- 移动端预览提交未保存的 nested `detailPage` 到 `/api/admin/detail-pages/preview`，以服务端清洗后的 DTO 渲染 375px 预览，关闭/重试不修改表单草稿。
+- 人员和案例表单已在 `1c309d5` 接入公共组件，保留基础字段，删除旧 `detail`/`detailMediaAssetIds` 新表单来源，列表展示详情类型和摘要；保存 payload 只包含规范化 nested `detailPage`。
+- `tests/e2e/admin.spec.ts` 覆盖显式选择、BANNER 排序、图片/视频插入、预览、回填、双向切换和中文校验；真实运行仍受 `tsx` IPC sandbox 限制。
+
 ## 已完成：Taro 公共详情 renderer
 
 - `DetailPageRenderer` 使用 shared `rendererKey` 注册表，未知 renderer 进入受控错误状态；人员和案例路由只负责取数、PV、状态分类和 Hero adapter。
@@ -73,6 +82,8 @@
 - `pnpm --filter admin test`：5 files / 14 tests passed（含失败媒体恢复和乱序请求隔离）。
 - `pnpm --filter admin build`：通过；`pnpm lint`：通过。
 - RichTextEditor focused：8/8 passed；结构、可信媒体映射、外部回填/reset、StrictMode 和无障碍均覆盖。
+- `pnpm --filter admin exec vitest run src/detail-pages/DetailPageConfigFields.test.tsx src/detail-pages/DetailPagePreview.test.tsx src/artist-case-integration.test.tsx`：3 files / 14 tests passed（Task 11 提交后重跑）。
+- `pnpm --filter admin build`：Task 11 提交后重跑通过；仅 Vite 大 chunk warning。
 - `pnpm --filter miniapp exec vitest run src/components/detail-page/detail-page.test.ts`：1 file / 13 tests passed。
 - `pnpm exec playwright test --list --project=miniapp-h5`：列出 23 个 miniapp H5 tests，其中包含 6 个公共详情行为/截图相关测试。
 - `pnpm lint`：2026-07-11 再次通过。
@@ -92,8 +103,6 @@
 
 ## 待完成
 
-- 后台共用动态表单、Tiptap 富文本和移动端预览。
-- Task 11 动态详情表单文件仍为未提交工作树内容，需显式提交授权后才能进入 commit 边界。
 - Task 14 真实 H5 E2E 执行、四张详情截图、`overlay-artist-detail.png`、`diff-artist-detail.png` 和视觉证据 JSON。
 - Admin/H5 E2E、全量发布验证、微信端构建产物检查和最终第 44 节报告。
 
