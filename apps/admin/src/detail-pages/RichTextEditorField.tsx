@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, message } from "antd";
+import { Button, Tooltip, message } from "antd";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
@@ -42,16 +42,18 @@ type ToolbarButtonProps = {
 
 function ToolbarButton({ label, disabled, active, onClick, children }: ToolbarButtonProps) {
   return (
-    <Button
-      className={active ? "rich-text-toolbar-button is-active" : "rich-text-toolbar-button"}
-      disabled={disabled}
-      aria-label={label}
-      aria-pressed={typeof active === "boolean" ? active : undefined}
-      title={label}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
+    <Tooltip title={label}>
+      <Button
+        className={active ? "rich-text-toolbar-button is-active" : "rich-text-toolbar-button"}
+        disabled={disabled}
+        aria-label={label}
+        aria-pressed={typeof active === "boolean" ? active : undefined}
+        title={label}
+        onClick={onClick}
+      >
+        {children}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -146,7 +148,11 @@ export function RichTextEditorField({
       underline: instance?.isActive("underline") ?? false,
       strike: instance?.isActive("strike") ?? false,
       link: instance?.isActive("link") ?? false,
-      image: instance?.isActive("assetImage") ?? false
+      image: instance?.isActive("assetImage") ?? false,
+      bulletList: instance?.isActive("bulletList") ?? false,
+      orderedList: instance?.isActive("orderedList") ?? false,
+      blockquote: instance?.isActive("blockquote") ?? false,
+      textAlign: (instance?.getAttributes("paragraph").textAlign || instance?.getAttributes("heading").textAlign || "left") as string
     })
   });
 
@@ -181,7 +187,11 @@ export function RichTextEditorField({
     underline: false,
     strike: false,
     link: false,
-    image: false
+    image: false,
+    bulletList: false,
+    orderedList: false,
+    blockquote: false,
+    textAlign: "left"
   };
 
   function setBlock(block: string) {
@@ -274,64 +284,82 @@ export function RichTextEditorField({
 
       <div className="rich-text-editor-frame" data-testid="detail-rich-text-frame">
         <div className="rich-text-toolbar" role="toolbar" aria-label="富文本编辑工具栏" data-testid="detail-rich-text-toolbar">
-          <label className="rich-text-select-label">
-            <span>段落与标题</span>
-            <select
-              aria-label="段落与标题"
-              value={state.block}
-              disabled={unavailable}
-              onChange={(event) => setBlock(event.target.value)}
-            >
-              <option value="p">正文 P</option>
-              <option value="h1">标题 H1</option>
-            </select>
-          </label>
+          <div className="rich-text-toolbar-group" aria-label="文本样式">
+            <label className="rich-text-select-label">
+              <span>段落与标题</span>
+              <select
+                aria-label="段落与标题"
+                value={state.block}
+                disabled={unavailable}
+                onChange={(event) => setBlock(event.target.value)}
+              >
+                <option value="p">正文 P</option>
+                <option value="h1">标题 H1</option>
+              </select>
+            </label>
 
-          <label className="rich-text-select-label">
-            <span>字号</span>
-            <select
-              aria-label="字号"
-              value={state.fontSize ?? ""}
-              disabled={unavailable}
-              onChange={(event) => {
-                if (!editor) return;
-                const chain = editor.chain().focus();
-                if (event.target.value) chain.setFontSize(event.target.value).run();
-                else chain.unsetFontSize().run();
-              }}
-            >
-              <option value="">默认字号</option>
-              <option value="12px">12</option>
-              <option value="14px">14</option>
-              <option value="16px">16</option>
-              <option value="18px">18</option>
-              <option value="24px">24</option>
-              <option value="32px">32</option>
-            </select>
-          </label>
+            <label className="rich-text-select-label">
+              <span>字号</span>
+              <select
+                aria-label="字号"
+                value={state.fontSize ?? ""}
+                disabled={unavailable}
+                onChange={(event) => {
+                  if (!editor) return;
+                  const chain = editor.chain().focus();
+                  if (event.target.value) chain.setFontSize(event.target.value).run();
+                  else chain.unsetFontSize().run();
+                }}
+              >
+                <option value="">默认字号</option>
+                <option value="12px">12</option>
+                <option value="14px">14</option>
+                <option value="16px">16</option>
+                <option value="18px">18</option>
+                <option value="24px">24</option>
+                <option value="32px">32</option>
+              </select>
+            </label>
 
-          <label className="rich-text-color-label">
-            <span>文字颜色</span>
-            <input
-              type="color"
-              aria-label="文字颜色"
-              value={state.color ?? "#262626"}
-              disabled={unavailable}
-              onChange={(event) => editor?.chain().focus().setColor(event.target.value).run()}
-            />
-          </label>
-
-          <ToolbarButton label="粗体" disabled={unavailable} active={state.bold} onClick={() => editor?.chain().focus().toggleBold().run()}>B</ToolbarButton>
-          <ToolbarButton label="斜体" disabled={unavailable} active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><em>I</em></ToolbarButton>
-          <ToolbarButton label="下划线" disabled={unavailable} active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
-          <ToolbarButton label="删除线" disabled={unavailable} active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><s>S</s></ToolbarButton>
-          <ToolbarButton label="添加链接" disabled={unavailable} active={state.link} onClick={editLink}>链接</ToolbarButton>
-          <ToolbarButton label="插入图片" disabled={unavailable} onClick={() => setPickerType("image")}>图片</ToolbarButton>
-          <ToolbarButton label="编辑图片替代文本" disabled={unavailable || !state.image} onClick={editImageAlt}>图片 ALT</ToolbarButton>
-          <ToolbarButton label="插入视频" disabled={unavailable} onClick={() => setPickerType("video")}>视频</ToolbarButton>
-          <ToolbarButton label="撤销" disabled={unavailable} onClick={() => editor?.chain().focus().undo().run()}>撤销</ToolbarButton>
-          <ToolbarButton label="重做" disabled={unavailable} onClick={() => editor?.chain().focus().redo().run()}>重做</ToolbarButton>
-          <ToolbarButton label="清除格式" disabled={unavailable} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>清除格式</ToolbarButton>
+            <label className="rich-text-color-label">
+              <span>文字颜色</span>
+              <input
+                type="color"
+                aria-label="文字颜色"
+                value={state.color ?? "#262626"}
+                disabled={unavailable}
+                onChange={(event) => editor?.chain().focus().setColor(event.target.value).run()}
+              />
+            </label>
+          </div>
+          <div className="rich-text-toolbar-group" aria-label="行内格式">
+            <ToolbarButton label="粗体" disabled={unavailable} active={state.bold} onClick={() => editor?.chain().focus().toggleBold().run()}>B</ToolbarButton>
+            <ToolbarButton label="斜体" disabled={unavailable} active={state.italic} onClick={() => editor?.chain().focus().toggleItalic().run()}><em>I</em></ToolbarButton>
+            <ToolbarButton label="下划线" disabled={unavailable} active={state.underline} onClick={() => editor?.chain().focus().toggleUnderline().run()}><u>U</u></ToolbarButton>
+            <ToolbarButton label="删除线" disabled={unavailable} active={state.strike} onClick={() => editor?.chain().focus().toggleStrike().run()}><s>S</s></ToolbarButton>
+          </div>
+          <div className="rich-text-toolbar-group" aria-label="排版">
+            <ToolbarButton label="左对齐" disabled={unavailable} active={state.textAlign === "left"} onClick={() => editor?.chain().focus().setTextAlign("left").run()}>左</ToolbarButton>
+            <ToolbarButton label="居中" disabled={unavailable} active={state.textAlign === "center"} onClick={() => editor?.chain().focus().setTextAlign("center").run()}>中</ToolbarButton>
+            <ToolbarButton label="右对齐" disabled={unavailable} active={state.textAlign === "right"} onClick={() => editor?.chain().focus().setTextAlign("right").run()}>右</ToolbarButton>
+            <ToolbarButton label="有序列表" disabled={unavailable} active={state.orderedList} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>1.</ToolbarButton>
+            <ToolbarButton label="无序列表" disabled={unavailable} active={state.bulletList} onClick={() => editor?.chain().focus().toggleBulletList().run()}>•</ToolbarButton>
+            <ToolbarButton label="引用" disabled={unavailable} active={state.blockquote} onClick={() => editor?.chain().focus().toggleBlockquote().run()}>引</ToolbarButton>
+            <ToolbarButton label="分割线" disabled={unavailable} onClick={() => editor?.chain().focus().setHorizontalRule().run()}>线</ToolbarButton>
+          </div>
+          <div className="rich-text-toolbar-group" aria-label="链接与媒体">
+            <ToolbarButton label="添加链接" disabled={unavailable} active={state.link} onClick={editLink}>链接</ToolbarButton>
+            <ToolbarButton label="插入图片" disabled={unavailable} onClick={() => setPickerType("image")}>图片</ToolbarButton>
+            <ToolbarButton label="编辑图片替代文本" disabled={unavailable || !state.image} onClick={editImageAlt}>图片 ALT</ToolbarButton>
+            <ToolbarButton label="插入视频" disabled={unavailable} onClick={() => setPickerType("video")}>视频</ToolbarButton>
+          </div>
+          <div className="rich-text-toolbar-group" aria-label="历史记录">
+            <ToolbarButton label="撤销" disabled={unavailable} onClick={() => editor?.chain().focus().undo().run()}>撤销</ToolbarButton>
+            <ToolbarButton label="重做" disabled={unavailable} onClick={() => editor?.chain().focus().redo().run()}>重做</ToolbarButton>
+          </div>
+          <div className="rich-text-toolbar-group" aria-label="更多">
+            <ToolbarButton label="清除格式" disabled={unavailable} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>清除格式</ToolbarButton>
+          </div>
         </div>
 
         <EditorContent editor={editor} />

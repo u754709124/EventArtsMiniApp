@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Form, Input, Select, Space, Spin, Tag, message } from "antd";
-import { ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
 import type { DetailPageConfigDto, DetailPageReferenceDto, DetailPageType } from "@event-arts/shared";
 import { detailPageTypeDefinitions } from "@event-arts/shared";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { request } from "../api";
+import { FormActionBar } from "../components/FormActionBar";
+import { PageHeader } from "../components/PageHeader";
+import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { DetailBannerField, detailBannerFormRules } from "./DetailBannerField";
 import { DetailPageLivePreview } from "./DetailPageLivePreview";
 import { DetailPageTypeSelect } from "./DetailPageTypeSelect";
 import { RichTextEditorField } from "./RichTextEditorField";
 import {
   detailPageDtoToStandaloneFormValue,
+  isMeaningfulRichText,
   normalizeStandaloneDetailPageFormValue
 } from "./detail-page-form-utils";
 import type { StandaloneDetailPageFormValue } from "./types";
@@ -25,7 +29,7 @@ declare global {
 const richTextRules = [
   {
     validator: (_rule: unknown, value: unknown) =>
-      typeof value === "string" && value.trim()
+      isMeaningfulRichText(value)
         ? Promise.resolve()
         : Promise.reject(new Error("请填写详情页富文本"))
   }
@@ -56,6 +60,8 @@ export function DetailPageDesigner() {
   const bannerAssetIds = Form.useWatch(["detailPage", "bannerAssetIds"], form) as number[] | undefined;
   const references = detail?.references ?? [];
   const returnToken = searchParams.get("returnToken");
+  const dirtyGuardKey = "detail-page-designer";
+  const dirtyGuard = useDirtyFormGuard(dirtyGuardKey, dirty, "详情页设计器存在未保存修改，确认离开？");
 
   useEffect(() => {
     hydrating.current = true;
@@ -89,16 +95,6 @@ export function DetailPageDesigner() {
   }, [editingId, form, isNew]);
 
   useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", beforeUnload);
-    return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [dirty]);
-
-  useEffect(() => {
     window.__eventartsDetailPageDirty = dirty;
     return () => {
       window.__eventartsDetailPageDirty = false;
@@ -119,7 +115,7 @@ export function DetailPageDesigner() {
   }
 
   function goBack() {
-    if (dirty && !window.confirm("存在未保存修改，确认返回列表？")) return;
+    if (!dirtyGuard.confirmIfDirty()) return;
     navigate("/detail-pages");
   }
 
@@ -148,7 +144,10 @@ export function DetailPageDesigner() {
       hydrating.current = true;
       form.setFieldsValue(detailPageDtoToStandaloneFormValue(saved));
       setDetail(saved);
-      setDirty(false);
+      flushSync(() => {
+        setDirty(false);
+        dirtyGuard.clearDirtyEntry(dirtyGuardKey);
+      });
       setSaveStatus("已保存");
       setRevision((value) => value + 1);
       notifyReturn(saved.id);
@@ -166,17 +165,15 @@ export function DetailPageDesigner() {
   }
 
   return (
-    <div className="detail-designer" data-testid="detail-page-designer">
-      <div className="detail-designer__preview">
-        <DetailPageLivePreview revision={revision} getDraft={getDraft} />
-      </div>
-      <Card className="detail-designer__panel" bodyStyle={{ paddingTop: 0 }}>
+    <div className="page-stack" data-testid="detail-page-designer">
+      <PageHeader title={isNew ? "新建详情页" : "编辑详情页"} breadcrumbs={["内容管理", "详情页管理", isNew ? "新建" : "编辑"]} />
+      <div className="detail-designer">
+        <div className="detail-designer__preview">
+          <DetailPageLivePreview revision={revision} getDraft={getDraft} />
+        </div>
+        <Card className="detail-designer__panel" styles={{ body: { paddingTop: 0 } }}>
         <div className="detail-designer__toolbar" data-testid="detail-designer-toolbar">
-          <Button icon={<ArrowLeftOutlined />} onClick={goBack}>返回</Button>
           <span data-testid="detail-designer-save-status">{saveStatus}</span>
-          <Button data-testid="detail-designer-save" type="primary" icon={<SaveOutlined />} loading={saving} disabled={saving} onClick={() => void save()}>
-            保存
-          </Button>
         </div>
         <Spin spinning={loading}>
           <Form
@@ -283,7 +280,9 @@ export function DetailPageDesigner() {
             )}
           </section>
         )}
+        <FormActionBar saving={saving} saveTestid="detail-designer-save" onReturn={goBack} onSave={() => void save()} />
       </Card>
+      </div>
     </div>
   );
 }

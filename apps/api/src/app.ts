@@ -143,6 +143,11 @@ function sendError(reply: FastifyReply, statusCode: number, code: string, messag
   return reply.code(statusCode).headers(jsonHeaders).send(fail(code, message));
 }
 
+function parseRouteId(params: unknown) {
+  const id = Number((params as { id?: string }).id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 function parseJson(value: string | null | undefined) {
   if (!value) return {};
   try {
@@ -966,6 +971,13 @@ function registerCrud(
     const items = await prisma.announcement.findMany({ orderBy: { sortOrder: "asc" } });
     return reply.send(ok({ items: items.map(serializeAnnouncement), total: items.length }));
   });
+  app.get("/api/admin/announcements/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "公告 ID 错误");
+    const item = await prisma.announcement.findUnique({ where: { id } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "公告不存在");
+    return reply.send(ok(serializeAnnouncement(item)));
+  });
   app.post("/api/admin/announcements", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = announcementCreateSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "公告参数错误");
@@ -989,6 +1001,13 @@ function registerCrud(
   app.get("/api/admin/banners", { preHandler: requireAdmin }, async (_request, reply) => {
     const items = await prisma.banner.findMany({ include: { imageAsset: true }, orderBy: { sortOrder: "asc" } });
     return reply.send(ok({ items: items.map(serializeBanner), total: items.length }));
+  });
+  app.get("/api/admin/banners/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "Banner ID 错误");
+    const item = await prisma.banner.findUnique({ where: { id }, include: { imageAsset: true } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "Banner 不存在");
+    return reply.send(ok(serializeBanner(item)));
   });
   app.post("/api/admin/banners", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = bannerCreateSchema.safeParse(request.body);
@@ -1024,6 +1043,13 @@ function registerCrud(
   app.get("/api/admin/menu-items", { preHandler: requireAdmin }, async (_request, reply) => {
     const items = await prisma.menuItem.findMany({ include: { iconAsset: true }, orderBy: { sortOrder: "asc" } });
     return reply.send(ok({ items, total: items.length }));
+  });
+  app.get("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "菜单 ID 错误");
+    const item = await prisma.menuItem.findUnique({ where: { id }, include: { iconAsset: true } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "菜单不存在");
+    return reply.send(ok({ ...item, configJson: parseJson(item.configJson) }));
   });
   app.post("/api/admin/menu-items", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = menuCreateSchema.safeParse(request.body);
@@ -1094,6 +1120,41 @@ function registerCrud(
     return reply.send(ok({
       items: serialized,
       total: items.length
+    }));
+  });
+  app.get("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "案例 ID 错误");
+    const item = await prisma.activityCase.findUnique({
+      where: { id },
+      include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
+    });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "案例不存在");
+    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+    return reply.send(ok({
+      ...serializeCaseListItem(item),
+      id: item.id,
+      title: item.title,
+      category: item.category,
+      tag: item.tag,
+      coverAssetId: item.coverAssetId,
+      coverAsset: item.coverAsset,
+      summary: item.summary,
+      eventDate: toIsoDate(item.eventDate),
+      location: item.location,
+      detail: detailPage?.richTextHtml ?? item.detail,
+      detailPageSummary: detailPage ? { id: detailPage.id, name: detailPage.name, type: detailPage.type, typeLabel: detailPage.typeLabel } : null,
+      detailPageType: detailPage?.type ?? null,
+      detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
+      bannerCount: detailPage?.banners.length ?? 0,
+      detailMediaCount: detailPage ? extractRichTextMedia(detailPage.richTextHtml).length : 0,
+      hasRichText: Boolean(detailPage?.richTextHtml),
+      isFeatured: item.isFeatured,
+      featuredSortOrder: item.featuredSortOrder,
+      sortOrder: item.sortOrder,
+      status: item.status,
+      detailMediaAssetIds: detailPage ? extractRichTextMedia(detailPage.richTextHtml).map((media) => media.assetId) : [],
+      media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
     }));
   });
   app.post("/api/admin/cases", { preHandler: requireAdmin }, async (request, reply) => {
@@ -1184,6 +1245,13 @@ function registerCrud(
       serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)
     ));
     return reply.send(ok({ items: serialized, total: items.length }));
+  });
+  app.get("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "人员 ID 错误");
+    const item = await prisma.artist.findUnique({ where: { id }, include: { avatarAsset: true } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "人员不存在");
+    return reply.send(ok(serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)));
   });
   app.post("/api/admin/artists", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistCreateRequestSchema.safeParse(request.body);

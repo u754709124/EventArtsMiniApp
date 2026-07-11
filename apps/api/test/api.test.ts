@@ -368,6 +368,37 @@ describe("artist client and admin contracts", () => {
     expect(updated.json().data.tags).toEqual(["论坛主持"]);
     expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["论坛主持"]');
   });
+
+  it("returns full admin edit records by id and validates invalid ids", async () => {
+    const token = await login();
+    const artist = await prisma.artist.findFirstOrThrow({ include: { avatarAsset: true } });
+    const foundArtist = await app.inject({
+      method: "GET",
+      url: `/api/admin/artists/${artist.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const badAnnouncement = await app.inject({
+      method: "GET",
+      url: "/api/admin/announcements/not-a-number",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const missingBanner = await app.inject({
+      method: "GET",
+      url: "/api/admin/banners/999999",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(foundArtist.statusCode).toBe(200);
+    expect(foundArtist.json().data).toMatchObject({
+      id: artist.id,
+      avatarAssetId: artist.avatarAssetId,
+      tags: expect.any(Array)
+    });
+    expect(badAnnouncement.statusCode).toBe(400);
+    expect(badAnnouncement.json().error.code).toBe("VALIDATION_ERROR");
+    expect(missingBanner.statusCode).toBe(404);
+    expect(missingBanner.json().error.code).toBe("NOT_FOUND");
+  });
 });
 
 describe("media upload and references", () => {

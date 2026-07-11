@@ -1,5 +1,5 @@
 import Taro from "@tarojs/taro";
-import { Swiper, SwiperItem, Text, View } from "@tarojs/components";
+import { Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import type { ITouchEvent } from "@tarojs/components/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnnouncementDto, BannerDto, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
@@ -8,6 +8,7 @@ import { AppImage } from "../../components/AppImage";
 import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
+import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
 
 const menuRoutes: Record<string, string> = {
@@ -48,6 +49,16 @@ function useSafeTop() {
 }
 
 const swipeThreshold = 8;
+const noticeMeasureDelayMs = 80;
+
+type NoticeMarqueeState = {
+  announcementId: number;
+  distancePx: number;
+  phase: "measuring" | "ready" | "scrolling";
+  runId: number;
+  scrollDurationMs: number;
+  totalDurationMs: number;
+};
 
 function useSwipeClickGuard() {
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -80,11 +91,132 @@ function useSwipeClickGuard() {
   return { allowClick, onTouchEnd, onTouchMove, onTouchStart };
 }
 
+function getNoticeNodeWidth(selector: string): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const query = Taro.createSelectorQuery();
+      query.select(selector).boundingClientRect();
+      query.exec((rects) => {
+        const rect = Array.isArray(rects) ? rects[0] : null;
+        resolve(typeof rect?.width === "number" ? rect.width : 0);
+      });
+    } catch {
+      resolve(0);
+    }
+  });
+}
+
+function getNoticeTrackStyle(announcementId: number, marquee: NoticeMarqueeState | null) {
+  if (!marquee || marquee.announcementId !== announcementId || marquee.distancePx <= 0) {
+    return "transform: translate3d(0, 0, 0); transition: none;";
+  }
+
+  if (marquee.phase !== "scrolling") {
+    return "transform: translate3d(0, 0, 0); transition: none;";
+  }
+
+  return `transform: translate3d(-${marquee.distancePx}px, 0, 0); transition: transform ${marquee.scrollDurationMs}ms linear;`;
+}
+
 function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }) {
   const [current, setCurrent] = useState(0);
+  const [marquee, setMarquee] = useState<NoticeMarqueeState | null>(null);
+  const marqueeRunId = useRef(0);
   const swipeGuard = useSwipeClickGuard();
   const multiple = announcements.length > 1;
   const currentAnnouncement = announcements[current] ?? announcements[0];
+  const marqueeReady = Boolean(marquee && marquee.phase !== "measuring");
+  const currentAnnouncementKey = currentAnnouncement
+    ? [
+        currentAnnouncement.id,
+        currentAnnouncement.summary,
+        currentAnnouncement.content,
+        currentAnnouncement.detailPageId ?? "",
+        currentAnnouncement.displayDurationMs ?? ""
+      ].join("|")
+    : "";
+
+  useEffect(() => {
+    if (current < announcements.length) return;
+    setCurrent(0);
+  }, [announcements.length, current]);
+
+  useEffect(() => {
+    if (!currentAnnouncement) {
+      setMarquee(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let startTimer: ReturnType<typeof setTimeout> | undefined;
+    const runId = marqueeRunId.current + 1;
+    marqueeRunId.current = runId;
+    const baseTiming = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, 0);
+    setMarquee({
+      announcementId: currentAnnouncement.id,
+      distancePx: 0,
+      phase: "measuring",
+      runId,
+      scrollDurationMs: 0,
+      totalDurationMs: baseTiming.totalDurationMs
+    });
+
+    const measureTimer = setTimeout(() => {
+      void Promise.all([
+        getNoticeNodeWidth(`#noticeTextViewport-${current}`),
+        getNoticeNodeWidth(`#noticeTextTrack-${current}`)
+      ]).then(([viewportWidth, trackWidth]) => {
+        if (cancelled) return;
+
+        const timing = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, trackWidth - viewportWidth);
+        setMarquee({
+          announcementId: currentAnnouncement.id,
+          distancePx: timing.distancePx,
+          phase: "ready",
+          runId,
+          scrollDurationMs: timing.scrollDurationMs,
+          totalDurationMs: timing.totalDurationMs
+        });
+
+        if (timing.shouldScroll) {
+          startTimer = setTimeout(() => {
+            if (cancelled) return;
+            setMarquee((state) => (
+              state?.runId === runId
+                ? { ...state, phase: "scrolling" }
+                : state
+            ));
+          }, getNoticeMarqueeStartPauseMs());
+        }
+      });
+    }, noticeMeasureDelayMs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(measureTimer);
+      if (startTimer) clearTimeout(startTimer);
+    };
+  }, [current, currentAnnouncementKey]);
+
+  useEffect(() => {
+    if (!multiple || !currentAnnouncement || !marqueeReady || marquee?.announcementId !== currentAnnouncement.id) {
+      return undefined;
+    }
+
+    const switchTimer = setTimeout(() => {
+      setCurrent((value) => (value + 1) % announcements.length);
+    }, marquee.totalDurationMs);
+
+    return () => clearTimeout(switchTimer);
+  }, [
+    announcements.length,
+    currentAnnouncement?.id,
+    marquee?.announcementId,
+    marquee?.runId,
+    marquee?.totalDurationMs,
+    marqueeReady,
+    multiple
+  ]);
 
   if (!currentAnnouncement) return null;
   return (
@@ -92,14 +224,13 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
       <Swiper
         className="notice__swiper"
         current={current}
-        autoplay={multiple}
+        autoplay={false}
         circular={multiple}
         disableTouch={false}
         duration={280}
-        interval={currentAnnouncement.displayDurationMs || 3000}
         onChange={(event) => setCurrent(Number(event.detail.current || 0))}
       >
-        {announcements.map((announcement) => {
+        {announcements.map((announcement, index) => {
           const clickable = Boolean(announcement.detailPageId);
           return (
             <SwiperItem key={announcement.id}>
@@ -114,9 +245,17 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
                   navigateToDetailPage(announcement.detailPageId);
                 } : undefined}
               >
-                <Text className="notice__icon">▶</Text>
-                <Text className="notice__summary">{announcement.summary}</Text>
-                <Text className="notice__content">{announcement.content}</Text>
+                <Image className="notice__icon" src={generatedAssets.iconBullet} mode="aspectFit" />
+                <View className="notice__text-viewport" id={`noticeTextViewport-${index}`}>
+                  <View
+                    className="notice__text-track"
+                    id={`noticeTextTrack-${index}`}
+                    style={getNoticeTrackStyle(announcement.id, marquee)}
+                  >
+                    <Text className="notice__summary">{announcement.summary}</Text>
+                    <Text className="notice__content">{announcement.content}</Text>
+                  </View>
+                </View>
                 {clickable && <Text className="notice__arrow">›</Text>}
               </View>
             </SwiperItem>

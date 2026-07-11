@@ -4,6 +4,7 @@ import type { ColumnsType } from "antd/es/table";
 import { detailPageTypeDefinitions, detailPageTypeValues, type DetailPageSummaryDto } from "@event-arts/shared";
 import { useNavigate } from "react-router-dom";
 import { request } from "../api";
+import { PageHeader } from "../components/PageHeader";
 
 type DetailPageListResponse = {
   items: DetailPageSummaryDto[];
@@ -89,11 +90,13 @@ export function DetailPageList() {
   ];
 
   return (
-    <Card
-      data-testid="detail-page-management"
-      title="详情页管理"
-      extra={<Button data-testid="detail-page-create" type="primary" onClick={() => navigate("/detail-pages/new")}>新建详情页</Button>}
-    >
+    <div className="page-stack" data-testid="detail-page-management">
+      <PageHeader
+        title="详情页管理"
+        breadcrumbs={["内容管理", "详情页管理"]}
+        extra={<Button data-testid="detail-page-create" type="primary" onClick={() => navigate("/detail-pages/new")}>新建详情页</Button>}
+      />
+      <Card>
       <Space className="detail-page-list-filters" wrap>
         <Input.Search
           data-testid="detail-page-search"
@@ -135,6 +138,7 @@ export function DetailPageList() {
           }
         }}
       />
-    </Card>
+      </Card>
+    </div>
   );
 }

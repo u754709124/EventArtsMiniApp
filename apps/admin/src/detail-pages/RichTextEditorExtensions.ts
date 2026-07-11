@@ -1,6 +1,7 @@
 import { Extension, Node, mergeAttributes, type Extensions } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
+import TextAlign from "@tiptap/extension-text-align";
 import { FontSize, TextStyle } from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
@@ -331,7 +332,12 @@ const SafeTemplateAttributes = Extension.create({
           "italic",
           "underline",
           "strike",
-          "link"
+          "link",
+          "bulletList",
+          "orderedList",
+          "listItem",
+          "blockquote",
+          "horizontalRule"
         ],
         attributes: safeAttributeDefinitions()
       }
@@ -345,11 +351,6 @@ export function createRichTextEditorExtensions(registry: TrustedMediaRegistry): 
       code: false,
       codeBlock: false,
       heading: { levels: [1] },
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
-      blockquote: false,
-      horizontalRule: false,
       link: false,
       trailingNode: false,
       underline: false
@@ -358,6 +359,7 @@ export function createRichTextEditorExtensions(registry: TrustedMediaRegistry): 
     SafeTemplateAttributes,
     FontSize,
     Color,
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
     Underline,
     Link.configure({
       autolink: false,

@@ -30,7 +30,7 @@
   top: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: center;
   margin: 0 -24px 24px;
@@ -127,7 +127,7 @@
   .detail-designer {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(320px, 42vh) minmax(420px, 1fr);
-    height: calc(100dvh - 112px);
+    height: auto;
     min-height: 0;
   }
 

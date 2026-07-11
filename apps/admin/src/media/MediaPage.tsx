@@ -3,6 +3,7 @@ import { Button, Card, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, mes
 import type { ColumnsType } from "antd/es/table";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
 import { request } from "../api";
+import { PageHeader } from "../components/PageHeader";
 import { MediaUploadAction } from "./MediaUploadAction";
 
 type ListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
@@ -11,6 +12,10 @@ function formatBytes(size: number) {
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
   if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${size} B`;
+}
+
+function sameTags(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 export function MediaPage() {
@@ -26,6 +31,7 @@ export function MediaPage() {
   const [editTags, setEditTags] = useState<string[]>([]);
   const [unused, setUnused] = useState<MediaAssetDto[] | null>(null);
   const [selectedUnused, setSelectedUnused] = useState<number[]>([]);
+  const editDirty = Boolean(editing && (editName !== editing.resourceName || !sameTags(editTags, editing.tags)));
 
   const loadTags = useCallback(() => {
     void request<{ items: Array<{ label: string; count: number }> }>("/api/admin/media-assets/tags").then((value) => setTags(value.items));
@@ -69,6 +75,11 @@ export function MediaPage() {
     } catch (error) {
       message.error(error instanceof Error ? error.message : "保存失败");
     }
+  }
+
+  function closeMetadataEditor() {
+    if (editDirty && !window.confirm("当前资源信息尚未保存，确认关闭？")) return;
+    setEditing(null);
   }
 
   async function remove(asset: MediaAssetDto) {
@@ -145,6 +156,7 @@ export function MediaPage() {
     {
       title: "操作",
       width: 170,
+      fixed: "right",
       render: (_, asset) => (
         <Space>
           <Button onClick={() => { setEditing(asset); setEditName(asset.resourceName); setEditTags(asset.tags); }}>编辑</Button>
@@ -155,15 +167,18 @@ export function MediaPage() {
   ];
 
   return (
-    <Card
-      title="资源管理"
-      extra={
+    <div className="page-stack">
+      <PageHeader
+        title="素材库"
+        breadcrumbs={["素材管理", "素材库"]}
+        extra={
         <Space>
           <MediaUploadAction testid="media-upload-button" label="上传资源" onAsset={() => void load(1)} />
           <Button data-testid="media-clean-unused" onClick={() => void scanUnused()}>清理未使用资源</Button>
         </Space>
-      }
-    >
+        }
+      />
+      <Card>
       <Tabs
         activeKey={mediaType}
         onChange={(key) => setMediaType(key as MediaType)}
@@ -200,7 +215,7 @@ export function MediaPage() {
         locale={{ emptyText: <Empty description="暂无资源" /> }}
       />
 
-      <Modal title="编辑资源信息" open={Boolean(editing)} okText="保存" onOk={() => void saveMetadata()} onCancel={() => setEditing(null)}>
+      <Modal title="编辑资源信息" open={Boolean(editing)} okText="保存" onOk={() => void saveMetadata()} onCancel={closeMetadataEditor}>
         <p>资源名</p>
         <Input value={editName} onChange={(event) => setEditName(event.target.value)} />
         <p>标签</p>
@@ -229,6 +244,7 @@ export function MediaPage() {
         />
         </div>
       </Modal>
-    </Card>
+      </Card>
+    </div>
   );
 }

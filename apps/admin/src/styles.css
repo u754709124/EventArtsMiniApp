@@ -25,6 +25,25 @@ body {
   min-height: 100dvh;
 }
 
+.admin-layout .ant-layout-sider {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  border-right: 1px solid #eee5dc;
+}
+
+.admin-layout .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-layout .ant-menu {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-bottom: 72px;
+}
+
 .brand {
   height: 64px;
   display: flex;
@@ -35,7 +54,23 @@ body {
   color: #9a5a1f;
 }
 
+.brand.is-collapsed {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-collapse {
+  position: absolute;
+  bottom: 16px;
+  left: 12px;
+  right: 12px;
+  width: calc(100% - 24px);
+}
+
 .admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   height: 64px;
   padding: 0 24px;
   background: #fff;
@@ -45,8 +80,107 @@ body {
   border-bottom: 1px solid #eee5dc;
 }
 
+.admin-header > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-header span {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.admin-header__account {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .admin-content {
   padding: 24px;
+}
+
+.page-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.page-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.page-header h2.ant-typography {
+  margin: 2px 0 0;
+}
+
+.page-header__breadcrumb {
+  font-size: 12px;
+}
+
+.page-header__description {
+  margin-top: 4px;
+  color: #595959;
+}
+
+.page-header__extra {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.list-toolbar,
+.toolbar {
+  margin-bottom: 16px;
+}
+
+.list-toolbar .ant-input-search {
+  width: min(360px, 100vw - 64px);
+}
+
+.form-section .ant-card-head {
+  min-height: 48px;
+}
+
+.form-section__description {
+  margin-bottom: 16px;
+  color: #595959;
+}
+
+.form-section__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
+.form-grid-full {
+  grid-column: 1 / -1;
+}
+
+.form-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid #eee5dc;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 -8px 20px rgb(31 31 31 / 6%);
+}
+
+.drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.legacy-hidden-submit {
+  display: none;
 }
 
 .metric-card {
@@ -56,10 +190,6 @@ body {
 .metric-card strong {
   font-size: 34px;
   color: #9a5a1f;
-}
-
-.toolbar {
-  margin-bottom: 16px;
 }
 
 .media-thumb {
@@ -216,6 +346,20 @@ video.media-thumb {
 }
 
 @media (max-width: 900px) {
+  .admin-content {
+    padding: 16px;
+  }
+
+  .page-header,
+  .form-action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-section__grid {
+    grid-template-columns: 1fr;
+  }
+
   .media-library-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -528,6 +528,24 @@ test("多条公告按相同时长持续自动循环切换", async ({ page, reque
   await expect(page.getByTestId("home-announcement")).toHaveAttribute("data-current-index", "0", { timeout: 2500 });
 });
 
+test("长公告先横向滚动完整后再切换下一条", async ({ page, request }) => {
+  await setAnnouncementStatus(request, "disabled");
+  await createAnnouncement(
+    request,
+    "E2E 长公告完整滚动展示婚礼主持商演档期更新",
+    650,
+    300
+  );
+  await createAnnouncement(request, "E2E 长公告之后", 651, 300);
+  await openHome(page);
+
+  const announcement = page.getByTestId("home-announcement");
+  await expect(announcement).toHaveAttribute("data-current-index", "0");
+  await page.waitForTimeout(900);
+  await expect(announcement).toHaveAttribute("data-current-index", "0");
+  await expect(announcement).toHaveAttribute("data-current-index", "1", { timeout: 12_000 });
+});
+
 test("公告与 BANNER 支持双向手动滑动且不会误触跳转", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await setBannerStatus(request, "disabled");

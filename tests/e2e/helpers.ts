@@ -81,6 +81,14 @@ export function visibleSelectOption(page: Page, option: string | RegExp) {
 }
 
 export async function selectOption(page: Page, testid: string, option: string | RegExp) {
+  if (testid === "status-select") {
+    const control = page.getByTestId(testid);
+    const desired = typeof option === "string" ? option : option.source;
+    const shouldEnable = desired.includes("启用") || desired.includes("enabled");
+    const checked = await control.getAttribute("aria-checked");
+    if ((checked === "true") !== shouldEnable) await control.click();
+    return;
+  }
   await page.getByTestId(testid).click();
   const target = visibleSelectOption(page, option);
   await expect(target).toBeVisible();

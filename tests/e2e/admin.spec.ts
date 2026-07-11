@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { expect, test, type Locator } from "@playwright/test";
 import sharp from "sharp";
 import { adminApi, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
@@ -57,16 +58,16 @@ async function expectLivePreviewContract(
 }
 
 async function createUniqueLibraryUploadPng() {
-  const seed = Date.now();
+  const [r, g, b] = randomBytes(3);
   return sharp({
     create: {
-      width: 2,
-      height: 2,
+      width: 32,
+      height: 32,
       channels: 4,
       background: {
-        r: seed % 251,
-        g: Math.floor(seed / 3) % 251,
-        b: Math.floor(seed / 7) % 251,
+        r,
+        g,
+        b,
         alpha: 1
       }
     }
@@ -155,7 +156,7 @@ test("新增公告并修改状态", async ({ page }) => {
   await selectOption(page, "status-select", "停用");
   await page.getByTestId("announcements-save").click();
   await waitForToast(page, "保存成功");
-  await expect(page.getByRole("row", { name: /E2E 公告/ })).toContainText("disabled");
+  await expect(page.getByRole("row", { name: /E2E 公告/ })).toContainText("停用");
 });
 
 test("新增 Banner", async ({ page, request }) => {
@@ -452,4 +453,38 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "删除所选资源" }).click();
   await expect(page.getByText(/已删除 1 项/).last()).toBeVisible();
+});
+
+test("后台分层导航和表单布局视觉截图", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAdminUi(page);
+  await page.screenshot({ path: "docs/design/admin-navigation-expanded.png", fullPage: true });
+
+  await page.getByTestId("sidebar-collapse").click();
+  await expect(page.getByLabel("展开侧边栏")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-navigation-collapsed.png", fullPage: true });
+
+  await page.evaluate(() => localStorage.setItem("event-arts-admin-sider-collapsed", "false"));
+  await page.goto("/artists/new");
+  await expect(page.getByTestId("artist-name")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-artist-editor.png", fullPage: true });
+
+  await page.goto("/cases/new");
+  await expect(page.getByTestId("case-title")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-case-editor.png", fullPage: true });
+
+  await page.goto("/announcements");
+  await page.getByTestId("announcements-create").click();
+  await expect(page.getByTestId("announcements-drawer")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-announcement-drawer.png", fullPage: true });
+
+  await page.locator(".ant-drawer-close").click();
+  await page.goto("/media-assets");
+  await expect(page.getByTestId("media-table")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-media-list.png", fullPage: true });
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/artists");
+  await expect(page.getByTestId("artists-table")).toBeVisible();
+  await page.screenshot({ path: "docs/design/admin-responsive-1024.png", fullPage: true });
 });

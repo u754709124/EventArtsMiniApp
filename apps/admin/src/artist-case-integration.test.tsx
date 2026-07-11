@@ -6,7 +6,7 @@ import {
   buildCrudSaveRequest,
   configs,
   prepareCrudEditValues
-} from "./main";
+} from "./crud/config";
 
 const bannerDetailPage: DetailPageConfigDto = {
   id: 9,

@@ -44,11 +44,30 @@
 }
 
 .notice__icon {
-  color: #d69b52;
+  width: 36rpx;
+  height: 36rpx;
+  flex: 0 0 36rpx;
+}
+
+.notice__text-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.notice__text-track {
+  min-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 14rpx;
+  white-space: nowrap;
+  will-change: transform;
 }
 
 .notice__summary {
   color: #d94332;
+  flex: 0 0 auto;
   font-size: 26rpx;
   line-height: 1.35;
   font-weight: 700;
@@ -56,14 +75,11 @@
 }
 
 .notice__content {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
   color: #1f1f1f;
   font-size: 24rpx;
   line-height: 1.35;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .notice__arrow {

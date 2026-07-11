@@ -28,7 +28,7 @@ import "./detail-page-config.css";
 const richTextRules = [
   {
     validator: (_rule: unknown, value: unknown) =>
-      typeof value === "string" && value.trim()
+      isMeaningfulRichText(value)
         ? Promise.resolve()
         : Promise.reject(new Error("请填写详情页富文本"))
   }

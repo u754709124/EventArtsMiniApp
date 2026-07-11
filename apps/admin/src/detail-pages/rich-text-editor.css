@@ -46,6 +46,20 @@
   box-shadow: 0 4px 12px rgb(0 0 0 / 5%);
 }
 
+.rich-text-toolbar-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
+  padding-right: 8px;
+  border-right: 1px solid #e8e8e8;
+}
+
+.rich-text-toolbar-group:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
 .rich-text-toolbar-button.ant-btn,
 .rich-text-select-label select,
 .rich-text-color-label input {

@@ -170,12 +170,10 @@ describe("RichTextEditorField", () => {
 
     for (const name of [
       "粗体", "斜体", "下划线", "删除线", "添加链接", "插入图片",
-      "插入视频", "撤销", "重做", "清除格式"
+      "插入视频", "撤销", "重做", "清除格式", "左对齐", "居中",
+      "右对齐", "有序列表", "无序列表", "引用", "分割线"
     ]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
-    }
-    for (const name of ["左对齐", "居中", "右对齐", "有序列表", "无序列表", "引用", "分割线"]) {
-      expect(screen.queryByRole("button", { name })).toBeNull();
     }
 
     act(() => {
