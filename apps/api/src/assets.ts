@@ -12,6 +12,7 @@ sharp.concurrency(1);
 export type SeedAssetSpec = {
   key: string;
   relativePath: string;
+  recoveryCommand: "pnpm assets:slice" | "pnpm assets:slice:artists" | "pnpm assets:slice:artist-detail";
   mediaType: "image" | "video";
   mimeType: "image/png" | "video/mp4";
   width?: number;
@@ -35,9 +36,29 @@ const detailImageNames = [
 ] as const;
 
 export const seedAssetSpecs: SeedAssetSpec[] = [
-  ...coreImageNames.map((filename) => ({ key: `asset.core.${filename}`, relativePath: filename, mediaType: "image" as const, mimeType: "image/png" as const })),
-  ...detailImageNames.map((filename) => ({ key: `asset.artist-detail.${filename}`, relativePath: `artist-detail/${filename}`, mediaType: "image" as const, mimeType: "image/png" as const })),
-  { key: "asset.artist-detail.detail-case-demo.mp4", relativePath: "artist-detail/detail-case-demo.mp4", mediaType: "video", mimeType: "video/mp4", width: 16, height: 16 }
+  ...coreImageNames.map((filename) => ({
+    key: `asset.core.${filename}`,
+    relativePath: filename,
+    recoveryCommand: filename.startsWith("artist-cover-") ? "pnpm assets:slice:artists" as const : "pnpm assets:slice" as const,
+    mediaType: "image" as const,
+    mimeType: "image/png" as const
+  })),
+  ...detailImageNames.map((filename) => ({
+    key: `asset.artist-detail.${filename}`,
+    relativePath: `artist-detail/${filename}`,
+    recoveryCommand: "pnpm assets:slice:artist-detail" as const,
+    mediaType: "image" as const,
+    mimeType: "image/png" as const
+  })),
+  {
+    key: "asset.artist-detail.detail-case-demo.mp4",
+    relativePath: "artist-detail/detail-case-demo.mp4",
+    recoveryCommand: "pnpm assets:slice:artist-detail",
+    mediaType: "video",
+    mimeType: "video/mp4",
+    width: 16,
+    height: 16
+  }
 ];
 
 async function readRequiredSeedAsset(source: string, spec: SeedAssetSpec) {
@@ -45,8 +66,7 @@ async function readRequiredSeedAsset(source: string, spec: SeedAssetSpec) {
     return await readFile(source);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      const command = spec.relativePath.startsWith("artist-detail/") ? "pnpm assets:slice:artist-detail" : "pnpm assets:slice";
-      throw new Error(`种子资源文件不存在：${source}。请先运行 ${command}`);
+      throw new Error(`种子资源文件不存在：${source}。请先运行 ${spec.recoveryCommand}`);
     }
     throw error;
   }

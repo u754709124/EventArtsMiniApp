@@ -69,17 +69,46 @@ beforeAll(async () => {
   app = await buildApp({ prisma, jwtSecret: "detail-test", uploadDir, publicBaseUrl: "http://127.0.0.1:3001" });
 });
 
-beforeEach(async () => {
-  await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001", reset: true });
-});
-
 afterAll(async () => {
   await app.close();
   await prisma.$disconnect();
   await rm(root, { recursive: true, force: true });
 });
 
+describe("seed asset recovery commands", () => {
+  async function expectMissingAssetCommand(relativePath: string, pattern: RegExp) {
+    await expect(
+      registerSeedAssets(prisma, {
+        uploadDir,
+        publicBaseUrl: "http://127.0.0.1:3001",
+        assetRoot: path.join(root, "missing-seed-assets"),
+        createdBy: 0,
+        specs: [seedAssetSpecs.find((spec) => spec.relativePath === relativePath)!]
+      })
+    ).rejects.toThrow(pattern);
+  }
+
+  it("reports the core slicing command for a missing core seed asset", async () => {
+    await expectMissingAssetCommand("banner-default.png", /种子资源文件不存在：.*banner-default\.png.*pnpm assets:slice(?:\s|$)/);
+  });
+
+  it("reports the artist slicing command for a missing artist cover seed asset", async () => {
+    await expectMissingAssetCommand("artist-cover-01.png", /种子资源文件不存在：.*artist-cover-01\.png.*pnpm assets:slice:artists/);
+  });
+
+  it("reports the detail slicing command for a missing detail seed asset", async () => {
+    await expectMissingAssetCommand(
+      "artist-detail/banner-linran-balanced.png",
+      /种子资源文件不存在：.*banner-linran-balanced\.png.*pnpm assets:slice:artist-detail/
+    );
+  });
+});
+
 describe("detail page API integration", () => {
+  beforeEach(async () => {
+    await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001", reset: true });
+  });
+
   it("seeds both page types for artists and cases without duplicate configs", async () => {
     const before = await Promise.all([
       prisma.mediaAsset.count(),
@@ -152,32 +181,6 @@ describe("detail page API integration", () => {
     expect(reseededArtistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()).toEqual(
       artistConfig.contentMedia.map((relation) => relation.mediaAsset.originalName).sort()
     );
-  });
-
-  it("reports the core slicing command for a missing core seed asset", async () => {
-    const admin = await prisma.adminUser.findUniqueOrThrow({ where: { username: "admin" } });
-    await expect(
-      registerSeedAssets(prisma, {
-        uploadDir,
-        publicBaseUrl: "http://127.0.0.1:3001",
-        assetRoot: path.join(root, "missing-seed-assets"),
-        createdBy: admin.id,
-        specs: [seedAssetSpecs.find((spec) => spec.relativePath === "banner-default.png")!]
-      })
-    ).rejects.toThrow(/种子资源文件不存在：.*banner-default\.png.*pnpm assets:slice(?:\s|$)/);
-  });
-
-  it("reports the detail slicing command for a missing detail seed asset", async () => {
-    const admin = await prisma.adminUser.findUniqueOrThrow({ where: { username: "admin" } });
-    await expect(
-      registerSeedAssets(prisma, {
-        uploadDir,
-        publicBaseUrl: "http://127.0.0.1:3001",
-        assetRoot: path.join(root, "missing-seed-assets"),
-        createdBy: admin.id,
-        specs: [seedAssetSpecs.find((spec) => spec.relativePath === "artist-detail/banner-linran-balanced.png")!]
-      })
-    ).rejects.toThrow(/种子资源文件不存在：.*banner-linran-balanced\.png.*pnpm assets:slice:artist-detail/);
   });
 
   it("previews with production validation without writing config rows", async () => {
