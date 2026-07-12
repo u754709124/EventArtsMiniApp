@@ -6,6 +6,7 @@ const h5Base = "http://127.0.0.1:10086";
 
 const apiEnv = {
   ...process.env,
+  API_HOST: "127.0.0.1",
   API_PORT: "3001",
   DATABASE_URL: "file:./dev.db",
   JWT_SECRET: "dev-secret-change-me",
@@ -34,7 +35,7 @@ export default defineConfig({
     },
     {
       command: "pnpm dev:admin",
-      url: `${adminBase}/login`,
+      url: `${adminBase}/admin/login`,
       timeout: 120_000,
       reuseExistingServer: false,
       env: {

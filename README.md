@@ -26,13 +26,16 @@ CI=true pnpm install
 复制 `.env.example` 为 `.env`，并按环境修改：
 
 - `API_PORT`：API 监听端口，默认 `3001`
+- `API_HOST`：API 监听地址，默认 `127.0.0.1`；生产反代部署不应直接暴露公网
 - `JWT_SECRET`：管理员 JWT 密钥，生产环境必须替换
 - `DATABASE_URL`：SQLite 数据库地址，默认 `file:./dev.db`
 - `UPLOAD_DIR`：本地上传目录，默认指向仓库根目录 `uploads`
 - `MAX_IMAGE_UPLOAD_BYTES`：图片上传上限，默认 `10MB`
 - `MAX_VIDEO_UPLOAD_BYTES`：视频上传上限，默认 `100MB`
 - `PUBLIC_BASE_URL`：资源 URL 前缀
-- `VITE_API_BASE_URL`：后台管理系统 API Base URL；本地也可留空走 Vite proxy
+- `ADMIN_HOST`：Admin 生产静态服务监听地址，默认 `127.0.0.1`
+- `ADMIN_PORT`：Admin 生产静态服务监听端口，默认 `4173`
+- `VITE_API_BASE_URL`：后台管理系统 API Base URL；本地也可留空走 Vite proxy，生产同源 Nginx 部署应留空
 - `TARO_APP_API_BASE_URL`：Taro H5/weapp 编译时注入的小程序 API Base URL
 
 ## 初始化数据库
@@ -77,6 +80,15 @@ pnpm build:weapp
 ```
 
 微信小程序端构建完成后，将 `apps/miniapp/dist` 导入微信开发者工具。
+
+Admin 生产构建资源固定使用 `/admin/` base。构建后可用以下命令启动只监听回环地址的静态服务：
+
+```bash
+API_HOST=127.0.0.1 API_PORT=3001 PUBLIC_BASE_URL=https://your-domain.example pnpm start:api
+ADMIN_HOST=127.0.0.1 ADMIN_PORT=4173 pnpm start:admin
+```
+
+该服务只服务 `apps/admin/dist`，支持 `/admin/*` SPA 刷新 fallback；缺失的真实静态资源仍返回 404。
 
 ## 人员列表参考资源
 
@@ -155,11 +167,16 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 ## 生产注意事项
 
 - 替换默认管理员密码和 `JWT_SECRET`。
-- 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`VITE_API_BASE_URL`、`TARO_APP_API_BASE_URL`。
+- 推荐以 Nginx 作为唯一公网入口：`/admin/` 代理到 Admin 静态服务，`/api/` 和 `/uploads/` 代理到 API。
+- 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`TARO_APP_API_BASE_URL`；同源 Nginx 部署下 `VITE_API_BASE_URL` 留空。
+- `PUBLIC_BASE_URL` 必须是公网 origin，例如 `https://your-domain.example`，不要追加 `/api`。
+- Admin upstream 默认 `127.0.0.1:4173`，API upstream 默认 `127.0.0.1:3001`，公网只开放 Nginx。
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
 - 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
 - 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名。
 - 使用 `pnpm build:weapp` 后在微信开发者工具中复核页面、TabBar、上传资源访问和接口域名。
+
+Nginx 模板和完整部署、验证、备份、回滚步骤见 `docs/deploy/nginx-production-routing.md`。
 
 ## 文档
 

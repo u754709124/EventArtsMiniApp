@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { adminApi, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
+import { adminApi, adminPath, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -180,15 +180,15 @@ async function expectTableHorizontalScrollIsScoped(
 }
 
 test("登录页展示", async ({ page }) => {
-  await page.goto("/login");
+  await page.goto(adminPath("/login"));
   await expect(page.getByText("后台管理系统")).toBeVisible();
   await expect(page.getByTestId("login-username")).toBeVisible();
   await expect(page.getByTestId("login-password")).toBeVisible();
 });
 
 test("未登录访问后台跳转登录", async ({ page }) => {
-  await page.goto("/dashboard");
-  await expect(page).toHaveURL(/\/login$/);
+  await page.goto(adminPath("/dashboard"));
+  await expect(page).toHaveURL(/\/admin\/login$/);
 });
 
 test("登录成功进入看板并展示 PV", async ({ page }) => {
@@ -532,7 +532,7 @@ test("文章管理支持分类输入、详情页引用、筛选、删除和菜�
   await expect(page.getByTestId("article-category")).toHaveValue("E2E 新分类");
   await expect(page.getByTestId("detail-page-reference-select")).toContainText("E2E 文章详情页");
 
-  await page.goto("/articles");
+  await page.goto(adminPath("/articles"));
   await page.getByTestId("articles-category-filter").click();
   await expect(visibleSelectOption(page, "E2E 新分类")).toBeVisible();
   await visibleSelectOption(page, "E2E 新分类").click();
@@ -540,7 +540,7 @@ test("文章管理支持分类输入、详情页引用、筛选、删除和菜�
   await selectOption(page, "articles-featured-filter", "精选");
   await expect(page.getByTestId(`articles-row-${created.id}`)).toBeVisible();
 
-  await page.goto("/menu-items");
+  await page.goto(adminPath("/menu-items"));
   await page.getByTestId("menu-items-create").click();
   await page.getByTestId("menu-text").fill("E2E 文章菜单");
   await chooseMediaFromLibrary(page, "menu-icon-select", /icon-case\.png/);
@@ -570,7 +570,7 @@ test("文章管理支持分类输入、详情页引用、筛选、删除和菜�
   });
   if (!savedMenu) throw new Error("E2E 文章菜单未创建成功");
 
-  await page.goto("/articles");
+  await page.goto(adminPath("/articles"));
   await page.getByTestId(`articles-row-${created.id}`).getByTestId("articles-delete").click();
   const deleteConfirm = page.getByRole("dialog", { name: `确认删除「${created.title}」？` });
   await expect(deleteConfirm).toBeVisible();
@@ -647,9 +647,7 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await page.getByTestId("media-search").locator("input").press("Enter");
   await expect(page.getByRole("row", { name: /E2E 未使用资源/ })).toBeVisible();
 
-  const reuseChooser = page.waitForEvent("filechooser");
-  await page.getByTestId("media-upload-button").click();
-  await (await reuseChooser).setFiles(file);
+  await page.getByTestId("media-upload-button-input").setInputFiles(file);
   await waitForToast(page, "已存在相同资源，已直接复用");
 
   await page.getByTestId("media-clean-unused").click();
@@ -666,15 +664,15 @@ test("后台布局横向滚动只作用于右侧表格内容", async ({ page }) 
   await page.evaluate(() => localStorage.setItem("event-arts-admin-sider-collapsed", "false"));
 
   for (const target of [
-    { path: "/artists", title: "人员管理", tableTestId: "artists-table", actionTestId: "artists-create" },
-    { path: "/media-assets", title: "素材库", tableTestId: "media-table", actionTestId: "media-upload-button" },
-    { path: "/detail-pages", title: "详情页管理", tableTestId: "detail-page-table", actionTestId: "detail-page-create" }
+    { path: adminPath("/artists"), title: "人员管理", tableTestId: "artists-table", actionTestId: "artists-create" },
+    { path: adminPath("/media-assets"), title: "素材库", tableTestId: "media-table", actionTestId: "media-upload-button" },
+    { path: adminPath("/detail-pages"), title: "详情页管理", tableTestId: "detail-page-table", actionTestId: "detail-page-create" }
   ]) {
     await expectTableHorizontalScrollIsScoped(page, target);
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/artists");
+  await page.goto(adminPath("/artists"));
   await expect(page.getByTestId("artists-table")).toBeVisible();
   await expectNoDocumentHorizontalScroll(page);
 });
@@ -689,26 +687,26 @@ test("后台分层导航和表单视觉截图", async ({ page }) => {
   await page.screenshot({ path: "docs/design/admin-navigation-collapsed.png", fullPage: true });
 
   await page.evaluate(() => localStorage.setItem("event-arts-admin-sider-collapsed", "false"));
-  await page.goto("/artists/new");
+  await page.goto(adminPath("/artists/new"));
   await expect(page.getByTestId("artist-name")).toBeVisible();
   await page.screenshot({ path: "docs/design/admin-artist-editor.png", fullPage: true });
 
-  await page.goto("/cases/new");
+  await page.goto(adminPath("/cases/new"));
   await expect(page.getByTestId("case-title")).toBeVisible();
   await page.screenshot({ path: "docs/design/admin-case-editor.png", fullPage: true });
 
-  await page.goto("/announcements");
+  await page.goto(adminPath("/announcements"));
   await page.getByTestId("announcements-create").click();
   await expect(page.getByTestId("announcements-drawer")).toBeVisible();
   await page.screenshot({ path: "docs/design/admin-announcement-drawer.png", fullPage: true });
 
   await page.locator(".ant-drawer-close").click();
-  await page.goto("/media-assets");
+  await page.goto(adminPath("/media-assets"));
   await expect(page.getByTestId("media-table")).toBeVisible();
   await page.screenshot({ path: "docs/design/admin-media-list.png", fullPage: true });
 
   await page.setViewportSize({ width: 1024, height: 768 });
-  await page.goto("/artists");
+  await page.goto(adminPath("/artists"));
   await expect(page.getByTestId("artists-table")).toBeVisible();
   await page.screenshot({ path: "docs/design/admin-responsive-1024.png", fullPage: true });
 });

@@ -1,4 +1,5 @@
 import type { ApiResponse } from "@event-arts/shared";
+import { isAdminLoginPathname, withAdminBasename } from "./routes/admin-paths";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const tokenKey = "eventarts.admin.token";
@@ -60,8 +61,8 @@ function handleSessionExpired(path: string, error: ApiError) {
     sessionExpiredHandler();
     return;
   }
-  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-    window.location.replace("/login");
+  if (typeof window !== "undefined" && !isAdminLoginPathname(window.location.pathname)) {
+    window.location.replace(withAdminBasename("/login"));
   }
 }
 

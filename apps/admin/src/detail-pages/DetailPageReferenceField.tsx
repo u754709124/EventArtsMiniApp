@@ -3,6 +3,7 @@ import { Button, Select, Space, Tooltip, message } from "antd";
 import { ExportOutlined, PlusOutlined } from "@ant-design/icons";
 import type { DetailPageOptionDto } from "@event-arts/shared";
 import { request } from "../api";
+import { withAdminBasename } from "../routes/admin-paths";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import "./detail-page-reference.css";
 
@@ -89,12 +90,12 @@ export function DetailPageReferenceField({ value, onChange }: DetailPageReferenc
   );
 
   function openNew() {
-    window.open(`/detail-pages/new?returnToken=${encodeURIComponent(returnToken.current)}`, "_blank", "noopener");
+    window.open(withAdminBasename(`/detail-pages/new?returnToken=${encodeURIComponent(returnToken.current)}`), "_blank", "noopener");
   }
 
   function openSelected() {
     if (!valueKey) return;
-    window.open(`/detail-pages/${valueKey}/edit`, "_blank", "noopener");
+    window.open(withAdminBasename(`/detail-pages/${valueKey}/edit`), "_blank", "noopener");
   }
 
   return (

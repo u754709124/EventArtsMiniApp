@@ -7,6 +7,8 @@
   "scripts": {
     "dev:api": "pnpm --filter api dev",
     "dev:admin": "pnpm --filter admin dev",
+    "start:api": "pnpm --filter api exec node --import tsx src/server.ts",
+    "start:admin": "pnpm --filter admin start",
     "dev:h5": "pnpm --filter miniapp dev:h5",
     "build:api": "pnpm --filter api build",
     "build:admin": "pnpm --filter admin build",
@@ -14,7 +16,7 @@
     "build:weapp": "pnpm --filter miniapp build:weapp",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && pnpm test:deploy",
     "e2e": "playwright test",
     "db:push": "pnpm --filter api db:push",
     "db:seed": "pnpm --filter api db:seed",
@@ -27,6 +29,7 @@
     "codex:plan:verify": "node scripts/codex/verify-plan-integrity.mjs",
     "codex:plan:state": "node scripts/codex/update-plan-state.mjs",
     "codex:plan:cleanup": "node scripts/codex/cleanup-plan-run.mjs",
+    "test:deploy": "vitest run scripts/deploy",
     "test:codex": "vitest run scripts/codex",
     "release:check": "pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
   },

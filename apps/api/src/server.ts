@@ -10,6 +10,7 @@ const app = await buildApp({
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "http://127.0.0.1:3001"
 });
 
+const host = process.env.API_HOST ?? "127.0.0.1";
 const port = Number(process.env.API_PORT ?? 3001);
-await app.listen({ port, host: "0.0.0.0" });
-console.log(`API listening on http://127.0.0.1:${port}`);
+await app.listen({ port, host });
+console.log(`API listening on http://${host}:${port}`);

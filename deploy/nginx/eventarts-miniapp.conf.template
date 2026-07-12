@@ -1,0 +1,84 @@
+# EventArtsMiniApp production reverse proxy template.
+# Replace server_name and TLS settings for the target server before enabling.
+
+upstream eventarts_admin {
+    server 127.0.0.1:4173;
+    keepalive 16;
+}
+
+upstream eventarts_api {
+    server 127.0.0.1:3001;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Keep this above the API video upload limit. Default API example is 100 MiB.
+    client_max_body_size 120m;
+
+    proxy_connect_timeout 15s;
+    proxy_send_timeout 120s;
+    proxy_read_timeout 120s;
+
+    location = /admin {
+        return 308 /admin/;
+    }
+
+    location ^~ /admin/assets/ {
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        proxy_pass http://eventarts_admin;
+    }
+
+    location ^~ /admin/ {
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_pass http://eventarts_admin;
+    }
+
+    location ^~ /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_pass http://eventarts_api;
+    }
+
+    location ^~ /uploads/ {
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+        proxy_pass http://eventarts_api;
+    }
+
+    location / {
+        return 404;
+    }
+}

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 export const apiBase = "http://127.0.0.1:3001";
+export const adminPath = (path: string) => `/admin${path.startsWith("/") ? path : `/${path}`}`;
 
 export async function adminToken(request: APIRequestContext) {
   const response = await request.post(`${apiBase}/api/admin/auth/login`, {
@@ -60,7 +61,7 @@ export async function clientApi<T>(request: APIRequestContext, path: string) {
 }
 
 export async function loginAdminUi(page: Page) {
-  await page.goto("/login");
+  await page.goto(adminPath("/login"));
   await page.getByTestId("login-username").fill("admin");
   await page.getByTestId("login-password").fill("admin123456");
   await page.getByTestId("login-submit").click();

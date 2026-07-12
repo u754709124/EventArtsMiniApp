@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  base: "/admin/",
   plugins: [react()],
   test: {
     testTimeout: 15000

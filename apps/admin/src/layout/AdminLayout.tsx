@@ -8,6 +8,7 @@ import { adminMenuConfig, isMenuGroup } from "../navigation/menu-config";
 import { defaultOpenKeys, matchAdminRoute, validOpenKeys } from "../navigation/route-matching";
 import { useUnsavedChanges } from "../forms/unsaved-changes";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { stripAdminBasename } from "../routes/admin-paths";
 
 const collapsedKey = "event-arts-admin-sider-collapsed";
 const openKeysKey = "event-arts-admin-menu-open-keys";
@@ -29,7 +30,8 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const dirtyGuard = useUnsavedChanges();
-  const routeMatch = matchAdminRoute(location.pathname);
+  const routePathname = stripAdminBasename(location.pathname);
+  const routeMatch = matchAdminRoute(routePathname);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [openKeys, setOpenKeys] = useState(() => readOpenKeys().length ? readOpenKeys() : defaultOpenKeys());
   const clickGuard = useRepeatClickGuard();
@@ -91,7 +93,7 @@ export function AdminLayout() {
           onClick={({ key }) => {
             clickGuard(`admin-menu:${key}`, () => {
               const target = adminMenuConfig.flatMap((item) => isMenuGroup(item) ? item.children : [item]).find((item) => item.key === key);
-              if (!target || target.path === location.pathname) return;
+              if (!target || target.path === routePathname) return;
               navigate(target.path);
             });
           }}
