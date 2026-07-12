@@ -9,6 +9,8 @@ import { z } from "zod";
 import {
   ActivityCaseCreateRequestSchema,
   ActivityCaseUpdateRequestSchema,
+  ArticleCreateRequestSchema,
+  ArticleUpdateRequestSchema,
   ArtistCreateRequestSchema,
   ArtistUpdateRequestSchema,
   BannerLinkTypeSchema,
@@ -16,15 +18,19 @@ import {
   MediaFieldKeySchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
+  adminArticleListQuerySchema,
   artistListQuerySchema,
   batchDeleteMediaRequestSchema,
   caseListQuerySchema,
   checkMediaNameRequestSchema,
+  clientArticleListQuerySchema,
   fail,
   lookupMediaRequestSchema,
   mediaFieldRules,
   mediaListQuerySchema,
+  menuConfigSchemaByType,
   normalizeArtistTags,
+  normalizeArticleCategories,
   normalizeResourceName,
   ok,
   pageViewRequestSchema,
@@ -33,7 +39,8 @@ import {
   type ArtistType,
   type CaseMediaDto,
   type DetailPageConfigDto,
-  type MediaFieldKey
+  type MediaFieldKey,
+  type MenuType
 } from "@event-arts/shared";
 import type { AppPrismaClient } from "./db";
 import {
@@ -132,6 +139,10 @@ const detailPageOptionQuerySchema = z.object({
   type: z.string().trim().optional(),
   limit: positiveIdSchema.max(100).default(30)
 });
+const articleCategoryQuerySchema = z.object({
+  q: z.string().trim().transform((value) => value || undefined).optional(),
+  limit: positiveIdSchema.max(100).default(100)
+});
 function sendError(reply: FastifyReply, statusCode: number, code: string, message: string) {
   return reply.code(statusCode).headers(jsonHeaders).send(fail(code, message));
 }
@@ -150,8 +161,36 @@ function parseJson(value: string | null | undefined) {
   }
 }
 
+function isMenuType(value: string): value is MenuType {
+  return Object.hasOwn(menuConfigSchemaByType, value);
+}
+
+function parseMenuConfigForType(type: string, configJson: unknown) {
+  if (!isMenuType(type)) return {};
+  const parsed = menuConfigSchemaByType[type].safeParse(configJson && typeof configJson === "object" ? configJson : {});
+  if (!parsed.success) {
+    console.warn(`Invalid menu config for type ${type}; falling back to defaults.`);
+  }
+  return parsed.success ? parsed.data : menuConfigSchemaByType[type].parse({});
+}
+
+function prepareMenuConfigForSave(type: string, configJson: unknown) {
+  if (!isMenuType(type)) {
+    throw new DetailPageDomainError("VALIDATION_ERROR", "菜单类型错误", 400);
+  }
+  const parsed = menuConfigSchemaByType[type].safeParse(configJson && typeof configJson === "object" ? configJson : {});
+  if (!parsed.success) {
+    throw new DetailPageDomainError("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "菜单配置错误", 400);
+  }
+  return parsed.data;
+}
+
 function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function toIsoDateTime(date: Date) {
+  return date.toISOString();
 }
 
 function serializeCaseMedia(item: {
@@ -321,7 +360,7 @@ function serializeMenuItem(item: {
     iconAssetId: item.iconAssetId,
     iconUrl: item.iconAsset?.url ?? "",
     type: item.type,
-    configJson: parseJson(item.configJson),
+    configJson: parseMenuConfigForType(item.type, parseJson(item.configJson)),
     showOnHome: Boolean(item.showOnHome),
     sortOrder: item.sortOrder,
     status: item.status as "enabled" | "disabled"
@@ -340,6 +379,66 @@ function uniqueCaseCategories(items: Array<{ category: string | null }>) {
     .map((item) => item.category?.trim())
     .filter((category): category is string => Boolean(category)))]
     .sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function uniqueArticleCategories(items: Array<{ category: string | null }>) {
+  return normalizeArticleCategories(items.map((item) => item.category ?? ""))
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function articleWhere(query: { q?: string; category?: string; status?: "enabled" | "disabled"; isFeatured?: boolean }) {
+  const where: Prisma.ArticleWhereInput = {};
+  if (query.status) where.status = query.status;
+  if (query.category) where.category = query.category;
+  if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
+  if (query.q) {
+    where.OR = [
+      { title: { contains: query.q } },
+      { category: { contains: query.q } },
+      { summary: { contains: query.q } }
+    ];
+  }
+  return where;
+}
+
+function serializeArticleListItem(item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>) {
+  const detailPageId = item.detailPageId ?? null;
+  return {
+    id: item.id,
+    title: item.title,
+    category: item.category,
+    coverUrl: item.coverAsset.url,
+    summary: item.summary,
+    publishedAt: toIsoDateTime(item.publishedAt),
+    detailPageId,
+    hasDetailPage: detailPageId !== null,
+    isFeatured: item.isFeatured,
+    featuredSortOrder: item.featuredSortOrder,
+    sortOrder: item.sortOrder,
+    status: item.status as "enabled" | "disabled"
+  };
+}
+
+async function serializeAdminArticle(prisma: AppPrismaClient, item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>) {
+  const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+  return {
+    ...serializeArticleListItem(item),
+    coverAssetId: item.coverAssetId,
+    coverAsset: item.coverAsset,
+    detailPageSummary: detailPage ? { id: detailPage.id, name: detailPage.name, type: detailPage.type, typeLabel: detailPage.typeLabel } : null,
+    detailPageType: detailPage?.type ?? null,
+    detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
+    bannerCount: detailPage?.banners.length ?? 0,
+    detailMediaCount: detailPage ? extractRichTextMedia(detailPage.richTextHtml).length : 0,
+    hasRichText: Boolean(detailPage?.richTextHtml)
+  };
+}
+
+function articleDataFromBody<T extends { publishedAt?: string | Date }>(body: T) {
+  return {
+    ...body,
+    ...(body.publishedAt !== undefined ? { publishedAt: new Date(body.publishedAt) } : {})
+  };
 }
 
 function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
@@ -523,7 +622,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
 
   app.get("/api/client/home", async (_request, reply) => {
     const site = await prisma.siteConfig.findFirst({ where: { id: 1 } });
-    const [announcements, banners, menus, featuredCases] = await Promise.all([
+    const [announcements, banners, menus, featuredCases, featuredArticles] = await Promise.all([
       prisma.announcement.findMany({ where: { status: "enabled" }, orderBy: { sortOrder: "asc" } }),
       prisma.banner.findMany({
         where: { status: "enabled" },
@@ -539,6 +638,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         where: { status: "enabled", isFeatured: true },
         include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } },
         orderBy: { featuredSortOrder: "asc" }
+      }),
+      prisma.article.findMany({
+        where: { status: "enabled", isFeatured: true },
+        include: { coverAsset: true },
+        orderBy: [{ featuredSortOrder: "asc" }, { publishedAt: "desc" }, { id: "asc" }],
+        take: 2
       })
     ]);
 
@@ -555,7 +660,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         announcements: announcements.map(serializeAnnouncement),
         banners: banners.map(serializeBanner),
         menus: menus.map(serializeMenuItem),
-        featuredCases: featuredCases.map(serializeCaseListItem)
+        featuredCases: featuredCases.map(serializeCaseListItem),
+        featuredArticles: featuredArticles.map(serializeArticleListItem)
       })
     );
   });
@@ -637,6 +743,35 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           coverUrl: item.coverAsset.url,
           media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
         }));
+  });
+
+  app.get("/api/client/articles", async (request, reply) => {
+    const parsed = clientArticleListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "文章列表查询参数错误");
+    const { page, pageSize, ...query } = parsed.data;
+    const where = articleWhere({ ...query, status: "enabled" });
+    const [items, total, categoryRows] = await Promise.all([
+      prisma.article.findMany({
+        where,
+        include: { coverAsset: true },
+        orderBy: [{ sortOrder: "asc" }, { publishedAt: "desc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      prisma.article.count({ where }),
+      prisma.article.findMany({
+        where: { status: "enabled" },
+        select: { category: true },
+        orderBy: { category: "asc" }
+      })
+    ]);
+    return reply.send(ok({
+      items: items.map(serializeArticleListItem),
+      total,
+      page,
+      pageSize,
+      categories: uniqueArticleCategories(categoryRows)
+    }));
   });
 
   app.get("/api/client/artists", async (request, reply) => {
@@ -1104,8 +1239,9 @@ function registerCrud(
     const body = parsed.data;
     const problem = await mediaProblemForId(prisma, body.iconAssetId, "menu.icon");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
+    const configJson = prepareMenuConfigForSave(body.type, body.configJson ?? {});
     const item = await prisma.menuItem.create({
-      data: { ...body, configJson: JSON.stringify(body.configJson ?? {}) },
+      data: { ...body, configJson: JSON.stringify(configJson) },
       include: { iconAsset: true }
     });
     return reply.send(ok(serializeMenuItem(item)));
@@ -1120,7 +1256,10 @@ function registerCrud(
     const problem = await mediaProblemForId(prisma, body.iconAssetId ?? existing.iconAssetId, "menu.icon");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     const data = { ...body };
-    if (Object.hasOwn(body, "configJson")) data.configJson = JSON.stringify(body.configJson ?? {});
+    const targetType = body.type ?? existing.type;
+    if (Object.hasOwn(body, "configJson") || Object.hasOwn(body, "type")) {
+      data.configJson = JSON.stringify(prepareMenuConfigForSave(targetType, body.configJson ?? {}));
+    }
     const item = await prisma.menuItem.update({
       where: { id },
       data: data as never,
@@ -1139,6 +1278,101 @@ function registerCrud(
       orderBy: { category: "asc" }
     });
     return reply.send(ok({ items: uniqueCaseCategories(items) }));
+  });
+
+  app.get("/api/admin/articles/categories", { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = articleCategoryQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "文章分类查询参数错误");
+    const items = await prisma.article.findMany({
+      select: { category: true },
+      orderBy: { category: "asc" }
+    });
+    const categories = uniqueArticleCategories(items)
+      .filter((category) => !parsed.data.q || category.toLocaleLowerCase("zh-CN").includes(parsed.data.q.toLocaleLowerCase("zh-CN")))
+      .slice(0, parsed.data.limit);
+    return reply.send(ok({ categories }));
+  });
+
+  app.get("/api/admin/articles", { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = adminArticleListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "文章筛选参数错误");
+    const { page, pageSize, ...query } = parsed.data;
+    const where = articleWhere(query);
+    const [items, total] = await Promise.all([
+      prisma.article.findMany({
+        where,
+        include: { coverAsset: true },
+        orderBy: [{ sortOrder: "asc" }, { publishedAt: "desc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      prisma.article.count({ where })
+    ]);
+    const serialized = await Promise.all(items.map((item) => serializeAdminArticle(prisma, item)));
+    return reply.send(ok({ items: serialized, total, page, pageSize }));
+  });
+
+  app.get("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "文章 ID 错误");
+    const item = await prisma.article.findUnique({ where: { id }, include: { coverAsset: true } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "文章不存在");
+    return reply.send(ok(await serializeAdminArticle(prisma, item)));
+  });
+
+  app.post("/api/admin/articles", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = ArticleCreateRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "文章参数错误");
+    const body = parsed.data;
+    const coverProblem = await mediaProblemForId(prisma, body.coverAssetId, "article.cover");
+    if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
+    await validateDetailPageReference(prisma, body.detailPageId);
+    const created = await prisma.$transaction(async (tx) => {
+      const article = await tx.article.create({
+        data: articleDataFromBody(body),
+        include: { coverAsset: true }
+      });
+      await tx.operationLog.create({
+        data: { action: "CREATE_ARTICLE", detail: String(article.id), createdBy: request.admin?.id }
+      });
+      return article;
+    });
+    return reply.send(ok(await serializeAdminArticle(prisma, created)));
+  });
+
+  app.put("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = ArticleUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "文章参数错误");
+    const id = Number((request.params as { id: string }).id);
+    const existing = await prisma.article.findUnique({ where: { id } });
+    if (!existing) return sendError(reply, 404, "NOT_FOUND", "文章不存在");
+    const body = parsed.data;
+    const coverProblem = await mediaProblemForId(prisma, body.coverAssetId ?? existing.coverAssetId, "article.cover");
+    if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
+    if (Object.hasOwn(body, "detailPageId")) await validateDetailPageReference(prisma, body.detailPageId);
+    const updated = await prisma.$transaction(async (tx) => {
+      const article = await tx.article.update({
+        where: { id },
+        data: articleDataFromBody(body),
+        include: { coverAsset: true }
+      });
+      await tx.operationLog.create({
+        data: { action: "UPDATE_ARTICLE", detail: String(id), createdBy: request.admin?.id }
+      });
+      return article;
+    });
+    return reply.send(ok(await serializeAdminArticle(prisma, updated)));
+  });
+
+  app.delete("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    await prisma.$transaction(async (tx) => {
+      const exists = await tx.article.count({ where: { id } });
+      if (!exists) throw new DetailPageDomainError("NOT_FOUND", "文章不存在", 404);
+      await tx.article.delete({ where: { id } });
+      await tx.operationLog.create({ data: { action: "DELETE_ARTICLE", detail: String(id), createdBy: request.admin?.id } });
+    });
+    return reply.send(ok({}));
   });
 
   app.get("/api/admin/cases", { preHandler: requireAdmin }, async (_request, reply) => {

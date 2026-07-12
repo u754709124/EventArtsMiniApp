@@ -6,6 +6,7 @@ import type { ColumnsType } from "antd/es/table";
 import {
   artistTypeLabels,
   artistTypeValues,
+  normalizeArticleCategory,
   menuConfigSchemaByType,
   type MenuType
 } from "@event-arts/shared";
@@ -25,6 +26,10 @@ export type CrudConfig = {
   searchFields: string[];
   columns: ColumnsType<AnyRecord>;
   fields: (form: ReturnType<typeof Form.useForm>[0], editing: AnyRecord | null) => React.ReactNode;
+  toolbarFilters?: (
+    filters: Record<string, string>,
+    setFilter: (next: Record<string, string | undefined>) => void
+  ) => React.ReactNode;
   sections?: Array<{
     title: string;
     description?: React.ReactNode;
@@ -37,10 +42,15 @@ export type CrudConfig = {
 };
 
 export function prepareCrudEditValues(record: AnyRecord): AnyRecord {
+  const configJson = typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson;
+  const preparedConfigJson = record.type === "article" && (!configJson || typeof configJson !== "object" || !("category" in configJson))
+    ? { ...(configJson && typeof configJson === "object" ? configJson : {}), category: allArticlesCategoryValue }
+    : configJson;
   return {
     ...record,
     eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
-    configJson: typeof record.configJson === "string" ? JSON.parse(record.configJson) : record.configJson,
+    publishedAt: record.publishedAt ? dayjs(String(record.publishedAt)) : undefined,
+    configJson: preparedConfigJson,
     tags: normalizeArtistFormTags(record.tags ?? record.tagsJson),
     status: record.status ?? "enabled",
     detailPageId: record.detailPageId ?? null
@@ -80,6 +90,10 @@ type CaseCategoryListResponse = {
   items: string[];
 };
 
+type ArticleCategoryListResponse = {
+  categories: string[];
+};
+
 function useCaseCategoryOptions() {
   const [options, setOptions] = useState<Array<{ value: string }>>([]);
   useEffect(() => {
@@ -103,13 +117,44 @@ function useCaseCategoryOptions() {
   return options;
 }
 
-function MenuCaseCategorySelect({ testid }: { testid: string }) {
+function useArticleCategoryOptions() {
+  const [options, setOptions] = useState<Array<{ value: string; label?: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void request<ArticleCategoryListResponse>("/api/admin/articles/categories")
+      .then((data) => {
+        if (!active) return;
+        const categories = [...new Set(data.categories
+          .map((item) => normalizeArticleCategory(item))
+          .filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "zh-CN"));
+        setOptions(categories.map((value) => ({ value, label: value })));
+      })
+      .catch(() => {
+        if (active) setOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return options;
+}
+
+type StringFieldProps = {
+  testid: string;
+  value?: string;
+  onChange?: (value: string | undefined) => void;
+};
+
+function MenuCaseCategorySelect({ testid, value, onChange }: StringFieldProps) {
   const options = useCaseCategoryOptions();
   return (
     <Select
       allowClear
       showSearch
       data-testid={testid}
+      value={value}
+      onChange={onChange}
       options={options}
       optionFilterProp="value"
       placeholder="选择已有案例分类"
@@ -117,11 +162,13 @@ function MenuCaseCategorySelect({ testid }: { testid: string }) {
   );
 }
 
-function CaseCategoryAutoComplete({ testid }: { testid: string }) {
+function CaseCategoryAutoComplete({ testid, value, onChange }: StringFieldProps) {
   const options = useCaseCategoryOptions();
   return (
     <AutoComplete
       allowClear
+      value={value}
+      onChange={onChange}
       options={options}
       filterOption={(inputValue, option) =>
         String(option?.value ?? "").toLocaleLowerCase("zh-CN").includes(inputValue.trim().toLocaleLowerCase("zh-CN"))
@@ -129,6 +176,68 @@ function CaseCategoryAutoComplete({ testid }: { testid: string }) {
     >
       <Input data-testid={testid} />
     </AutoComplete>
+  );
+}
+
+function ArticleCategoryAutoComplete({ testid, value, onChange }: StringFieldProps) {
+  const options = useArticleCategoryOptions();
+  return (
+    <AutoComplete
+      allowClear
+      value={value}
+      onChange={onChange}
+      options={options}
+      filterOption={(inputValue, option) =>
+        String(option?.value ?? "").toLocaleLowerCase("zh-CN").includes(inputValue.trim().toLocaleLowerCase("zh-CN"))
+      }
+    >
+      <Input data-testid={testid} maxLength={30} showCount />
+    </AutoComplete>
+  );
+}
+
+const allArticlesCategoryValue = "__ALL_ARTICLES__";
+
+function MenuArticleCategorySelect({ testid, value, onChange }: StringFieldProps) {
+  const options = useArticleCategoryOptions();
+  const hasCurrentValue = Boolean(value && value !== allArticlesCategoryValue && !options.some((option) => option.value === value));
+  return (
+    <Select
+      data-testid={testid}
+      showSearch
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: allArticlesCategoryValue, label: "全部文章" },
+        ...(hasCurrentValue ? [{ value: value as string, label: `${value}（当前分类已无可用文章）` }] : []),
+        ...options
+      ]}
+      optionFilterProp="label"
+      placeholder="选择已有文章分类"
+    />
+  );
+}
+
+function ArticleCategoryFilter({
+  value,
+  onChange
+}: {
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  const options = useArticleCategoryOptions();
+  return (
+    <Select
+      data-testid="articles-category-filter"
+      allowClear
+      showSearch
+      placeholder="全部分类"
+      value={value || undefined}
+      onChange={(next) => onChange(next)}
+      options={options}
+      optionFilterProp="label"
+      style={{ width: 180 }}
+    />
   );
 }
 
@@ -168,6 +277,18 @@ function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }
       </>
     );
   }
+  if (type === "article") {
+    return (
+      <>
+        <Form.Item label="分类" name={["configJson", "category"]} initialValue={allArticlesCategoryValue}>
+          <MenuArticleCategorySelect testid="menu-config-article-category" />
+        </Form.Item>
+        <Form.Item label="每页数量" name={["configJson", "pageSize"]} initialValue={10}>
+          <InputNumber data-testid="menu-config-article-page-size" min={1} max={50} precision={0} />
+        </Form.Item>
+      </>
+    );
+  }
   return (
     <>
       <Form.Item label="电话" name={["configJson", "phone"]}>
@@ -202,6 +323,15 @@ function normalizeCasePayload(values: AnyRecord) {
   };
 }
 
+function normalizeArticlePayload(values: AnyRecord) {
+  return {
+    ...omitBusinessDetailFields(values),
+    category: normalizeArticleCategory(String(values.category ?? "")),
+    publishedAt: values.publishedAt ? dayjs(values.publishedAt as string).toISOString() : new Date().toISOString(),
+    detailPageId: values.detailPageId ?? null
+  };
+}
+
 function isMenuType(value: unknown): value is MenuType {
   return typeof value === "string" && value in menuConfigSchemaByType;
 }
@@ -212,9 +342,11 @@ function normalizeMenuPayload(values: AnyRecord) {
     if (Object.hasOwn(values, key)) body[key] = values[key];
   }
   if (Object.hasOwn(values, "configJson") || isMenuType(values.type)) {
+    const rawConfig: AnyRecord = values.configJson && typeof values.configJson === "object" ? { ...values.configJson } : {};
+    if (values.type === "article" && rawConfig.category === allArticlesCategoryValue) delete rawConfig.category;
     body.configJson = isMenuType(values.type)
-      ? menuConfigSchemaByType[values.type].parse(values.configJson ?? {})
-      : values.configJson ?? {};
+      ? menuConfigSchemaByType[values.type].parse(rawConfig)
+      : rawConfig;
   }
   return body;
 }
@@ -284,6 +416,71 @@ function CaseCrudFields() {
       <CaseListFields />
       <CaseDetailFields />
       <CasePublishFields />
+    </>
+  );
+}
+
+function ArticleBasicFields() {
+  return (
+    <>
+      <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }, { max: 100 }]}>
+        <Input data-testid="article-title" maxLength={100} showCount />
+      </Form.Item>
+      <Form.Item label="分类" name="category" rules={[{ required: true, message: "请输入分类" }, { max: 30 }]}>
+        <ArticleCategoryAutoComplete testid="article-category" />
+      </Form.Item>
+      <Form.Item label="发布时间" name="publishedAt" rules={[{ required: true, message: "请选择发布时间" }]}>
+        <DatePicker data-testid="article-published-at" showTime />
+      </Form.Item>
+    </>
+  );
+}
+
+function ArticleListFields() {
+  return (
+    <>
+      <Form.Item className="form-grid-full" label="封面图" name="coverAssetId" rules={[{ required: true, message: "请选择封面图" }]}>
+        <MediaField testid="article-cover-select" fieldKey="article.cover" />
+      </Form.Item>
+      <Form.Item className="form-grid-full" label="摘要" name="summary" rules={[{ required: true, message: "请输入摘要" }, { max: 240 }]}>
+        <Input.TextArea data-testid="article-summary" maxLength={240} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
+      </Form.Item>
+      <Form.Item label="是否精选" name="isFeatured" valuePropName="checked">
+        <Switch data-testid="article-featured" />
+      </Form.Item>
+    </>
+  );
+}
+
+function ArticleDetailFields() {
+  return (
+    <Form.Item className="form-grid-full" label="详情页" name="detailPageId">
+      <DetailPageReferenceField />
+    </Form.Item>
+  );
+}
+
+function ArticlePublishFields() {
+  return (
+    <>
+      <Form.Item label="精选排序" name="featuredSortOrder" extra="精选文章在首页中的排序，数字越小越靠前。">
+        <InputNumber data-testid="article-featured-sort-order" min={0} precision={0} />
+      </Form.Item>
+      <Form.Item label="普通排序" name="sortOrder" rules={[{ required: true }]} extra="数字越小越靠前；相同数字按创建顺序展示。">
+        <InputNumber data-testid="article-sort-order" min={0} precision={0} />
+      </Form.Item>
+      <StatusSwitchField />
+    </>
+  );
+}
+
+function ArticleCrudFields() {
+  return (
+    <>
+      <ArticleBasicFields />
+      <ArticleListFields />
+      <ArticleDetailFields />
+      <ArticlePublishFields />
     </>
   );
 }
@@ -461,6 +658,7 @@ export const configs: Record<string, CrudConfig> = {
               { value: "singer", label: "歌手" },
               { value: "actor", label: "演员" },
               { value: "activity_case", label: "活动案例" },
+              { value: "article", label: "文章" },
               { value: "contact", label: "联系我们" }
             ]}
           />
@@ -503,6 +701,58 @@ export const configs: Record<string, CrudConfig> = {
       { title: "列表展示", description: "封面和简介会用于前台案例列表；精选开关决定是否进入首页精选区域。", fields: () => <CaseListFields /> },
       { title: "详情内容", description: "当前版本使用独立详情页引用，详情页可在内容管理中统一维护。", fields: () => <CaseDetailFields /> },
       { title: "发布设置", fields: () => <CasePublishFields /> }
+    ]
+  },
+  articles: {
+    title: "文章管理",
+    path: "/api/admin/articles",
+    routePath: "/articles",
+    testid: "articles",
+    searchPlaceholder: "搜索标题、分类、摘要",
+    searchFields: ["title", "category", "summary"],
+    formMode: "page",
+    toolbarFilters: (filters, setFilter) => (
+      <>
+        <ArticleCategoryFilter
+          value={filters.category}
+          onChange={(value) => setFilter({ category: value, page: undefined })}
+        />
+        <Select
+          data-testid="articles-featured-filter"
+          allowClear
+          placeholder="全部精选"
+          value={filters.isFeatured || undefined}
+          onChange={(value) => setFilter({ isFeatured: value, page: undefined })}
+          options={[
+            { value: "true", label: "精选" },
+            { value: "false", label: "非精选" }
+          ]}
+          style={{ width: 160 }}
+        />
+      </>
+    ),
+    columns: [
+      {
+        title: "封面",
+        dataIndex: "coverAsset",
+        width: 94,
+        render: (asset) => asset && typeof asset === "object" && "url" in asset ? <img className="artist-cover-thumb" src={String(asset.url)} alt="文章封面" /> : "—"
+      },
+      { title: "标题", dataIndex: "title", ellipsis: true },
+      { title: "分类", dataIndex: "category" },
+      { title: "发布时间", dataIndex: "publishedAt", render: (value) => value ? dayjs(String(value)).format("YYYY-MM-DD HH:mm") : "—" },
+      { title: "精选", dataIndex: "isFeatured", render: (value) => (value ? <Tag color="gold">是</Tag> : "否") },
+      { title: "精选排序", dataIndex: "featuredSortOrder" },
+      { title: "普通排序", dataIndex: "sortOrder" },
+      { title: "详情页", dataIndex: "detailPageId", render: (value) => value ? `#${value}` : "未绑定" }
+    ],
+    normalize: normalizeArticlePayload,
+    fields: () => <ArticleCrudFields />,
+    sections: [
+      { title: "基础信息", fields: () => <ArticleBasicFields /> },
+      { title: "列表展示", description: "封面、摘要和发布时间会用于前台文章卡片。", fields: () => <ArticleListFields /> },
+      { title: "详情内容", description: "文章详情复用独立详情页，不在文章中维护专属正文。", fields: () => <ArticleDetailFields /> },
+      { title: "发布设置", fields: () => <ArticlePublishFields /> }
     ]
   },
   artists: {

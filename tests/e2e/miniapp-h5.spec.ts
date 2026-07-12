@@ -18,6 +18,8 @@ type Banner = { id: number; status: string; detailPageId: number | null };
 type MediaAsset = { id: number; resourceName: string };
 type Menu = { id: number; text: string; type: string; status: string; showOnHome: boolean; configJson?: Record<string, unknown> };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
+type ArticleItem = { id: number; title: string; category: string; detailPageId: number | null; hasDetailPage: boolean };
+type ArticleListResponse = { items: ArticleItem[]; categories: string[]; total: number; page: number; pageSize: number };
 type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor"; detailPageId: number | null };
 type CaseListItem = { id: number; title: string; detailPageId: number | null };
 type LinkedArtistListItem = ArtistListItem & { detailPageId: number };
@@ -52,6 +54,7 @@ type HomeResponse = {
     placeholderBannerUrl: string;
   };
   announcements: Announcement[];
+  featuredArticles: ArticleItem[];
 };
 
 test.describe.configure({ mode: "serial" });
@@ -1093,6 +1096,83 @@ test("人员列表设计复核截图与参考差异图", async ({ page, request 
     .composite([{ input: hostPath, blend: "difference" }])
     .png()
     .toFile("docs/design/diff-artists-host.png");
+});
+
+test("首页精选文章、文章菜单筛选、公共详情和无详情静态卡片可用", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const articleMenu = menus.items.find((item) => item.type === "article");
+  if (!articleMenu) throw new Error("文章菜单种子数据缺失");
+  const allArticles = await clientApi<ArticleListResponse>(request, "/api/client/articles?pageSize=50");
+  const noDetailArticle = allArticles.items.find((item) => !item.hasDetailPage);
+  if (!noDetailArticle) throw new Error("文章种子数据缺少无详情页文章");
+
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${articleMenu.id}`, {
+      configJson: { category: "婚礼攻略", pageSize: 10 },
+      status: "enabled",
+      showOnHome: true
+    });
+
+    const home = await clientApi<HomeResponse>(request, "/api/client/home");
+    expect(home.featuredArticles).toHaveLength(2);
+    expect(home.featuredArticles.every((item) => item.hasDetailPage)).toBe(true);
+
+    await openHome(page);
+    await expect(page.getByTestId("home-featured-articles")).toBeVisible();
+    await expect(page.getByTestId("home-article-card")).toHaveCount(2);
+    await expect(page.getByTestId("home-article-more")).toBeVisible();
+    const firstCardGeometry = await page.getByTestId("home-article-card").first().evaluate((node) => {
+      const card = node.getBoundingClientRect();
+      const image = node.querySelector('[data-testid="home-article-cover"]')?.getBoundingClientRect();
+      return { cardWidth: card.width, imageWidth: image?.width ?? 0, imageHeight: image?.height ?? 0 };
+    });
+    expect(firstCardGeometry.cardWidth).toBeGreaterThan(350);
+    expect(firstCardGeometry.imageWidth).toBeGreaterThan(90);
+    expect(firstCardGeometry.imageHeight).toBeGreaterThan(65);
+
+    await tap(page, page.getByTestId("home-article-more"));
+    await expect(page.getByTestId("article-list-page")).toBeVisible();
+    await expect(page.getByTestId("article-list-title")).toHaveText("全部文章");
+    await expect(page.getByTestId("article-category-all")).toHaveClass(/article-category-tab--active/);
+    await expect(page.getByTestId("article-list-article-card").first()).toBeVisible();
+
+    await openHome(page);
+    const categoryResponsePromise = page.waitForResponse((response) =>
+      response.url().includes("/api/client/articles") &&
+      response.url().includes("category=%E5%A9%9A%E7%A4%BC%E6%94%BB%E7%95%A5") &&
+      response.request().method() === "GET"
+    );
+    await tap(page, page.getByTestId("home-menu-article").first());
+    const categoryResponse = await categoryResponsePromise;
+    const categoryBody = await categoryResponse.json();
+    const categoryData = categoryBody.data as ArticleListResponse;
+    expect(categoryData.items.length).toBeGreaterThan(0);
+    expect(categoryData.items.every((item) => item.category === "婚礼攻略")).toBe(true);
+    await expect(page.getByTestId("article-list-page")).toBeVisible();
+    await expect(page.getByTestId("article-list-title")).toHaveText("婚礼攻略");
+    await expect(page.getByTestId("article-category-婚礼攻略")).toHaveClass(/article-category-tab--active/);
+    await expect(page.getByTestId("article-list-article-card")).toHaveCount(categoryData.items.length);
+
+    await tap(page, page.getByTestId("article-list-article-card").first());
+    await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+
+    await page.goBack();
+    await expect(page.getByTestId("article-list-page")).toBeVisible();
+    await tap(page, page.getByTestId(`article-category-${noDetailArticle.category}`));
+    await expect(page.getByTestId("article-list-title")).toHaveText(noDetailArticle.category);
+    await clearDevOverlay(page);
+    const noDetailCard = page.getByTestId("article-list-article-card").filter({ hasText: noDetailArticle.title }).first();
+    await expect(noDetailCard).toBeVisible();
+    await tap(page, noDetailCard);
+    await expect(page.getByTestId("article-list-page")).toBeVisible();
+    await expect(page.getByTestId("standalone-detail-page")).toHaveCount(0);
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${articleMenu.id}`, {
+      configJson: articleMenu.configJson ?? {},
+      status: articleMenu.status,
+      showOnHome: articleMenu.showOnHome
+    });
+  }
 });
 
 test("精选案例展示并可进入详情页", async ({ page }) => {

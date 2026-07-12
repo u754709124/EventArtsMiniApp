@@ -30,7 +30,7 @@
 - 首页调用 `GET /api/client/home`，成功后上报 `POST /api/client/track/page-view`。
 - 首页实现顶部标题区、公告栏、Banner、菜单卡片、精选案例、失败重试状态、空状态和图片 fallback。
 - 首页菜单只展示 `showOnHome=true` 的启用菜单；分类页调用 `GET /api/client/menu-items` 展示全部启用菜单。
-- 菜单跳转规则严格对应 `host`、`singer`、`actor`、`activity_case`、`contact`。
+- 菜单跳转规则严格对应 `host`、`singer`、`actor`、`activity_case`、`article`、`contact`；文章菜单使用 `navigateTo` 打开 `/pages/articles/list` 并携带分类/pageSize query。
 - 案例页支持顶部关键词搜索，按单列 710rpx 案例卡片展示，并复用首页精选案例的信息结构。
 - 已完成首页视觉校准：H5 顶部安全区为 36px，微信端仍使用胶囊按钮位置；标题/副标题采用 36rpx/24rpx 明确行高，公告栏与 Banner 纵向节奏对齐参考图。
 - 已将精选案例卡片的文字区固定为 224rpx，标题与简介限制为两行，封面改为块级元素以消除 H5 行内基线空隙；首卡 H5 实测高度为 219px。

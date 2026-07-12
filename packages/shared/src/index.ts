@@ -5,7 +5,7 @@ export * from "./detail-pages";
 export * from "./detail-page-presentation";
 
 export const statusValues = ["enabled", "disabled"] as const;
-export const menuTypeValues = ["host", "singer", "actor", "activity_case", "contact"] as const;
+export const menuTypeValues = ["host", "singer", "actor", "activity_case", "article", "contact"] as const;
 export const artistTypeValues = ["host", "singer", "actor"] as const;
 export const bannerLinkTypeValues = ["none", "announcement", "case", "internal"] as const;
 export const mediaTypeValues = ["image", "video"] as const;
@@ -17,6 +17,7 @@ export const mediaFieldKeyValues = [
   "banner.image",
   "menu.icon",
   "case.cover",
+  "article.cover",
   "artist.avatar",
   "case.detail",
   "detail.banner",
@@ -58,6 +59,7 @@ export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
   "banner.image": { label: "Banner 图片", allowedTypes: ["image"], width: 1420, height: 580 },
   "menu.icon": { label: "菜单图标", allowedTypes: ["image"], width: 176, height: 176 },
   "case.cover": { label: "案例封面", allowedTypes: ["image"], width: 460, height: 320 },
+  "article.cover": { label: "文章封面", allowedTypes: ["image"], width: null, height: null },
   "artist.avatar": { label: "列表封面图", allowedTypes: ["image"], width: null, height: null },
   "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null },
   "detail.banner": { label: "详情页 BANNER", allowedTypes: ["image"], width: null, height: null },
@@ -99,6 +101,22 @@ export function normalizeArtistTags(input: unknown): string[] {
   return [...tags.values()];
 }
 
+export function normalizeArticleCategory(value: string) {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ");
+}
+
+export function normalizeArticleCategories(input: unknown): string[] {
+  const rawValues = Array.isArray(input) ? input : [];
+  const categories = new Map<string, string>();
+  for (const value of rawValues) {
+    if (typeof value !== "string") continue;
+    const category = normalizeArticleCategory(value);
+    const key = category.toLocaleLowerCase("en-US");
+    if (category && !categories.has(key)) categories.set(key, category);
+  }
+  return [...categories.values()];
+}
+
 export function serializeArtistTags(input: unknown): string {
   return JSON.stringify(normalizeArtistTags(input));
 }
@@ -122,6 +140,26 @@ const legacyArtistTagsSchema = z
   .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
 const artistQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
 const optionalQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
+const optionalBooleanQuerySchema = z
+  .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+  .transform((value) => value === true || value === "true" || value === "1")
+  .optional();
+const articleCategorySchema = z
+  .string()
+  .transform((value) => normalizeArticleCategory(value))
+  .refine((value) => value.length > 0, "文章分类不能为空")
+  .refine((value) => value.length <= 30, "文章分类不能超过 30 个字符");
+const articleOptionalCategorySchema = z
+  .string()
+  .transform((value) => normalizeArticleCategory(value))
+  .transform((value) => value || undefined)
+  .refine((value) => value === undefined || value.length <= 30, "文章分类不能超过 30 个字符")
+  .optional();
+const isoDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const isoDateInputSchema = z
+  .union([z.string().trim().min(1), z.date()])
+  .refine((value) => value instanceof Date || isoDateTimePattern.test(value), "日期必须是 ISO 时间")
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), "日期必须是有效 ISO 时间");
 
 const artistTagInput = {
   tags: artistTagsSchema.optional(),
@@ -182,6 +220,38 @@ export const artistListQuerySchema = z.object({
 export const caseListQuerySchema = z.object({
   q: optionalQueryTextSchema,
   category: optionalQueryTextSchema
+});
+
+const articleFields = {
+  title: z.string().trim().min(1).max(100),
+  category: articleCategorySchema,
+  coverAssetId: positiveIntFromInput,
+  summary: z.string().trim().min(1).max(240),
+  publishedAt: isoDateInputSchema,
+  isFeatured: z.boolean(),
+  featuredSortOrder: z.coerce.number().int().min(0),
+  sortOrder: z.coerce.number().int().min(0),
+  status: StatusSchema,
+  detailPageId: nullableDetailPageIdSchema
+};
+
+export const ArticleCreateRequestSchema = z.object(articleFields).strict();
+export const ArticleUpdateRequestSchema = z.object(articleFields).partial().strict();
+
+export const adminArticleListQuerySchema = z.object({
+  q: optionalQueryTextSchema,
+  category: articleOptionalCategorySchema,
+  status: StatusSchema.optional(),
+  isFeatured: optionalBooleanQuerySchema,
+  page: positiveIntFromInput.default(1),
+  pageSize: positiveIntFromInput.max(100).default(20)
+});
+
+export const clientArticleListQuerySchema = z.object({
+  q: optionalQueryTextSchema,
+  category: articleOptionalCategorySchema,
+  page: positiveIntFromInput.default(1),
+  pageSize: positiveIntFromInput.max(50).default(10)
 });
 
 const activityCaseFields = {
@@ -320,6 +390,7 @@ export type MediaReferenceSourceDto = {
     | "banner"
     | "menu"
     | "case_cover"
+    | "article_cover"
     | "artist_cover"
     | "legacy_case_detail"
     | "detail_page_banner"
@@ -409,6 +480,33 @@ export type ActivityCaseListItemDto = {
   status: Status;
 };
 
+export type ArticleListItemDto = {
+  id: number;
+  title: string;
+  category: string;
+  coverUrl: string;
+  summary: string;
+  publishedAt: string;
+  detailPageId: number | null;
+  hasDetailPage: boolean;
+  isFeatured: boolean;
+  featuredSortOrder: number;
+  sortOrder: number;
+  status: Status;
+};
+
+export type ArticleListResponse = {
+  items: ArticleListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+  categories: string[];
+};
+
+export type ArticleCategoryResponse = {
+  categories: string[];
+};
+
 export type ActivityCaseDetailDto = ActivityCaseListItemDto & {
   detailPage: DetailPageConfigDto | null;
 };
@@ -446,6 +544,7 @@ export type ClientHomeResponse = {
   banners: BannerDto[];
   menus: MenuItemDto[];
   featuredCases: ActivityCaseListItemDto[];
+  featuredArticles: ArticleListItemDto[];
 };
 
 export type DashboardOverviewResponse = {
@@ -481,6 +580,10 @@ export const menuConfigSchemaByType = {
     category: optionalQueryTextSchema,
     onlyFeatured: z.boolean().default(false),
     pageSize: z.number().int().positive().default(10)
+  }),
+  article: z.object({
+    category: articleOptionalCategorySchema,
+    pageSize: z.number().int().min(1).max(50).default(10)
   }),
   contact: z.object({
     phone: z.string().optional(),

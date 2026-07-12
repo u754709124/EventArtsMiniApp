@@ -42,7 +42,7 @@ pnpm db:push
 pnpm db:seed
 ```
 
-`db:push` 会创建独立详情页表并执行幂等 SQLite 兼容迁移；`db:seed` 可重复运行，并按稳定 seed key 写入公告、首页 BANNER、人员和案例的已绑定/未绑定详情示例。旧 `DetailPageConfig.ownerType/ownerId` 只作为 deprecated 迁移痕迹保留，运行时由四张业务表的可空 `detailPageId` 外键引用独立详情页。升级前请同时备份 SQLite 文件和 `uploads`。
+`db:push` 会创建独立详情页表、文章表并执行幂等 SQLite 兼容迁移；`db:seed` 可重复运行，并按稳定 seed key 写入公告、首页 BANNER、人员、案例和文章的已绑定/未绑定详情示例。旧 `DetailPageConfig.ownerType/ownerId` 只作为 deprecated 迁移痕迹保留，运行时由业务表的可空 `detailPageId` 外键引用独立详情页。升级前请同时备份 SQLite 文件和 `uploads`。
 
 默认管理员账号：
 
@@ -65,7 +65,7 @@ pnpm dev:h5
 - Admin：`http://127.0.0.1:5173`
 - Miniapp H5：`http://127.0.0.1:10086`
 
-本地详情联调建议先运行 `pnpm db:push && pnpm db:seed`。seed 中“林然”和“浪漫粉色系户外婚礼”是 BANNER + 富文本；“Jessica”和“企业年会歌手演出”是单富文本。测试和调试应按这些稳定名称/标题从 API 解析 ID，不要假设 SQLite 自增值。
+本地详情联调建议先运行 `pnpm db:push && pnpm db:seed`。seed 中“林然”和“浪漫粉色系户外婚礼”是 BANNER + 富文本；“Jessica”和“企业年会歌手演出”是单富文本；文章 seed 包含“婚礼攻略”“活动策划”两类，前三篇绑定独立详情页，一篇不绑定。测试和调试应按这些稳定名称/标题从 API 解析 ID，不要假设 SQLite 自增值。
 
 ## 构建
 
@@ -90,7 +90,7 @@ pnpm assets:slice:artists
 
 ## 独立详情页管理
 
-详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员和案例可以共享同一详情页；被任一业务记录引用的详情页不能删除。
+详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员、案例和文章可以共享同一详情页；被任一业务记录引用的详情页不能删除。
 
 后台信息架构按“数据看板 / 首页运营 / 内容管理 / 素材管理”分组，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
 
@@ -115,6 +115,14 @@ pnpm assets:slice:artist-detail
 
 脚本校验 `898 × 1751` 权威参考图和 SHA-256，输出坐标网格、显式 manifest、26 个确定性资源与 contact sheet。架构、安全白名单、视觉测量和第三种 renderer 扩展步骤见 `docs/design/detail-page-system.md`。
 
+## 文章模块
+
+后台“内容管理 / 文章管理”提供文章 CRUD，字段包括标题、分类、封面、摘要、发布时间、精选、排序、状态和可空详情页。文章详情复用独立详情页，不包含文章专属正文、富文本渲染器、分类表、slug、作者、点赞、评论或审核流程。
+
+文章分类来自 `articles.category` 字符串，按 NFKC、trim、连续空格压缩规范化，非空且最长 30 字。首页菜单支持 type `article`，配置为 `{ "category": "婚礼攻略", "pageSize": 10 }` 或省略分类表示全部文章；小程序用 `navigateTo` 打开 `/pages/articles/list` 并携带 query。
+
+首页返回 `featuredArticles`，最多 2 条启用精选文章；小程序首页和文章列表共用 `ArticleCard`。媒体删除保护包含 `article.cover`，详情页引用保护包含 sourceType `article`。完整模型、接口、seed、截图路径和资源复用说明见 `docs/design/article-module.md`；本模块复用已有资源，未使用参考图切片。
+
 ## 测试
 
 ```bash
@@ -138,7 +146,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 
 本地上传文件存储在仓库根目录 `uploads`。资源库不区分业务用途；资源保存全局唯一资源名、原始文件名、MD5、真实格式与尺寸、标签、上传人和时间，物理文件使用随机 32 位十六进制名称防止覆盖。业务表单继续以整数资源 ID 建立关联。
 
-管理端会在上传前读取图片/视频尺寸并分片计算 MD5；服务端会重新计算并校验。MD5 已存在时直接复用资源；Banner、菜单图标、案例封面等固定槽位会在上传和最终保存时再次校验尺寸。正在被站点配置、Banner、菜单、案例封面、公共详情 BANNER/富文本或人员头像引用的资源不可删除。
+管理端会在上传前读取图片/视频尺寸并分片计算 MD5；服务端会重新计算并校验。MD5 已存在时直接复用资源；Banner、菜单图标、案例封面、文章封面等固定槽位会在上传和最终保存时再次校验尺寸。正在被站点配置、Banner、菜单、案例封面、文章封面、公共详情 BANNER/富文本或人员头像引用的资源不可删除。
 
 ## 对象存储预留
 
@@ -159,3 +167,24 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 - 接口文档：`docs/api/index.md`
 - 设计资料和截图：`docs/design`
 - 项目规范：`AGENTS.md`
+- Codex 复杂任务规划、Goal 持久化、恢复与安全清理：
+  `docs/codex/planning-and-goals.md`
+
+## Codex 复杂任务编排
+
+局部低风险修改直接执行；跨模块、架构、迁移、安全、并发或不确定需求先由
+只读 Planner 定义唯一 Goal。运行期计划位于被 Git 忽略的
+`.codex/runtime/plans/<task-id>/`，而项目 Agent 模板位于受版本控制的
+`.codex/agents/`。
+
+常用入口：
+
+```bash
+pnpm codex:task:classify --request "修正 README 标题错别字" --affected-path README.md
+pnpm codex:plan:init --task-id 20260712T000000Z-example-plan --classification COMPLEX
+pnpm codex:plan:verify --task-id 20260712T000000Z-example-plan
+```
+
+完整门槛、Planner 唯一 Goal 权限、不可变文件、委派/结果模板、revision、恢复、
+完整性校验、并发限制、清理命令和已知 CLI 限制见
+`docs/codex/planning-and-goals.md`。

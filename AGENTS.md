@@ -116,3 +116,69 @@ Do not run parallel write-capable agents. Use at most one planner and one
 implementation agent for a task. A planner recommends a route, but the parent
 agent makes the final routing decision. Do not use `test_rerunner` to select
 tests, diagnose failures, or modify code.
+
+## Codex Orchestration Gate
+
+This section defines the project-local protocol for consequential Codex work.
+It is a governance and handoff protocol, not a claim that the installed Codex
+CLI automatically discovers `.codex/agents/`. The version-controlled role
+templates live in `.codex/agents/`; `node scripts/codex/sync-agent-config.mjs
+--apply` can explicitly synchronize them to the active user `CODEX_HOME`.
+
+### Complexity classification
+
+Classify a request before editing files:
+
+- `SIMPLE`: one clear, localized, low-risk edit following an established
+  pattern. Execute directly in the parent; never create `.codex/runtime/plans`
+  or invoke a Planner solely for this class.
+- `COMPLEX`: any request that crosses modules, needs architectural or data-flow
+  investigation, has multiple realistic designs, carries meaningful regression
+  risk, changes public contracts, or needs staged validation/recovery. It must
+  first use the read-only `planner` role.
+
+For a `COMPLEX` task the parent gives Planner only the user-requested output
+target. Planner is the sole authority that creates the executable Goal, scope,
+acceptance criteria, constraints, non-goals, route recommendation, and ordered
+Gxx tasks. The parent must not create, expand, reinterpret, revise, or merge an
+executable Goal. It may reject a plan and ask Planner for a new revision.
+
+### Immutable plan and delegation protocol
+
+After a Planner response is accepted, persist its original output and derived
+immutable files below `.codex/runtime/plans/<task-id>/`. The task manifest and
+progress summary are mutable runtime state; Planner output, Goal, decisions,
+plan index, Gxx task files, and Planner handoffs are immutable. Before any
+delegation, the parent validates that exactly one active Goal exists and that
+the referenced immutable files and their SHA-256 values match the manifest.
+
+An implementation agent receives the task ID, goal ID, a role, and file paths;
+it must read the manifest, Goal, plan index, decisions, progress, current Gxx
+task, and handoff before work. It may write only the Gxx allowed scope and its
+`results/Gxx-result.md`; it must never edit immutable plan files, change the
+Goal, spawn another agent, or touch unrelated dirty worktree files. At most one
+write-capable implementation agent may run at once. The parent records actual
+results and test outcomes, and may continue only when prerequisites are marked
+complete by the lifecycle state machine.
+
+Plan revisions are Planner-only: create a new revision rather than overwriting
+the old one, record its hashes, and make it active only after validation. A
+stopped, failed, incomplete, or unverified task keeps its own runtime directory
+for recovery. Cleanup may remove only that task directory after every Goal,
+required verification, final documentation, and completion record have passed;
+never clean the plans root or another task.
+
+### Version-controlled role templates
+
+`.codex/agents/planner.toml` is the sole executable-goal producer and is
+`gpt-5.6-sol` with `medium` reasoning and read-only sandboxing. The complex
+implementers and test rerunner have bounded roles documented in their templates.
+Use `scripts/codex/sync-agent-config.mjs --check` before relying on a user-level
+copy, and `--apply` only when explicitly synchronizing the project templates.
+
+The complete lifecycle, delegation template, recovery protocol, cleanup gates,
+and command examples are in `docs/codex/planning-and-goals.md`. Use the root
+commands `pnpm codex:task:classify`, `pnpm codex:plan:init`,
+`pnpm codex:plan:persist`, and `pnpm codex:plan:verify`; state and cleanup
+commands intentionally require their explicit `node scripts/codex/...` forms
+until a package command is added.

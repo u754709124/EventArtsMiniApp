@@ -21,6 +21,13 @@
     "assets:slice": "tsx scripts/slice-home-assets.ts",
     "assets:slice:artists": "tsx scripts/slice-artist-assets.ts",
     "assets:slice:artist-detail": "node --import tsx scripts/slice-artist-detail-assets.ts",
+    "codex:task:classify": "node scripts/codex/classify-task.mjs",
+    "codex:plan:init": "node scripts/codex/init-plan-run.mjs",
+    "codex:plan:persist": "node scripts/codex/persist-planner-output.mjs",
+    "codex:plan:verify": "node scripts/codex/verify-plan-integrity.mjs",
+    "codex:plan:state": "node scripts/codex/update-plan-state.mjs",
+    "codex:plan:cleanup": "node scripts/codex/cleanup-plan-run.mjs",
+    "test:codex": "vitest run scripts/codex",
     "release:check": "pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
   },
   "devDependencies": {

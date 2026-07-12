@@ -39,6 +39,7 @@ function referencePath(reference: DetailPageReferenceDto) {
   if (reference.sourceType === "announcement") return "/announcements";
   if (reference.sourceType === "banner") return "/banners";
   if (reference.sourceType === "artist") return "/artists";
+  if (reference.sourceType === "article") return "/articles";
   return "/cases";
 }
 

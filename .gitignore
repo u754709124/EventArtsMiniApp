@@ -19,3 +19,7 @@ test-results/
 uploads/*
 !uploads/.gitkeep
 .superpowers/
+.codex/runtime/
+!.codex/
+!.codex/agents/
+!.codex/agents/*.toml

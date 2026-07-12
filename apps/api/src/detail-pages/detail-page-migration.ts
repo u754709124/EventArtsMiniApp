@@ -60,6 +60,7 @@ async function hasTargetSchema(prisma: AppPrismaClient) {
   for (const table of ["announcements", "banners", "artists", "activity_cases"]) {
     if (!(await columnNames(prisma, table)).has("detailPageId")) return false;
   }
+  if ((await tableExists(prisma, "articles")) && !(await columnNames(prisma, "articles")).has("detailPageId")) return false;
   return true;
 }
 
@@ -301,10 +302,16 @@ async function ensureBusinessDetailColumns(prisma: AppPrismaClient) {
   await addColumnIfMissing(prisma, "banners", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
   await addColumnIfMissing(prisma, "artists", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
   await addColumnIfMissing(prisma, "activity_cases", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  if (await tableExists(prisma, "articles")) {
+    await addColumnIfMissing(prisma, "articles", "detailPageId", "INTEGER REFERENCES detail_page_configs(id) ON DELETE RESTRICT");
+  }
   await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS announcements_detailPageId_idx ON announcements(detailPageId)");
   await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS banners_detailPageId_idx ON banners(detailPageId)");
   await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS artists_detailPageId_idx ON artists(detailPageId)");
   await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS activity_cases_detailPageId_idx ON activity_cases(detailPageId)");
+  if (await tableExists(prisma, "articles")) {
+    await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS articles_detailPageId_idx ON articles(detailPageId)");
+  }
 }
 
 async function backfillBusinessReferences(prisma: AppPrismaClient) {

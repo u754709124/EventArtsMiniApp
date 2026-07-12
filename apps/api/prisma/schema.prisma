@@ -61,6 +61,7 @@ model MediaAsset {
   menuItems                MenuItem[]
   artists                  Artist[]
   activityCases            ActivityCase[]
+  articles                 Article[]
   defaultBannerConfigs     SiteConfig[]   @relation("defaultBanner")
   placeholderBannerConfigs SiteConfig[]   @relation("placeholderBanner")
   placeholderIconConfigs   SiteConfig[]   @relation("placeholderIcon")
@@ -180,6 +181,31 @@ model ActivityCase {
   @@map("activity_cases")
 }
 
+model Article {
+  id                Int        @id @default(autoincrement())
+  title             String
+  category          String
+  coverAssetId      Int
+  coverAsset        MediaAsset @relation(fields: [coverAssetId], references: [id])
+  summary           String
+  publishedAt       DateTime
+  isFeatured        Boolean    @default(false)
+  featuredSortOrder Int        @default(0)
+  sortOrder         Int        @default(0)
+  status            String     @default("enabled")
+  detailPageId      Int?
+  detailPage        DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([coverAssetId])
+  @@index([detailPageId])
+  @@index([category])
+  @@index([status, sortOrder])
+  @@index([status, isFeatured, featuredSortOrder])
+  @@map("articles")
+}
+
 model ActivityCaseMedia {
   id             Int          @id @default(autoincrement())
   activityCaseId Int
@@ -217,6 +243,7 @@ model DetailPageConfig {
   homeBanners   Banner[]
   artists       Artist[]
   activityCases ActivityCase[]
+  articles      Article[]
 
   @@unique([ownerType, ownerId])
   @@index([name])

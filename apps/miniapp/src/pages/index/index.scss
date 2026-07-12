@@ -188,3 +188,15 @@
   overflow-x: auto;
   padding-bottom: 8rpx;
 }
+
+.section-heading--articles {
+  margin-top: 22rpx;
+}
+
+.home-article-list {
+  width: 710rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  padding-bottom: 8rpx;
+}

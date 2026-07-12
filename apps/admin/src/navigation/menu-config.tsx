@@ -109,6 +109,15 @@ export const adminMenuConfig: AdminMenuItem[] = [
         testid: "sidebar-cases"
       },
       {
+        key: "articles",
+        label: "文章管理",
+        icon: <FileTextOutlined />,
+        path: "/articles",
+        matchPaths: ["/articles", "/articles/new", "/articles/:id/edit"],
+        breadcrumb: "文章管理",
+        testid: "sidebar-articles"
+      },
+      {
         key: "detail-pages",
         label: "详情页管理",
         icon: <FileTextOutlined />,

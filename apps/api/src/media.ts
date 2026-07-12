@@ -76,6 +76,13 @@ export async function mediaReferenceCount(prisma: AppPrismaClient, id: number) {
   return (await mediaReferenceSources(prisma, id)).reduce((total, source) => total + source.count, 0);
 }
 
+function formatArticleCoverReferenceLabel(items: Array<{ id: number; title: string }>) {
+  if (!items.length) return "文章封面";
+  const visible = items.slice(0, 3).map((item) => `${item.title}（ID ${item.id}）`);
+  const suffix = items.length > visible.length ? ` 等 ${items.length} 篇` : "";
+  return `文章封面：${visible.join("、")}${suffix}`;
+}
+
 export async function mediaReferenceSources(prisma: AppPrismaClient, id: number): Promise<MediaReferenceSourceDto[]> {
   const legacyCaseDetailCount = prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
     `SELECT COUNT(*) AS count
@@ -87,7 +94,25 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
        )`,
     id
   ).then((rows) => Number(rows[0]?.count ?? 0));
-  const counts = await Promise.all([
+  const articleCoverReferences = prisma.article.findMany({
+    where: { coverAssetId: id },
+    select: { id: true, title: true },
+    orderBy: { id: "asc" }
+  });
+  const [
+    siteDefaultBannerCount,
+    sitePlaceholderBannerCount,
+    sitePlaceholderIconCount,
+    sitePlaceholderCaseCount,
+    bannerCount,
+    menuCount,
+    caseCoverCount,
+    articleCoverItems,
+    artistCoverCount,
+    legacyCaseDetailReferenceCount,
+    detailPageBannerCount,
+    detailPageContentCount
+  ] = await Promise.all([
     prisma.siteConfig.count({ where: { defaultBannerAssetId: id } }),
     prisma.siteConfig.count({ where: { placeholderBannerAssetId: id } }),
     prisma.siteConfig.count({ where: { placeholderIconAssetId: id } }),
@@ -95,11 +120,26 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     prisma.banner.count({ where: { imageAssetId: id } }),
     prisma.menuItem.count({ where: { iconAssetId: id } }),
     prisma.activityCase.count({ where: { coverAssetId: id } }),
+    articleCoverReferences,
     prisma.artist.count({ where: { avatarAssetId: id } }),
     legacyCaseDetailCount,
     prisma.detailPageBannerMedia.count({ where: { mediaAssetId: id } }),
     prisma.detailPageContentMedia.count({ where: { mediaAssetId: id } })
   ]);
+  const counts = [
+    siteDefaultBannerCount,
+    sitePlaceholderBannerCount,
+    sitePlaceholderIconCount,
+    sitePlaceholderCaseCount,
+    bannerCount,
+    menuCount,
+    caseCoverCount,
+    articleCoverItems.length,
+    artistCoverCount,
+    legacyCaseDetailReferenceCount,
+    detailPageBannerCount,
+    detailPageContentCount
+  ];
   const definitions: Array<Omit<MediaReferenceSourceDto, "count">> = [
     { type: "site_default_banner", label: "首页默认 BANNER" },
     { type: "site_placeholder_banner", label: "BANNER 占位图" },
@@ -108,6 +148,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     { type: "banner", label: "首页 BANNER" },
     { type: "menu", label: "菜单图标" },
     { type: "case_cover", label: "案例封面" },
+    { type: "article_cover", label: formatArticleCoverReferenceLabel(articleCoverItems) },
     { type: "artist_cover", label: "人员列表封面" },
     { type: "legacy_case_detail", label: "旧案例详情媒体" },
     { type: "detail_page_banner", label: "详情页 BANNER" },
@@ -161,6 +202,7 @@ const mediaReferenceSql = `
   (SELECT COUNT(*) FROM banners b WHERE b.imageAssetId = m.id) +
   (SELECT COUNT(*) FROM menu_items mi WHERE mi.iconAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_cases ac WHERE ac.coverAssetId = m.id) +
+  (SELECT COUNT(*) FROM articles ar WHERE ar.coverAssetId = m.id) +
   (SELECT COUNT(*) FROM artists a WHERE a.avatarAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_case_media cm
    WHERE cm.mediaAssetId = m.id

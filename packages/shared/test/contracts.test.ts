@@ -1,17 +1,22 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ArtistCreateRequestSchema,
+  ArticleCreateRequestSchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
+  adminArticleListQuerySchema,
   artistListQuerySchema,
   artistTypeLabels,
   batchDeleteMediaRequestSchema,
   caseListQuerySchema,
+  clientArticleListQuerySchema,
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
   menuConfigSchemaByType,
   menuTypeValues,
+  normalizeArticleCategories,
+  normalizeArticleCategory,
   normalizeArtistTags,
   normalizeResourceName,
   ok,
@@ -26,8 +31,8 @@ import {
 } from "../src/index";
 
 describe("shared contracts", () => {
-  it("keeps the phase-one menu enum fixed to the five supported types", () => {
-    expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "contact"]);
+  it("keeps the phase-one menu enum aligned with supported home menu types", () => {
+    expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "article", "contact"]);
   });
 
   it("validates menu item create and update requests strictly", () => {
@@ -53,6 +58,71 @@ describe("shared contracts", () => {
       .toEqual({ category: "婚礼主持", onlyFeatured: true, pageSize: 6 });
     expect(menuConfigSchemaByType.activity_case.parse({ category: "   ", onlyFeatured: false, pageSize: 6 }))
       .toEqual({ category: undefined, onlyFeatured: false, pageSize: 6 });
+    expect(menuConfigSchemaByType.article.parse({ category: " 婚礼攻略 ", pageSize: 6 }))
+      .toEqual({ category: "婚礼攻略", pageSize: 6 });
+    expect(menuConfigSchemaByType.article.parse({ category: "   " })).toEqual({ category: undefined, pageSize: 10 });
+    expect(() => menuConfigSchemaByType.article.parse({ pageSize: 51 })).toThrow();
+  });
+
+  it("normalizes and validates article contracts", () => {
+    expect(normalizeArticleCategory("  Ｗedding   Guide  ")).toBe("Wedding Guide");
+    expect(normalizeArticleCategories([" Guide ", "guide", "婚礼攻略", "婚礼攻略 "])).toEqual(["Guide", "婚礼攻略"]);
+    expect(
+      ArticleCreateRequestSchema.parse({
+        title: " 婚礼攻略 ",
+        category: " 婚礼   攻略 ",
+        coverAssetId: "3",
+        summary: " 摘要 ",
+        publishedAt: "2026-07-12T08:00:00.000Z",
+        isFeatured: true,
+        featuredSortOrder: "1",
+        sortOrder: "2",
+        status: "enabled",
+        detailPageId: null
+      })
+    ).toMatchObject({
+      title: "婚礼攻略",
+      category: "婚礼 攻略",
+      coverAssetId: 3,
+      summary: "摘要",
+      isFeatured: true,
+      featuredSortOrder: 1,
+      sortOrder: 2,
+      detailPageId: null
+    });
+    expect(clientArticleListQuerySchema.parse({ category: " 婚礼攻略 ", pageSize: "50" })).toMatchObject({
+      category: "婚礼攻略",
+      page: 1,
+      pageSize: 50
+    });
+    expect(adminArticleListQuerySchema.parse({ isFeatured: "true", status: "enabled" })).toMatchObject({
+      isFeatured: true,
+      status: "enabled"
+    });
+    expect(() => ArticleCreateRequestSchema.parse({
+      title: "文章",
+      category: "婚礼攻略",
+      coverAssetId: 1,
+      summary: "摘要",
+      publishedAt: "2026/07/12",
+      isFeatured: false,
+      featuredSortOrder: 0,
+      sortOrder: 0,
+      status: "enabled",
+      detailPageId: null
+    })).toThrow();
+    expect(() => ArticleCreateRequestSchema.parse({
+      title: "文章",
+      category: "",
+      coverAssetId: 1,
+      summary: "摘要",
+      publishedAt: "not-a-date",
+      isFeatured: false,
+      featuredSortOrder: 0,
+      sortOrder: 0,
+      status: "enabled",
+      detailPageId: null
+    })).toThrow();
   });
 
   it("normalizes resource names for global case-insensitive uniqueness", () => {
@@ -70,6 +140,7 @@ describe("shared contracts", () => {
     });
     expect(mediaFieldRules["menu.icon"]).toMatchObject({ width: 176, height: 176 });
     expect(mediaFieldRules["case.cover"]).toMatchObject({ width: 460, height: 320 });
+    expect(mediaFieldRules["article.cover"]).toMatchObject({ allowedTypes: ["image"], width: null, height: null });
     expect(mediaFieldRules["artist.avatar"]).toMatchObject({ width: null, height: null });
     expect(mediaFieldRules["case.detail"]).toMatchObject({ allowedTypes: ["image", "video"] });
   });
@@ -108,10 +179,11 @@ describe("shared contracts", () => {
       announcements: [],
       banners: [],
       menus: [],
-      featuredCases: []
+      featuredCases: [],
+      featuredArticles: []
     };
 
-    expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "featuredCases"]);
+    expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "featuredCases", "featuredArticles"]);
   });
 
   it("separates list summaries from required detail-page DTOs", () => {

@@ -199,12 +199,15 @@ describe("client home aggregation", () => {
       "announcements",
       "banners",
       "menus",
-      "featuredCases"
+      "featuredCases",
+      "featuredArticles"
     ]);
     expect(body.data.site.appName).toBe("喜缘主持・演艺服务");
     expect(body.data.menus.map((menu: { type: string }) => menu.type)).toEqual(menuTypeValues);
     expect(body.data.menus.every((menu: { showOnHome: boolean }) => menu.showOnHome)).toBe(true);
     expect(body.data.featuredCases).toHaveLength(3);
+    expect(body.data.featuredArticles).toHaveLength(2);
+    expect(body.data.featuredArticles.map((article: { featuredSortOrder: number }) => article.featuredSortOrder)).toEqual([1, 2]);
   });
 
   it("hides disabled announcements, banners, and menu items from home", async () => {
@@ -248,6 +251,102 @@ describe("client home aggregation", () => {
 
     expect(response.json().data.featuredCases).toEqual([]);
     expect(await prisma.activityCase.count()).toBeGreaterThanOrEqual(3);
+  });
+
+  it("lists client articles by category and always returns enabled categories", async () => {
+    await prisma.article.updateMany({ where: { title: "品牌发布会现场节奏设计" }, data: { status: "disabled" } });
+
+    const response = await app.inject({ method: "GET", url: "/api/client/articles?category=婚礼攻略&pageSize=1" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.data.items).toHaveLength(1);
+    expect(body.data.total).toBe(2);
+    expect(body.data.items[0]).toMatchObject({ category: "婚礼攻略", hasDetailPage: true });
+    expect(body.data.categories).toEqual(["婚礼攻略", "活动策划"]);
+  });
+
+  it("returns admin article categories with search and limit", async () => {
+    const token = await login();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/articles/categories?q=婚礼&limit=1",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({ categories: ["婚礼攻略"] });
+  });
+
+  it("creates and updates admin articles with normalized category and reusable detail pages", async () => {
+    const token = await login();
+    const cover = await uploadMedia(token, await pngBuffer(320, 180), {
+      resourceName: "文章测试封面",
+      fieldKey: "article.cover"
+    });
+    const detailPage = await prisma.detailPageConfig.findFirstOrThrow({ where: { name: "婚礼流程筹备攻略" } });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/articles",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "  测试文章 ",
+        category: " 婚礼   攻略 ",
+        coverAssetId: cover.json().data.asset.id,
+        summary: " 文章摘要 ",
+        publishedAt: "2026-07-12T08:00:00.000Z",
+        isFeatured: true,
+        featuredSortOrder: 9,
+        sortOrder: 9,
+        status: "enabled",
+        detailPageId: detailPage.id
+      }
+    });
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/admin/articles/${created.json().data.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { isFeatured: false, detailPageId: null }
+    });
+    const logs = await prisma.operationLog.findMany({
+      where: { action: { in: ["CREATE_ARTICLE", "UPDATE_ARTICLE"] } },
+      orderBy: { id: "asc" }
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data).toMatchObject({
+      title: "测试文章",
+      category: "婚礼 攻略",
+      hasDetailPage: true
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data).toMatchObject({ isFeatured: false, detailPageId: null, hasDetailPage: false });
+    expect(logs.map((log) => log.action)).toEqual(["CREATE_ARTICLE", "UPDATE_ARTICLE"]);
+  });
+
+  it("includes articles in detail page reference protection", async () => {
+    const token = await login();
+    const article = await prisma.article.findFirstOrThrow({ where: { detailPageId: { not: null } } });
+    const refs = await app.inject({
+      method: "GET",
+      url: `/api/admin/detail-pages/${article.detailPageId}/references`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/detail-pages/${article.detailPageId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(refs.statusCode).toBe(200);
+    expect(refs.json().data.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceType: "article", sourceId: article.id, sourceName: article.title })
+      ])
+    );
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json().error.code).toBe("DETAIL_PAGE_IN_USE");
   });
 
   it("validates menu type values on admin create", async () => {
@@ -984,6 +1083,33 @@ describe("media upload and references", () => {
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("MEDIA_IN_USE");
+  });
+
+  it("reports article cover media as used", async () => {
+    const token = await login();
+    const article = await prisma.article.findFirstOrThrow({ include: { coverAsset: true } });
+    const assetResponse = await app.inject({
+      method: "GET",
+      url: `/api/admin/media-assets/${article.coverAssetId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/media-assets/${article.coverAssetId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(assetResponse.statusCode).toBe(200);
+    expect(assetResponse.json().data.referenceSources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "article_cover",
+          label: expect.stringContaining(`${article.title}（ID ${article.id}）`)
+        })
+      ])
+    );
+    expect(deleteResponse.json().error.message).toContain(`${article.title}（ID ${article.id}）`);
+    expect(deleteResponse.statusCode).toBe(409);
   });
 });
 

@@ -14,7 +14,7 @@ function getCaseCity(location: string) {
 }
 
 function prefixForVariant(variant: Variant) {
-  return variant === "compact" ? "home" : "case-list";
+  return variant === "compact" ? "home-case" : "case-list";
 }
 
 export function CaseCard({
@@ -32,13 +32,13 @@ export function CaseCard({
   return (
     <View
       className={`case-card case-card--${variant} ${clickable ? "case-card--clickable" : "case-card--static"}`}
-      data-testid={`${prefix}-case-card`}
+      data-testid={`${prefix}-card`}
       onClick={clickable ? () => navigateToDetailPage(item.detailPageId) : undefined}
     >
       <View className="case-card__image-wrap">
         <AppImage
           className="case-card__image"
-          testid={`${prefix}-case-image`}
+          testid={`${prefix}-image`}
           src={item.coverUrl}
           fallback={sitePlaceholderCaseUrl || generatedAssets.placeholderCase}
         />
@@ -47,11 +47,11 @@ export function CaseCard({
       <View className="case-card__body">
         <Text className="case-card__title">{item.title}</Text>
         <Text className="case-card__summary">{item.summary}</Text>
-        <View className="case-card__meta-row" data-testid={`${prefix}-case-meta`}>
+        <View className="case-card__meta-row" data-testid={`${prefix}-meta`}>
           <View className="case-card__meta-group case-card__meta-group--date">
             <Image
               className="case-card__meta-icon"
-              data-testid={`${prefix}-case-date-icon`}
+              data-testid={`${prefix}-date-icon`}
               mode="aspectFit"
               src={generatedAssets.iconCaseDate}
             />
@@ -60,7 +60,7 @@ export function CaseCard({
           <View className="case-card__meta-group case-card__meta-group--location">
             <Image
               className="case-card__meta-icon"
-              data-testid={`${prefix}-case-location-icon`}
+              data-testid={`${prefix}-location-icon`}
               mode="aspectFit"
               src={generatedAssets.iconCaseLocation}
             />

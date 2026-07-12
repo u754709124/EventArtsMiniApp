@@ -159,6 +159,28 @@ const statements = [
     UNIQUE(activityCaseId, mediaAssetId)
   )`,
   `CREATE INDEX IF NOT EXISTS activity_case_media_mediaAssetId_idx ON activity_case_media(mediaAssetId)`,
+  `CREATE TABLE IF NOT EXISTS articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    coverAssetId INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    publishedAt DATETIME NOT NULL,
+    isFeatured BOOLEAN NOT NULL DEFAULT false,
+    featuredSortOrder INTEGER NOT NULL DEFAULT 0,
+    sortOrder INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'enabled',
+    detailPageId INTEGER,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(coverAssetId) REFERENCES media_assets(id),
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
+  )`,
+  `CREATE INDEX IF NOT EXISTS articles_coverAssetId_idx ON articles(coverAssetId)`,
+  `CREATE INDEX IF NOT EXISTS articles_detailPageId_idx ON articles(detailPageId)`,
+  `CREATE INDEX IF NOT EXISTS articles_category_idx ON articles(category)`,
+  `CREATE INDEX IF NOT EXISTS articles_status_sortOrder_idx ON articles(status, sortOrder)`,
+  `CREATE INDEX IF NOT EXISTS articles_status_isFeatured_featuredSortOrder_idx ON articles(status, isFeatured, featuredSortOrder)`,
   `CREATE TABLE IF NOT EXISTS detail_page_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL DEFAULT '',
@@ -280,7 +302,7 @@ async function ensureMenuItemColumns(prisma: AppPrismaClient) {
 
 function isDeferredDetailPageIndex(statement: string) {
   return (
-    /CREATE INDEX IF NOT EXISTS (announcements|banners|artists|activity_cases)_detailPageId_idx/.test(statement) ||
+    /CREATE INDEX IF NOT EXISTS (announcements|banners|artists|activity_cases|articles)_detailPageId_idx/.test(statement) ||
     /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS detail_page_configs_/.test(statement)
   );
 }

@@ -24,7 +24,7 @@ describe("detail page registry", () => {
     expect(Object.keys(detailPageInputSchemas)).toEqual(detailPageTypeValues);
   });
 
-  it("defines the two phase-one types and two owner types exactly", () => {
+  it("defines the phase-one detail types and owner types exactly", () => {
     expect(detailPageTypeValues).toEqual(["banner_rich_text", "rich_text"]);
     expect(detailOwnerTypeValues).toEqual(["artist", "activity_case"]);
   });

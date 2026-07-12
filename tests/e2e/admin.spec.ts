@@ -474,6 +474,112 @@ test("案例表单可引用单富文本详情页并保留业务字段", async ({
   expect(updated?.detailPageSummary).toBeNull();
 });
 
+test("文章管理支持分类输入、详情页引用、筛选、删除和菜单文章配置", async ({ page, request }) => {
+  const existingArticles = await adminApi<{ items: Array<{ id: number; title: string }> }>(
+    request,
+    "GET",
+    "/api/admin/articles?pageSize=100"
+  );
+  for (const article of existingArticles.items.filter((item) => item.title.startsWith("E2E 文章"))) {
+    await adminApi(request, "DELETE", `/api/admin/articles/${article.id}`);
+  }
+  const existingMenus = await adminApi<{ items: Array<{ id: number; text: string }> }>(request, "GET", "/api/admin/menu-items");
+  for (const menu of existingMenus.items.filter((item) => item.text === "E2E 文章菜单")) {
+    await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
+  }
+  const detail = await createRichTextDetailPage(request, "E2E 文章详情页", "<p>E2E 文章详情正文</p>");
+
+  await loginAdminUi(page);
+  await page.getByTestId("sidebar-articles").click();
+  await expect(page.getByRole("heading", { name: "文章管理" })).toBeVisible();
+  await expect(page.getByTestId("articles-table")).toBeVisible();
+  await page.getByTestId("articles-create").click();
+
+  await page.getByTestId("article-title").fill("E2E 文章管理新分类");
+  await page.getByTestId("article-category").fill("婚礼");
+  await expect(visibleSelectOption(page, "婚礼攻略")).toBeVisible();
+  await visibleSelectOption(page, "婚礼攻略").click();
+  await expect(page.getByTestId("article-category")).toHaveValue("婚礼攻略");
+  await page.getByTestId("article-category").fill("Ｅ２Ｅ   新分类");
+  await chooseMediaFromLibrary(page, "article-cover-select", /case-1\.png/);
+  await page.getByTestId("article-summary").fill("E2E 文章摘要会展示在首页和文章列表中。");
+  await fillControl(page.getByTestId("article-published-at"), "2026-07-12 10:30:00");
+  await page.keyboard.press("Enter");
+  await page.getByTestId("article-featured").click();
+  await fillNumber(page, "article-featured-sort-order", 33);
+  await fillNumber(page, "article-sort-order", 33);
+  await selectOption(page, "status-select", "启用");
+  await selectDetailPageReference(page, "E2E 文章详情页");
+  await page.getByTestId("articles-save").click();
+  await waitForToast(page, "保存成功");
+
+  const articles = await adminApi<{ items: Array<{ id: number; title: string; category: string; detailPageId: number | null; isFeatured: boolean }> }>(
+    request,
+    "GET",
+    "/api/admin/articles?q=E2E%20文章管理&pageSize=100"
+  );
+  const created = articles.items.find((item) => item.title === "E2E 文章管理新分类");
+  expect(created).toMatchObject({
+    category: "E2E 新分类",
+    detailPageId: detail.id,
+    isFeatured: true
+  });
+  if (!created) throw new Error("E2E 文章未创建成功");
+
+  const row = page.getByTestId(`articles-row-${created.id}`);
+  await expect(row).toContainText("E2E 文章管理新分类");
+  await row.getByTestId("articles-edit").click();
+  await expect(page.getByTestId("article-category")).toHaveValue("E2E 新分类");
+  await expect(page.getByTestId("detail-page-reference-select")).toContainText("E2E 文章详情页");
+
+  await page.goto("/articles");
+  await page.getByTestId("articles-category-filter").click();
+  await expect(visibleSelectOption(page, "E2E 新分类")).toBeVisible();
+  await visibleSelectOption(page, "E2E 新分类").click();
+  await expect(page.getByTestId(`articles-row-${created.id}`)).toBeVisible();
+  await selectOption(page, "articles-featured-filter", "精选");
+  await expect(page.getByTestId(`articles-row-${created.id}`)).toBeVisible();
+
+  await page.goto("/menu-items");
+  await page.getByTestId("menu-items-create").click();
+  await page.getByTestId("menu-text").fill("E2E 文章菜单");
+  await chooseMediaFromLibrary(page, "menu-icon-select", /icon-case\.png/);
+  await selectOption(page, "menu-type-select", "文章");
+  await expect(page.getByTestId("menu-config-article-category")).toBeVisible();
+  await page.getByTestId("menu-config-article-category").click();
+  await page.keyboard.type("不存在分类");
+  await expect(visibleSelectOption(page, "不存在分类")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await selectOption(page, "menu-config-article-category", "全部文章");
+  await selectOption(page, "menu-config-article-category", "婚礼攻略");
+  await fillNumber(page, "menu-config-article-page-size", 7);
+  await fillNumber(page, "sort-order", 77);
+  await selectOption(page, "status-select", "启用");
+  await page.getByTestId("menu-items-save").click();
+  await waitForToast(page, "保存成功");
+
+  const menus = await adminApi<{ items: Array<{ id: number; text: string; type: string; configJson: { category?: string; pageSize?: number } }> }>(
+    request,
+    "GET",
+    "/api/admin/menu-items"
+  );
+  const savedMenu = menus.items.find((item) => item.text === "E2E 文章菜单");
+  expect(savedMenu).toMatchObject({
+    type: "article",
+    configJson: { category: "婚礼攻略", pageSize: 7 }
+  });
+  if (!savedMenu) throw new Error("E2E 文章菜单未创建成功");
+
+  await page.goto("/articles");
+  await page.getByTestId(`articles-row-${created.id}`).getByTestId("articles-delete").click();
+  const deleteConfirm = page.getByRole("dialog", { name: `确认删除「${created.title}」？` });
+  await expect(deleteConfirm).toBeVisible();
+  await expect(deleteConfirm).toContainText(`记录 ID：${created.id}`);
+  await deleteConfirm.getByRole("button", { name: /删\s*除/ }).click();
+  await waitForToast(page, "删除成功");
+  await adminApi(request, "DELETE", `/api/admin/menu-items/${savedMenu.id}`);
+});
+
 test("表单本地上传在客户端拦截错误尺寸，引用资源不可删除", async ({ page, request }) => {
   const media = await adminApi<{ items: { id: number; resourceName: string }[] }>(request, "GET", "/api/admin/media-assets?pageSize=100");
   const referencedAssetId = media.items.find((item) => item.resourceName === "placeholder-icon.png")?.id;

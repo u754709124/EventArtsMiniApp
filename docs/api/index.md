@@ -18,13 +18,43 @@
 - `GET /api/client/menu-items`
 - `GET /api/client/cases?q=&category=`
 - `GET /api/client/cases/:id`
+- `GET /api/client/articles?q=&category=&page=&pageSize=`
 - `GET /api/client/artists?type=host|singer|actor&q=&location=&tag=`（`type` 省略时默认为 `host`）
 - `GET /api/client/artists/:id`
 - `POST /api/client/track/page-view`
 
 案例详情的兼容 `media` 从独立详情页派生；小程序以公共 `/api/client/detail-pages/:id` 返回的 `blocks` 为准，不直接渲染兼容列表。
 
-`GET /api/client/home` 只返回 `status=enabled` 且 `showOnHome=true` 的菜单；`GET /api/client/menu-items` 返回全部启用菜单，供分类页展示。菜单字段包含 `showOnHome`，后台仍使用 `/api/admin/menu-items` 管理。`GET /api/client/cases?q=&category=` 的 `q` 会 trim，空白等同未传，并在标题、分类、标签、简介和地点中做大小写不敏感匹配；`category` 会按案例分类精确筛选。
+`GET /api/client/home` 只返回 `status=enabled` 且 `showOnHome=true` 的菜单，并额外返回 `featuredArticles`，最多 2 条启用且精选的文章，排序为 `featuredSortOrder ASC, publishedAt DESC, id ASC`。`GET /api/client/menu-items` 返回全部启用菜单，供分类页展示。菜单字段包含 `showOnHome`，后台仍使用 `/api/admin/menu-items` 管理。`GET /api/client/cases?q=&category=` 的 `q` 会 trim，空白等同未传，并在标题、分类、标签、简介和地点中做大小写不敏感匹配；`category` 会按案例分类精确筛选。
+
+`GET /api/client/articles?q=&category=&page=&pageSize=` 只返回启用文章，排序为 `sortOrder ASC, publishedAt DESC, id ASC`。`category` 按规范化分类精确筛选；`pageSize` 默认 10，最大 50。响应：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "婚礼流程筹备攻略",
+      "category": "婚礼攻略",
+      "coverUrl": "http://127.0.0.1:3001/uploads/seed/example.png",
+      "summary": "从档期、仪式流程到现场协同...",
+      "publishedAt": "2026-06-10T09:00:00.000Z",
+      "detailPageId": 1,
+      "hasDetailPage": true,
+      "isFeatured": true,
+      "featuredSortOrder": 1,
+      "sortOrder": 1,
+      "status": "enabled"
+    }
+  ],
+  "total": 2,
+  "page": 1,
+  "pageSize": 10,
+  "categories": ["婚礼攻略", "活动策划"]
+}
+```
+
+`categories` 始终来自全部启用文章分类，不受当前文章分类筛选页的限制。
 
 ### Common detail-page response
 
@@ -118,6 +148,8 @@
 
 默认允许 JPG、PNG、WebP（10MB）和 MP4（100MB），可用 `MAX_IMAGE_UPLOAD_BYTES`、`MAX_VIDEO_UPLOAD_BYTES` 覆盖。服务端重新计算 MD5，并从真实内容提取 MIME、宽高；物理文件使用随机 32 位十六进制名称。
 
+资源引用统计包含站点配置、首页 BANNER、菜单图标、案例封面、文章封面、人员列表封面、旧案例详情媒体和公共详情页 BANNER/富文本媒体。文章封面来源类型为 `article_cover`。
+
 ## Media Field Rules
 
 | 字段                                    | 类型       | 尺寸                                                  |
@@ -125,6 +157,7 @@
 | 默认 Banner、Banner 占位图、Banner 图片 | 图片       | 1420×580                                              |
 | 菜单图标、菜单占位图                    | 图片       | 176×176                                               |
 | 案例封面、案例封面占位图                | 图片       | 460×320                                               |
+| 文章封面                                | 图片       | 尺寸不限但必须可解析                                  |
 | 人员列表封面图                          | 图片       | 推荐 690×480；尺寸不限但必须可解析                    |
 | 案例详情媒体                            | 图片或视频 | 尺寸不限但必须可解析                                  |
 | 详情 BANNER                             | 图片       | 尺寸不限但必须可解析；每页 1–6 张，禁止视频与重复 ID  |
@@ -140,6 +173,9 @@
 - `GET|POST|PUT|DELETE /api/admin/menu-items`
 - `GET /api/admin/case-categories`
 - `GET|POST|PUT|DELETE /api/admin/cases`
+- `GET /api/admin/articles/categories`
+- `GET|POST|PUT|DELETE /api/admin/articles`
+- `GET /api/admin/articles/:id`
 - `GET|POST|PUT|DELETE /api/admin/artists`
 - `GET /api/admin/detail-pages`
 - `GET /api/admin/detail-pages/options`
@@ -147,7 +183,26 @@
 - `GET /api/admin/detail-pages/:id/references`
 - `POST /api/admin/detail-pages/preview`
 
-公告、首页 BANNER、人员和案例创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。
+公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
+
+Article admin create body:
+
+```json
+{
+  "title": "婚礼流程筹备攻略",
+  "category": "婚礼攻略",
+  "coverAssetId": 1,
+  "summary": "不超过 240 字的摘要",
+  "publishedAt": "2026-06-10T09:00:00.000Z",
+  "isFeatured": true,
+  "featuredSortOrder": 1,
+  "sortOrder": 1,
+  "status": "enabled",
+  "detailPageId": 1
+}
+```
+
+`category` 按 NFKC、trim、连续空格压缩规范化，非空且最长 30 字；英文去重忽略大小写。`title` 最长 100 字，`summary` 最长 240 字，`coverAssetId` 必须是存在的图片资源，`detailPageId` 可为 `null`。创建、更新和删除会写 `OperationLog`；删除文章不会删除封面或详情页。
 
 ### Detail-page admin input and preview
 

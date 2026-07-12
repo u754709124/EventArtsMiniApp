@@ -5,6 +5,7 @@ export default defineAppConfig({
     "pages/announcement/detail",
     "pages/cases/list",
     "pages/cases/detail",
+    "pages/articles/list",
     "pages/artists/list",
     "pages/artists/detail",
     "pages/contact/index",

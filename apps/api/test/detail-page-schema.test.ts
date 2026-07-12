@@ -24,6 +24,7 @@ describe("detail page SQLite schema", () => {
     expect(tables.map((row) => row.name)).toEqual(
       expect.arrayContaining([
         "schema_migrations",
+        "articles",
         "detail_page_configs",
         "detail_page_banner_media",
         "detail_page_content_media"
@@ -72,7 +73,7 @@ describe("detail page SQLite schema", () => {
       ])
     );
 
-    for (const table of ["announcements", "banners", "artists", "activity_cases"]) {
+    for (const table of ["announcements", "banners", "artists", "activity_cases", "articles"]) {
       const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info(${table})`);
       const foreignKeys = await prisma.$queryRawUnsafe<Array<{ table: string; from: string; on_delete: string }>>(
         `PRAGMA foreign_key_list(${table})`
@@ -84,6 +85,33 @@ describe("detail page SQLite schema", () => {
         ])
       );
     }
+
+    const articleColumns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(articles)");
+    expect(articleColumns.map((column) => column.name)).toEqual([
+      "id",
+      "title",
+      "category",
+      "coverAssetId",
+      "summary",
+      "publishedAt",
+      "isFeatured",
+      "featuredSortOrder",
+      "sortOrder",
+      "status",
+      "detailPageId",
+      "createdAt",
+      "updatedAt"
+    ]);
+    const articleIndexes = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA index_list(articles)");
+    expect(articleIndexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining([
+        "articles_coverAssetId_idx",
+        "articles_detailPageId_idx",
+        "articles_category_idx",
+        "articles_status_sortOrder_idx",
+        "articles_status_isFeatured_featuredSortOrder_idx"
+      ])
+    );
 
     const bannerForeignKeys = await prisma.$queryRawUnsafe<Array<{ table: string; on_delete: string }>>(
       "PRAGMA foreign_key_list(detail_page_banner_media)"

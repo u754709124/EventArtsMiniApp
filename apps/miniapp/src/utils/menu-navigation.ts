@@ -6,6 +6,7 @@ export const menuLabels: Record<MenuType, string> = {
   singer: "歌手",
   actor: "演员",
   activity_case: "活动案例",
+  article: "文章",
   contact: "联系我们"
 };
 
@@ -14,6 +15,7 @@ export const menuSummaries: Record<MenuType, string> = {
   singer: "发现适合现场氛围的实力歌手",
   actor: "挑选丰富活动体验的演艺人员",
   activity_case: "浏览真实活动案例与现场效果",
+  article: "阅读婚礼攻略与活动策划经验",
   contact: "咨询档期、报价与合作方式"
 };
 
@@ -22,6 +24,7 @@ const menuRoutes: Record<MenuType, string> = {
   singer: "/pages/artists/list?type=singer",
   actor: "/pages/artists/list?type=actor",
   activity_case: "/pages/cases/list",
+  article: "/pages/articles/list",
   contact: "/pages/contact/index"
 };
 
@@ -57,6 +60,16 @@ function setPendingCaseMenuFilter(menu: MenuItemDto | MenuType | string) {
   }
 }
 
+function articleMenuUrl(menu: MenuItemDto | MenuType | string) {
+  const config = getMenuConfig(menu);
+  const entries: string[] = [];
+  const category = typeof config.category === "string" ? config.category.trim() : "";
+  const pageSize = Number(config.pageSize);
+  if (category) entries.push(`category=${encodeURIComponent(category)}`);
+  if (Number.isInteger(pageSize) && pageSize >= 1 && pageSize <= 50) entries.push(`pageSize=${pageSize}`);
+  return `/pages/articles/list${entries.length ? `?${entries.join("&")}` : ""}`;
+}
+
 export function consumePendingCaseMenuFilter(): CaseMenuFilter | undefined {
   try {
     const value = Taro.getStorageSync<CaseMenuFilter>(caseMenuFilterStorageKey);
@@ -74,6 +87,10 @@ export function openMenu(menu: MenuItemDto | MenuType | string) {
   if (menuType === "activity_case") {
     setPendingCaseMenuFilter(menu);
     ignoreNavigationError(Taro.switchTab({ url }));
+    return;
+  }
+  if (menuType === "article") {
+    ignoreNavigationError(Taro.navigateTo({ url: articleMenuUrl(menu) }));
     return;
   }
   ignoreNavigationError(Taro.navigateTo({ url }));

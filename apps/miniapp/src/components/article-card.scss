@@ -1,0 +1,119 @@
+.article-card {
+  box-sizing: border-box;
+  width: 710rpx;
+  min-height: 204rpx;
+  padding: 16rpx;
+  display: flex;
+  gap: 18rpx;
+  border: 1rpx solid #f0e4d8;
+  border-radius: 14rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 22rpx rgba(92, 64, 35, 0.08);
+}
+
+.article-card--home {
+  min-height: 188rpx;
+}
+
+.article-card--clickable {
+  cursor: pointer;
+}
+
+.article-card__cover {
+  width: 204rpx;
+  height: 156rpx;
+  flex: 0 0 204rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+}
+
+.article-card--list .article-card__cover {
+  width: 220rpx;
+  height: 168rpx;
+  flex-basis: 220rpx;
+}
+
+.article-card__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.article-card__title {
+  display: -webkit-box;
+  width: 100%;
+  height: 68rpx;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #221b15;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 34rpx;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+
+.article-card__summary {
+  display: -webkit-box;
+  width: 100%;
+  height: 56rpx;
+  margin-top: 6rpx;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #6f6258;
+  font-size: 22rpx;
+  line-height: 28rpx;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+
+.article-card__time-row {
+  height: 28rpx;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  color: #9b8a7d;
+}
+
+.article-card__clock {
+  position: relative;
+  box-sizing: border-box;
+  width: 22rpx;
+  height: 22rpx;
+  flex: 0 0 22rpx;
+  border: 2rpx solid #b69a82;
+  border-radius: 50%;
+}
+
+.article-card__clock::before,
+.article-card__clock::after {
+  content: "";
+  position: absolute;
+  left: 9rpx;
+  top: 4rpx;
+  width: 2rpx;
+  height: 7rpx;
+  border-radius: 2rpx;
+  background: #b69a82;
+  transform-origin: bottom center;
+}
+
+.article-card__clock::after {
+  top: 9rpx;
+  height: 5rpx;
+  transform: rotate(90deg);
+}
+
+.article-card__time {
+  min-width: 0;
+  height: 28rpx;
+  overflow: hidden;
+  font-size: 22rpx;
+  line-height: 28rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

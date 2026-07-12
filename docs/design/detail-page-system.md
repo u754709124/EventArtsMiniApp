@@ -15,7 +15,7 @@
 | `banner_rich_text` | BANNER + 富文本 | `bannerRichText` | 宣传语 trim 后非空；1–6 张不重复图片；富文本语义非空 |
 | `rich_text`        | 单富文本        | `richText`       | 仅富文本；宣传语为空；`banners` 必须为空             |
 
-`ownerType/ownerId` 仅用于旧数据审计和迁移回填。运行时引用关系是四张业务表的真实 FK：`announcements.detailPageId`、`banners.detailPageId`、`artists.detailPageId`、`activity_cases.detailPageId`，均允许为空并使用 `ON DELETE RESTRICT` 保护被引用详情页。
+`ownerType/ownerId` 仅用于旧数据审计和迁移回填。运行时引用关系是业务表的真实 FK：`announcements.detailPageId`、`banners.detailPageId`、`artists.detailPageId`、`activity_cases.detailPageId`、`articles.detailPageId`，均允许为空并使用 `ON DELETE RESTRICT` 保护被引用详情页。
 
 ## 数据库与传输契约
 

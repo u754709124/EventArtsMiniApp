@@ -45,6 +45,8 @@ export function CrudPage({ config }: { config: CrudConfig }) {
 
   const q = searchParams.get("q") ?? "";
   const status = searchParams.get("status") ?? "";
+  const category = searchParams.get("category") ?? "";
+  const isFeatured = searchParams.get("isFeatured") ?? "";
   const page = pageNumber(searchParams.get("page"), 1);
   const pageSize = pageNumber(searchParams.get("pageSize"), 10);
   const breadcrumbGroup = config.formMode === "page" ? "内容管理" : "首页运营";
@@ -78,10 +80,12 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     const normalizedQ = q.trim().toLocaleLowerCase("zh-CN");
     return items.filter((item) => {
       if (status && item.status !== status) return false;
+      if (category && item.category !== category) return false;
+      if (isFeatured && String(Boolean(item.isFeatured)) !== isFeatured) return false;
       if (normalizedQ && !searchableText(item, config.searchFields).includes(normalizedQ)) return false;
       return true;
     });
-  }, [items, q, status]);
+  }, [category, isFeatured, items, q, status]);
 
   function openCreate() {
     if (config.formMode === "page") {
@@ -237,6 +241,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             ]}
             style={{ width: 160 }}
           />
+          {config.toolbarFilters?.({ category, isFeatured, q, status }, setFilter)}
           <Button onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>清空筛选</Button>
         </Space>
         <Table
@@ -246,7 +251,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
           dataSource={filteredItems}
           columns={columns}
           scroll={{ x: "max-content" }}
-          locale={{ emptyText: <Empty description={q || status ? "没有符合条件的记录" : "暂无数据"} /> }}
+          locale={{ emptyText: <Empty description={q || status || category || isFeatured ? "没有符合条件的记录" : "暂无数据"} /> }}
           pagination={{
             current: page,
             pageSize,

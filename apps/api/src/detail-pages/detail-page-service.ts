@@ -184,17 +184,19 @@ function detailPageData(prepared: PreparedDetailPage) {
 }
 
 export async function getDetailPageReferences(db: DetailPageDb, id: number): Promise<DetailPageReferenceDto[]> {
-  const [announcements, banners, artists, cases] = await Promise.all([
+  const [announcements, banners, artists, cases, articles] = await Promise.all([
     db.announcement.findMany({ where: { detailPageId: id }, select: { id: true, summary: true }, orderBy: { id: "asc" } }),
     db.banner.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } }),
     db.artist.findMany({ where: { detailPageId: id }, select: { id: true, name: true }, orderBy: { id: "asc" } }),
-    db.activityCase.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } })
+    db.activityCase.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } }),
+    db.article.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } })
   ]);
   return [
     ...announcements.map((item) => ({ sourceType: "announcement" as const, sourceId: item.id, sourceName: item.summary })),
     ...banners.map((item) => ({ sourceType: "banner" as const, sourceId: item.id, sourceName: item.title })),
     ...artists.map((item) => ({ sourceType: "artist" as const, sourceId: item.id, sourceName: item.name })),
-    ...cases.map((item) => ({ sourceType: "activity_case" as const, sourceId: item.id, sourceName: item.title }))
+    ...cases.map((item) => ({ sourceType: "activity_case" as const, sourceId: item.id, sourceName: item.title })),
+    ...articles.map((item) => ({ sourceType: "article" as const, sourceId: item.id, sourceName: item.title }))
   ];
 }
 
@@ -203,7 +205,8 @@ export async function detailPageReferenceCount(db: DetailPageDb, id: number) {
     db.announcement.count({ where: { detailPageId: id } }),
     db.banner.count({ where: { detailPageId: id } }),
     db.artist.count({ where: { detailPageId: id } }),
-    db.activityCase.count({ where: { detailPageId: id } })
+    db.activityCase.count({ where: { detailPageId: id } }),
+    db.article.count({ where: { detailPageId: id } })
   ]);
   return counts.reduce((sum, count) => sum + count, 0);
 }

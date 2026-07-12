@@ -24,6 +24,7 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.operationLog.deleteMany();
   await prisma.pageViewEvent.deleteMany();
   await prisma.activityCaseMedia.deleteMany();
+  await prisma.article.deleteMany();
   await prisma.activityCase.deleteMany();
   await prisma.artist.deleteMany();
   await prisma.menuItem.deleteMany();
@@ -198,6 +199,27 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     ])
   });
 
+  const weddingPlanDetailPage = await upsertSeedDetailPage(prisma, "detailPage.article.wedding.plan", {
+    name: "婚礼流程筹备攻略",
+    type: "rich_text",
+    richTextHtml:
+      "<h1>婚礼流程筹备攻略</h1><p>从档期确认、仪式流程到现场统筹，建议提前梳理宾客动线与关键环节。</p><h1>执行建议</h1><p>主持人、策划和场地方需在婚礼前完成流程核对，确保音乐、灯光和誓言环节衔接顺畅。</p>"
+  });
+
+  const weddingHostDetailPage = await upsertSeedDetailPage(prisma, "detailPage.article.wedding.host", {
+    name: "婚礼主持选择指南",
+    type: "rich_text",
+    richTextHtml:
+      "<h1>婚礼主持选择指南</h1><p>选择主持人时可重点关注沟通效率、仪式表达、控场经验和现场应变能力。</p><h1>沟通清单</h1><p>建议提前确认流程偏好、父母发言、誓言方式和特殊惊喜环节。</p>"
+  });
+
+  const eventLaunchDetailPage = await upsertSeedDetailPage(prisma, "detailPage.article.event.launch", {
+    name: "品牌活动节奏设计",
+    type: "rich_text",
+    richTextHtml:
+      "<h1>品牌活动节奏设计</h1><p>发布会和年会需要用清晰的主线串联签到、开场、核心发布、互动和收尾。</p><h1>现场重点</h1><p>把控每个环节的时长和转场提示，可显著降低现场沟通成本。</p>"
+  });
+
   const announcementData = {
     summary: "最新档期更新",
     content: "婚礼主持、商演主持、歌手演出可预约",
@@ -275,6 +297,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     ["歌手", "icon-singer.png", "singer", { defaultSort: "sortOrder", pageSize: 10 }],
     ["演员", "icon-actor.png", "actor", { defaultSort: "sortOrder", pageSize: 10 }],
     ["活动案例", "icon-case.png", "activity_case", { onlyFeatured: false, pageSize: 10 }],
+    ["婚礼攻略", "icon-case.png", "article", { category: "婚礼攻略", pageSize: 10 }],
     ["联系我们", "icon-contact.png", "contact", { phone: "13800000000", address: "杭州" }]
   ] as const;
 
@@ -331,6 +354,80 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       update: (id) => prisma.activityCase.update({ where: { id }, data })
     });
     void activityCase;
+  }
+
+  const articles = [
+    {
+      key: "article.wedding.plan",
+      title: "婚礼流程筹备攻略",
+      category: "婚礼攻略",
+      cover: "case-1.png",
+      summary: "从档期、仪式流程到现场协同，梳理婚礼筹备中最容易遗漏的关键节点。",
+      publishedAt: "2026-06-10T09:00:00.000Z",
+      isFeatured: true,
+      featuredSortOrder: 1,
+      sortOrder: 1,
+      detailPageId: weddingPlanDetailPage.id
+    },
+    {
+      key: "article.wedding.host",
+      title: "如何选择适合自己的婚礼主持",
+      category: "婚礼攻略",
+      cover: "artist-cover-01.png",
+      summary: "用沟通效率、表达风格、控场经验和流程理解力判断主持人是否适合你的婚礼。",
+      publishedAt: "2026-06-08T09:00:00.000Z",
+      isFeatured: true,
+      featuredSortOrder: 2,
+      sortOrder: 2,
+      detailPageId: weddingHostDetailPage.id
+    },
+    {
+      key: "article.event.launch",
+      title: "品牌发布会现场节奏设计",
+      category: "活动策划",
+      cover: "case-2.png",
+      summary: "从开场、发布、互动到收尾，用清晰节奏帮助品牌活动稳定表达核心信息。",
+      publishedAt: "2026-06-01T09:00:00.000Z",
+      isFeatured: false,
+      featuredSortOrder: 0,
+      sortOrder: 3,
+      detailPageId: eventLaunchDetailPage.id
+    },
+    {
+      key: "article.event.checklist",
+      title: "活动执行前的物料检查清单",
+      category: "活动策划",
+      cover: "placeholder-case.png",
+      summary: "活动开始前核对舞台、音视频、签到、流程单和应急联系人，降低现场遗漏风险。",
+      publishedAt: "2026-05-28T09:00:00.000Z",
+      isFeatured: false,
+      featuredSortOrder: 0,
+      sortOrder: 4,
+      detailPageId: null
+    }
+  ];
+
+  for (const article of articles) {
+    const data = {
+      title: article.title,
+      category: article.category,
+      coverAssetId: assets.get(article.cover)!.id,
+      summary: article.summary,
+      publishedAt: new Date(article.publishedAt),
+      isFeatured: article.isFeatured,
+      featuredSortOrder: article.featuredSortOrder,
+      sortOrder: article.sortOrder,
+      status: "enabled",
+      detailPageId: article.detailPageId
+    };
+    await upsertSeedEntity(prisma, {
+      key: article.key,
+      entityType: "article",
+      findById: (id) => prisma.article.findUnique({ where: { id } }),
+      findLegacy: () => prisma.article.findFirst({ where: { title: article.title } }),
+      create: () => prisma.article.create({ data }),
+      update: (id) => prisma.article.update({ where: { id }, data })
+    });
   }
 
   const legacyArtists = [

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnnouncementDto, BannerDto, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
+import { ArticleCard } from "../../components/ArticleCard";
 import { CaseCard } from "../../components/CaseCard";
 import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
@@ -390,6 +391,21 @@ export default function HomePage() {
         <View className="home-case-list" data-testid="home-featured-cases">
           {data.featuredCases.map((item: ClientHomeResponse["featuredCases"][number]) => (
             <CaseCard key={item.id} item={item} variant="compact" sitePlaceholderCaseUrl={data.site.placeholderCaseUrl} />
+          ))}
+        </View>
+      )}
+      <View className="section-heading section-heading--articles">
+        <Text className="section-heading__title">精选文章</Text>
+        <Text className="section-heading__more" data-testid="home-article-more" onClick={() => openMenu("article")}>
+          更多文章 ›
+        </Text>
+      </View>
+      {data.featuredArticles.length === 0 ? (
+        <View className="case-empty card">暂无精选文章</View>
+      ) : (
+        <View className="home-article-list" data-testid="home-featured-articles">
+          {data.featuredArticles.map((item: ClientHomeResponse["featuredArticles"][number]) => (
+            <ArticleCard key={item.id} item={item} variant="home" fallback={data.site.placeholderCaseUrl} />
           ))}
         </View>
       )}
