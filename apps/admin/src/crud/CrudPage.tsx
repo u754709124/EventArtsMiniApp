@@ -182,10 +182,12 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       okText: "删除",
       cancelText: "取消",
       okButtonProps: { danger: true },
-      async onOk() {
-        await request(`${config.path}/${record.id}`, { method: "DELETE" });
-        message.success("删除成功");
-        await load();
+      onOk() {
+        return clickGuard(`${config.testid}:delete-confirm:${record.id}`, async () => {
+          await request(`${config.path}/${record.id}`, { method: "DELETE" });
+          message.success("删除成功");
+          await load();
+        });
       }
     });
   }

@@ -161,13 +161,14 @@ function ArtistFilterPanel({
   onReset: () => void;
   onConfirm: () => void;
 }) {
+  const clickGuard = useRepeatClickGuard();
   return (
-    <View className="artist-filter" data-testid="artist-filter-panel" onClick={onClose}>
+    <View className="artist-filter" data-testid="artist-filter-panel" onClick={() => clickGuard("artist:filter:close-backdrop", onClose)}>
       <View className="artist-filter__sheet" onClick={(event) => event.stopPropagation()}>
         <View className="artist-filter__handle" />
         <View className="artist-filter__heading">
           <Text className="artist-filter__title">筛选</Text>
-          <Text className="artist-filter__close" onClick={onClose}>
+          <Text className="artist-filter__close" onClick={() => clickGuard("artist:filter:close", onClose)}>
             关闭
           </Text>
         </View>
@@ -181,7 +182,7 @@ function ArtistFilterPanel({
                 key={option}
                 className={`artist-filter__option ${location === option ? "artist-filter__option--active" : ""}`}
                 data-testid={`artist-filter-location-${option}`}
-                onClick={() => onLocationChange(location === option ? "" : option)}
+                onClick={() => clickGuard(`artist:filter:location:${option}`, () => onLocationChange(location === option ? "" : option))}
               >
                 {option}
               </Text>
@@ -198,7 +199,7 @@ function ArtistFilterPanel({
                 key={option}
                 className={`artist-filter__option ${tag === option ? "artist-filter__option--active" : ""}`}
                 data-testid={`artist-filter-tag-${option}`}
-                onClick={() => onTagChange(tag === option ? "" : option)}
+                onClick={() => clickGuard(`artist:filter:tag:${option}`, () => onTagChange(tag === option ? "" : option))}
               >
                 {option}
               </Text>
@@ -206,10 +207,10 @@ function ArtistFilterPanel({
           )}
         </View>
         <View className="artist-filter__actions">
-          <Text className="artist-filter__reset" data-testid="artist-filter-reset" onClick={onReset}>
+          <Text className="artist-filter__reset" data-testid="artist-filter-reset" onClick={() => clickGuard("artist:filter:reset", onReset)}>
             重置
           </Text>
-          <Text className="artist-filter__confirm" data-testid="artist-filter-confirm" onClick={onConfirm}>
+          <Text className="artist-filter__confirm" data-testid="artist-filter-confirm" onClick={() => clickGuard("artist:filter:confirm", onConfirm)}>
             确定
           </Text>
         </View>

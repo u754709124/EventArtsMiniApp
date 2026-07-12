@@ -91,14 +91,16 @@ export function MediaPage() {
       okText: "删除",
       okButtonProps: { danger: true },
       cancelText: "取消",
-      async onOk() {
-        try {
-          await request(`/api/admin/media-assets/${asset.id}`, { method: "DELETE" });
-          message.success("删除成功");
-          await load(data.page);
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : "删除失败");
-        }
+      onOk() {
+        return clickGuard(`media:delete-confirm:${asset.id}`, async () => {
+          try {
+            await request(`/api/admin/media-assets/${asset.id}`, { method: "DELETE" });
+            message.success("删除成功");
+            await load(data.page);
+          } catch (error) {
+            message.error(error instanceof Error ? error.message : "删除失败");
+          }
+        });
       }
     });
   }

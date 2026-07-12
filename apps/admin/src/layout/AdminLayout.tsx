@@ -102,7 +102,7 @@ export function AdminLayout() {
           className="sidebar-collapse"
           type="text"
           icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-          onClick={() => setCollapsed((value) => !value)}
+          onClick={() => clickGuard("admin:sidebar:collapse", () => setCollapsed((value) => !value))}
         >
           {collapsed ? "" : "收起菜单"}
         </Button>

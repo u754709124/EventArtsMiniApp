@@ -114,7 +114,7 @@ export function DetailPageConfigFields({
       content: "应用参考模板会覆盖当前富文本内容，确认后仍可继续编辑。",
       okText: "应用模板",
       cancelText: "取消",
-      onOk: applyTemplate
+      onOk: () => clickGuard("detail-page:template:confirm", applyTemplate)
     });
   }
 

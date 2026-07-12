@@ -512,7 +512,45 @@ test("首页案例卡片高度接近参考图", async ({ page }) => {
     .first()
     .evaluate((node) => node.getBoundingClientRect().height);
 
-  expect(firstCaseHeight).toBeLessThanOrEqual(220);
+  expect(firstCaseHeight).toBeLessThanOrEqual(205);
+});
+
+test("首页精选标题与更多入口样式统一", async ({ page }) => {
+  await openHome(page);
+  const metrics = await page.evaluate(() => {
+    const heading = (text: string) => {
+      const title = Array.from(document.querySelectorAll(".section-heading__title"))
+        .find((node) => node.textContent?.trim() === text);
+      if (!title) throw new Error(`Missing heading ${text}`);
+      const section = title.closest(".section-heading");
+      const more = section?.querySelector(".section-heading__more");
+      if (!section || !more) throw new Error(`Missing heading action ${text}`);
+      const before = window.getComputedStyle(section, "::before");
+      const moreStyle = window.getComputedStyle(more);
+      return {
+        beforeBackground: before.backgroundColor,
+        beforeHeight: before.height,
+        beforeWidth: before.width,
+        moreColor: moreStyle.color,
+        moreFontSize: moreStyle.fontSize,
+        moreLineHeight: moreStyle.lineHeight,
+        moreText: more.textContent?.trim()
+      };
+    };
+    return {
+      cases: heading("精选案例"),
+      articles: heading("精选文章")
+    };
+  });
+
+  expect(metrics.cases.beforeBackground).toBe(metrics.articles.beforeBackground);
+  expect(metrics.cases.beforeHeight).toBe(metrics.articles.beforeHeight);
+  expect(metrics.cases.beforeWidth).toBe(metrics.articles.beforeWidth);
+  expect(metrics.cases.moreColor).toBe(metrics.articles.moreColor);
+  expect(metrics.cases.moreFontSize).toBe(metrics.articles.moreFontSize);
+  expect(metrics.cases.moreLineHeight).toBe(metrics.articles.moreLineHeight);
+  expect(metrics.cases.moreText).toBe("更多案例 ›");
+  expect(metrics.articles.moreText).toBe("更多文章 ›");
 });
 
 test("首页精选案例字段完整且日期地点靠近按钮底部对齐", async ({ page }) => {
@@ -564,6 +602,8 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
       const dateGroupRect = dateGroup.getBoundingClientRect();
       const locationGroupRect = locationGroup.getBoundingClientRect();
       const buttonRect = button.getBoundingClientRect();
+      const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
+      const metaMarginTop = Number.parseFloat(window.getComputedStyle(metaRow).marginTop);
 
       return {
         cardHeight: cardRect.height,
@@ -585,6 +625,8 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
         summaryTop: summaryRect.top,
         metaTop: metaRect.top,
         metaHeight: metaRect.height,
+        summaryMetaGapRem: metaMarginTop / rootFontSize,
+        summaryMetaVisualGap: metaRect.top - summaryRect.bottom,
         dateLeftOffset: dateGroupRect.left - metaRect.left,
         locationRightOffset: metaRect.right - locationGroupRect.right,
         dateLocationGap: locationGroupRect.left - dateGroupRect.right,
@@ -618,6 +660,10 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
       summaryTopSpread: spread(rows.map((row) => row.summaryTop)),
       metaTopSpread: spread(rows.map((row) => row.metaTop)),
       metaHeightSpread: spread(rows.map((row) => row.metaHeight)),
+      summaryMetaGapRemSpread: spread(rows.map((row) => row.summaryMetaGapRem)),
+      minSummaryMetaGapRem: Math.min(...rows.map((row) => row.summaryMetaGapRem)),
+      maxSummaryMetaGapRem: Math.max(...rows.map((row) => row.summaryMetaGapRem)),
+      minSummaryMetaVisualGap: Math.min(...rows.map((row) => row.summaryMetaVisualGap)),
       maxDateLeftOffset: Math.max(...rows.map((row) => Math.abs(row.dateLeftOffset))),
       maxLocationRightOffset: Math.max(...rows.map((row) => Math.abs(row.locationRightOffset))),
       minDateLocationGap: Math.min(...rows.map((row) => row.dateLocationGap)),
@@ -638,6 +684,10 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
   expect(metrics.summaryTopSpread).toBeLessThanOrEqual(1);
   expect(metrics.metaTopSpread).toBeLessThanOrEqual(1);
   expect(metrics.metaHeightSpread).toBeLessThanOrEqual(1);
+  expect(metrics.summaryMetaGapRemSpread).toBeLessThanOrEqual(0.01);
+  expect(metrics.minSummaryMetaGapRem).toBeGreaterThanOrEqual(0.59);
+  expect(metrics.maxSummaryMetaGapRem).toBeLessThanOrEqual(0.61);
+  expect(metrics.minSummaryMetaVisualGap).toBeGreaterThan(0);
   expect(metrics.maxDateLeftOffset).toBeLessThanOrEqual(1);
   expect(metrics.maxLocationRightOffset).toBeLessThanOrEqual(1);
   expect(metrics.minDateLocationGap).toBeGreaterThanOrEqual(0);

@@ -28,10 +28,10 @@ describe("repeat click guard", () => {
     });
     const action = vi.fn(() => first);
 
-    guard.run("save", action);
+    const returned = guard.run("save", action) as Promise<void>;
     guard.run("save", action);
     reject(new Error("failed"));
-    await first.catch(() => undefined);
+    await returned.catch(() => undefined);
     await Promise.resolve();
 
     guard.run("save", action);

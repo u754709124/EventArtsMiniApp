@@ -36,4 +36,22 @@ describe("repeat click guard", () => {
     guard.run("upload", action);
     expect(action).toHaveBeenCalledTimes(2);
   });
+
+  it("releases an async action after failure", async () => {
+    const guard = createRepeatClickGuard({ intervalMs: 600 });
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const action = vi.fn(() => pending);
+
+    const returned = guard.run("delete", action) as Promise<void>;
+    guard.run("delete", action);
+    reject(new Error("failed"));
+    await returned.catch(() => undefined);
+    await Promise.resolve();
+
+    guard.run("delete", action);
+    expect(action).toHaveBeenCalledTimes(2);
+  });
 });

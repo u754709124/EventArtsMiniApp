@@ -54,10 +54,12 @@ export function DetailPageList() {
       okText: "删除",
       cancelText: "取消",
       okButtonProps: { danger: true, disabled: record.referenceCount > 0 },
-      async onOk() {
-        await request(`/api/admin/detail-pages/${record.id}`, { method: "DELETE" });
-        message.success("删除成功");
-        await load();
+      onOk() {
+        return clickGuard(`detail-page:delete-confirm:${record.id}`, async () => {
+          await request(`/api/admin/detail-pages/${record.id}`, { method: "DELETE" });
+          message.success("删除成功");
+          await load();
+        });
       }
     });
   }

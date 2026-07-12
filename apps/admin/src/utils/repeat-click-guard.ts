@@ -28,10 +28,12 @@ export function createRepeatClickGuard(options: RepeatClickGuardOptions = {}) {
 
     if (result && typeof (result as Promise<T>).finally === "function") {
       running.add(key);
-      void (result as Promise<T>).finally(() => {
-        running.delete(key);
-        lockedUntil.delete(key);
-      });
+      void Promise.resolve(result)
+        .finally(() => {
+          running.delete(key);
+          lockedUntil.delete(key);
+        })
+        .catch(() => undefined);
     }
 
     return result;
