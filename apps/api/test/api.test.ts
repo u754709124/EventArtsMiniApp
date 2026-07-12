@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import type { InjectOptions, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { menuTypeValues } from "@event-arts/shared";
@@ -8,6 +9,14 @@ import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { seedDatabase } from "../src/seed";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
+import {
+  clientAuthHeaders,
+  createTestWeChatLoginCodeVerifier,
+  loginClient,
+  resetTestAdmin,
+  testAdminCredentials,
+  testClientAuthConfig
+} from "./fixtures";
 
 const runtimeRoot = path.join(process.cwd(), ".tmp/api-tests");
 const databasePath = path.join(runtimeRoot, "test.db");
@@ -16,17 +25,30 @@ const databaseUrl = `file:${databasePath}`;
 
 let prisma: AppPrismaClient;
 let app: Awaited<ReturnType<typeof buildApp>>;
+let clientToken: string;
+
+type TestInjectOptions = InjectOptions & { headers?: Record<string, string> };
 
 async function login() {
   const response = await app.inject({
     method: "POST",
     url: "/api/admin/auth/login",
-    payload: { username: "admin", password: "admin123456" }
+    payload: testAdminCredentials
   });
   const body = response.json();
   expect(response.statusCode).toBe(200);
   expect(body.success).toBe(true);
   return body.data.token as string;
+}
+
+function clientInject(options: TestInjectOptions): Promise<LightMyRequestResponse> {
+  return app.inject({
+    ...options,
+    headers: {
+      ...options.headers,
+      ...clientAuthHeaders(clientToken)
+    }
+  } as InjectOptions) as Promise<LightMyRequestResponse>;
 }
 
 async function pngBuffer(width: number, height: number) {
@@ -131,7 +153,10 @@ beforeAll(async () => {
     prisma,
     jwtSecret: "test-secret",
     uploadDir,
-    publicBaseUrl: "http://127.0.0.1:3001"
+    publicBaseUrl: "http://127.0.0.1:3001",
+    clientAuth: testClientAuthConfig,
+    weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier(),
+    analytics: { sampleRate: 1, retentionDays: 90, dedupeWindowSeconds: 30 }
   });
 });
 
@@ -141,6 +166,8 @@ beforeEach(async () => {
     publicBaseUrl: "http://127.0.0.1:3001",
     reset: true
   });
+  await resetTestAdmin(prisma);
+  clientToken = await loginClient(app);
 });
 
 afterAll(async () => {
@@ -150,17 +177,17 @@ afterAll(async () => {
 });
 
 describe("admin auth", () => {
-  it("logs in with the seeded administrator", async () => {
+  it("logs in with the explicitly bootstrapped test administrator", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/auth/login",
-      payload: { username: "admin", password: "admin123456" }
+      payload: testAdminCredentials
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
-      data: { username: "admin" },
+      data: { username: testAdminCredentials.username },
       message: "ok"
     });
     expect(response.json().data.token).toEqual(expect.any(String));
@@ -170,7 +197,7 @@ describe("admin auth", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/auth/login",
-      payload: { username: "admin", password: "wrong" }
+      payload: { username: testAdminCredentials.username, password: "wrong" }
     });
 
     expect(response.statusCode).toBe(401);
@@ -189,7 +216,7 @@ describe("admin auth", () => {
 
 describe("client home aggregation", () => {
   it("returns site, announcements, banners, menus, and featuredCases", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/client/home" });
+    const response = await clientInject({ method: "GET", url: "/api/client/home" });
     const body = response.json();
 
     expect(response.statusCode).toBe(200);
@@ -215,7 +242,7 @@ describe("client home aggregation", () => {
     await prisma.banner.updateMany({ data: { status: "disabled" } });
     await prisma.menuItem.updateMany({ data: { status: "disabled" } });
 
-    const response = await app.inject({ method: "GET", url: "/api/client/home" });
+    const response = await clientInject({ method: "GET", url: "/api/client/home" });
     const data = response.json().data;
 
     expect(data.announcements).toEqual([]);
@@ -229,8 +256,8 @@ describe("client home aggregation", () => {
     await prisma.menuItem.update({ where: { id: disabled.id }, data: { status: "disabled" } });
 
     const [homeResponse, menuResponse] = await Promise.all([
-      app.inject({ method: "GET", url: "/api/client/home" }),
-      app.inject({ method: "GET", url: "/api/client/menu-items" })
+      clientInject({ method: "GET", url: "/api/client/home" }),
+      clientInject({ method: "GET", url: "/api/client/menu-items" })
     ]);
     const homeMenus = homeResponse.json().data.menus as Array<{ id: number }>;
     const clientMenus = menuResponse.json().data as Array<{ id: number; showOnHome: boolean }>;
@@ -247,7 +274,7 @@ describe("client home aggregation", () => {
   it("uses activity_cases as the shared source for featured cases", async () => {
     await prisma.activityCase.updateMany({ data: { isFeatured: false } });
 
-    const response = await app.inject({ method: "GET", url: "/api/client/home" });
+    const response = await clientInject({ method: "GET", url: "/api/client/home" });
 
     expect(response.json().data.featuredCases).toEqual([]);
     expect(await prisma.activityCase.count()).toBeGreaterThanOrEqual(3);
@@ -256,7 +283,7 @@ describe("client home aggregation", () => {
   it("lists client articles by category and always returns enabled categories", async () => {
     await prisma.article.updateMany({ where: { title: "品牌发布会现场节奏设计" }, data: { status: "disabled" } });
 
-    const response = await app.inject({ method: "GET", url: "/api/client/articles?category=婚礼攻略&pageSize=1" });
+    const response = await clientInject({ method: "GET", url: "/api/client/articles?category=婚礼攻略&pageSize=1" });
     const body = response.json();
 
     expect(response.statusCode).toBe(200);
@@ -483,10 +510,10 @@ describe("client home aggregation", () => {
 
 describe("client case search", () => {
   it("filters enabled cases by keyword across public card fields", async () => {
-    const byLocation = await app.inject({ method: "GET", url: "/api/client/cases?q=%E6%B5%A6%E4%B8%9C" });
-    const byCategory = await app.inject({ method: "GET", url: "/api/client/cases?category=%E6%AD%8C%E6%89%8B%E6%BC%94%E5%87%BA" });
-    const byCategoryAndKeyword = await app.inject({ method: "GET", url: "/api/client/cases?category=%E5%A9%9A%E7%A4%BC%E4%B8%BB%E6%8C%81&q=%E4%BC%81%E4%B8%9A" });
-    const blank = await app.inject({ method: "GET", url: "/api/client/cases?q=%20%20" });
+    const byLocation = await clientInject({ method: "GET", url: "/api/client/cases?q=%E6%B5%A6%E4%B8%9C" });
+    const byCategory = await clientInject({ method: "GET", url: "/api/client/cases?category=%E6%AD%8C%E6%89%8B%E6%BC%94%E5%87%BA" });
+    const byCategoryAndKeyword = await clientInject({ method: "GET", url: "/api/client/cases?category=%E5%A9%9A%E7%A4%BC%E4%B8%BB%E6%8C%81&q=%E4%BC%81%E4%B8%9A" });
+    const blank = await clientInject({ method: "GET", url: "/api/client/cases?q=%20%20" });
 
     expect(byLocation.statusCode).toBe(200);
     expect((byLocation.json().data as Array<{ title: string }>).map((item) => item.title)).toEqual(["企业年会歌手演出"]);
@@ -519,7 +546,7 @@ describe("admin case category options", () => {
 describe("artist client and admin contracts", () => {
   it("defaults the client artist list to host, serializes cards, and filters only enabled matching types", async () => {
     await prisma.artist.updateMany({ where: { type: "singer" }, data: { status: "disabled" } });
-    const response = await app.inject({ method: "GET", url: "/api/client/artists" });
+    const response = await clientInject({ method: "GET", url: "/api/client/artists" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual(expect.arrayContaining([
@@ -536,16 +563,16 @@ describe("artist client and admin contracts", () => {
   });
 
   it("strictly rejects an invalid client artist type", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/client/artists?type=unknown" });
+    const response = await clientInject({ method: "GET", url: "/api/client/artists?type=unknown" });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("VALIDATION_ERROR");
   });
 
   it("returns six enabled records for each artist type and preserves the required host seed copy", async () => {
     const [host, singer, actor] = await Promise.all([
-      app.inject({ method: "GET", url: "/api/client/artists?type=host" }),
-      app.inject({ method: "GET", url: "/api/client/artists?type=singer" }),
-      app.inject({ method: "GET", url: "/api/client/artists?type=actor" })
+      clientInject({ method: "GET", url: "/api/client/artists?type=host" }),
+      clientInject({ method: "GET", url: "/api/client/artists?type=singer" }),
+      clientInject({ method: "GET", url: "/api/client/artists?type=actor" })
     ]);
 
     expect(host.json().data).toHaveLength(6);
@@ -567,12 +594,12 @@ describe("artist client and admin contracts", () => {
     await prisma.artist.update({ where: { id: hostArtists[0].id }, data: { sortOrder: 5, location: "绍兴", summary: "独特风格描述" } });
     await prisma.artist.update({ where: { id: hostArtists[1].id }, data: { sortOrder: 5, location: "杭州", tagsJson: '["独特标签"]' } });
 
-    const bySummary = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E9%A3%8E%E6%A0%BC" });
-    const byName = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9E%97%E7%84%B6" });
-    const byLocationKeyword = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9D%AD%E5%B7%9E" });
-    const byTagKeyword = await app.inject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
-    const byLocationAndTag = await app.inject({ method: "GET", url: "/api/client/artists?type=host&location=%E6%9D%AD%E5%B7%9E&tag=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
-    const ordered = await app.inject({ method: "GET", url: "/api/client/artists?type=host" });
+    const bySummary = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E9%A3%8E%E6%A0%BC" });
+    const byName = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9E%97%E7%84%B6" });
+    const byLocationKeyword = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9D%AD%E5%B7%9E" });
+    const byTagKeyword = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const byLocationAndTag = await clientInject({ method: "GET", url: "/api/client/artists?type=host&location=%E6%9D%AD%E5%B7%9E&tag=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const ordered = await clientInject({ method: "GET", url: "/api/client/artists?type=host" });
 
     expect(bySummary.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
     expect(byName.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
@@ -587,7 +614,7 @@ describe("artist client and admin contracts", () => {
     const artist = await prisma.artist.findFirstOrThrow({ where: { type: "host" } });
     await prisma.artist.update({ where: { id: artist.id }, data: { tagsJson: "not-json" } });
 
-    const response = await app.inject({ method: "GET", url: `/api/client/artists/${artist.id}` });
+    const response = await clientInject({ method: "GET", url: `/api/client/artists/${artist.id}` });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.tags).toEqual([]);
     expect(response.json().data).not.toHaveProperty("tagsJson");
@@ -883,7 +910,7 @@ describe("media upload and references", () => {
         height: 100,
         mediaType: "image",
         tags: ["婚礼", "现场"],
-        createdByName: "admin",
+        createdByName: testAdminCredentials.username,
         inUse: false,
         referenceCount: 0
       }
@@ -1163,7 +1190,7 @@ describe("page-view analytics", () => {
       headers: { authorization: `Bearer ${token}` }
     });
 
-    await app.inject({
+    await clientInject({
       method: "POST",
       url: "/api/client/track/page-view",
       payload: { pagePath: "/pages/index/index", scene: "home" }

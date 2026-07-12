@@ -234,6 +234,28 @@ body {
   background: #f6f3ef;
 }
 
+.backup-file-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.backup-checks {
+  margin: 16px 0;
+}
+
+.backup-restore-summary {
+  margin: 16px 0;
+}
+
+.table-loading-hint {
+  margin-bottom: 12px;
+  color: #595959;
+  font-size: 13px;
+}
+
 img.media-thumb {
   object-fit: contain;
 }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Layout, Menu, Tooltip } from "antd";
+import { Button, Layout, Menu, Tooltip, message } from "antd";
 import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import type { ItemType } from "antd/es/menu/interface";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearToken } from "../api";
+import { clearToken, request } from "../api";
 import { adminMenuConfig, isMenuGroup } from "../navigation/menu-config";
 import { defaultOpenKeys, matchAdminRoute, validOpenKeys } from "../navigation/route-matching";
 import { useUnsavedChanges } from "../forms/unsaved-changes";
@@ -68,8 +68,14 @@ export function AdminLayout() {
     };
   }), []);
 
-  function logout() {
+  async function logout() {
     if (!dirtyGuard.confirmIfDirty()) return;
+    try {
+      await request<Record<string, never>>("/api/admin/auth/logout", { method: "POST" });
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "退出登录失败");
+      return;
+    }
     clearToken();
     navigate("/login");
   }

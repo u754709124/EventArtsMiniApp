@@ -1,25 +1,47 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import type { InjectOptions, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { registerSeedAssets, seedAssetSpecs } from "../src/assets";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { seedDatabase } from "../src/seed";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
+import {
+  clientAuthHeaders,
+  createTestWeChatLoginCodeVerifier,
+  loginClient,
+  resetTestAdmin,
+  testAdminCredentials,
+  testClientAuthConfig
+} from "./fixtures";
 
 const root = path.join(process.cwd(), ".tmp/detail-page-api-tests", String(process.pid));
 const databasePath = path.join(root, "api.db");
 const uploadDir = path.join(root, "uploads");
 let prisma: AppPrismaClient;
 let app: Awaited<ReturnType<typeof buildApp>>;
+let clientToken: string;
+
+type TestInjectOptions = InjectOptions & { headers?: Record<string, string> };
 
 async function token() {
   const response = await app.inject({
     method: "POST",
     url: "/api/admin/auth/login",
-    payload: { username: "admin", password: "admin123456" }
+    payload: testAdminCredentials
   });
   return response.json().data.token as string;
+}
+
+function clientInject(options: TestInjectOptions): Promise<LightMyRequestResponse> {
+  return app.inject({
+    ...options,
+    headers: {
+      ...options.headers,
+      ...clientAuthHeaders(clientToken)
+    }
+  } as InjectOptions) as Promise<LightMyRequestResponse>;
 }
 
 async function createAsset(id: number, mediaType: "image" | "video", dimensions?: { width: number; height: number }) {
@@ -87,7 +109,14 @@ beforeAll(async () => {
   await mkdir(uploadDir, { recursive: true });
   prisma = createPrismaClient(`file:${databasePath}`);
   await ensureDatabaseSchema(prisma, { uploadDir });
-  app = await buildApp({ prisma, jwtSecret: "detail-test", uploadDir, publicBaseUrl: "http://127.0.0.1:3001" });
+  app = await buildApp({
+    prisma,
+    jwtSecret: "detail-test",
+    uploadDir,
+    publicBaseUrl: "http://127.0.0.1:3001",
+    clientAuth: testClientAuthConfig,
+    weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier()
+  });
 });
 
 afterAll(async () => {
@@ -103,7 +132,6 @@ describe("seed asset recovery commands", () => {
         uploadDir,
         publicBaseUrl: "http://127.0.0.1:3001",
         assetRoot: path.join(root, "missing-seed-assets"),
-        createdBy: 0,
         specs: [seedAssetSpecs.find((spec) => spec.relativePath === relativePath)!]
       })
     ).rejects.toThrow(pattern);
@@ -128,6 +156,8 @@ describe("seed asset recovery commands", () => {
 describe("standalone detail page API integration", () => {
   beforeEach(async () => {
     await seedDatabase(prisma, { uploadDir, publicBaseUrl: "http://127.0.0.1:3001", reset: true });
+    await resetTestAdmin(prisma);
+    clientToken = await loginClient(app);
   });
 
   it("seeds reusable detail pages and linked/unlinked business examples idempotently", async () => {
@@ -231,12 +261,12 @@ describe("standalone detail page API integration", () => {
       hasRichText: true
     });
 
-    const client = await app.inject({ method: "GET", url: `/api/client/detail-pages/${detailPage.id}` });
+    const client = await clientInject({ method: "GET", url: `/api/client/detail-pages/${detailPage.id}` });
     expect(client.statusCode).toBe(200);
     expect(client.json().data.blocks.map((block: { type: string }) => block.type)).toEqual(["richText", "video"]);
     expect(client.json().data.cards.map((card: { blocks: Array<{ type: string }> }) => card.blocks.map((block) => block.type))).toEqual([["richText", "video"]]);
 
-    const artistDetail = await app.inject({ method: "GET", url: `/api/client/artists/${created.id}` });
+    const artistDetail = await clientInject({ method: "GET", url: `/api/client/artists/${created.id}` });
     expect(artistDetail.json().data.detailPage.id).toBe(detailPage.id);
 
     const references = await app.inject({
@@ -340,14 +370,14 @@ describe("standalone detail page API integration", () => {
     });
     expect(created.statusCode).toBe(200);
     const id = created.json().data.id;
-    const list = await app.inject({ method: "GET", url: "/api/client/cases" });
+    const list = await clientInject({ method: "GET", url: "/api/client/cases" });
     expect(list.json().data.find((item: { id: number }) => item.id === id)).toMatchObject({
       detailPageId: detail.json().data.id,
       hasDetailPage: true
     });
     expect(list.json().data.find((item: { id: number }) => item.id === id)).not.toHaveProperty("detailPage");
 
-    const client = await app.inject({ method: "GET", url: `/api/client/cases/${id}` });
+    const client = await clientInject({ method: "GET", url: `/api/client/cases/${id}` });
     expect(client.json().data.detailPage).toMatchObject({ id: detail.json().data.id, type: "rich_text" });
 
     const removed = await app.inject({
@@ -371,14 +401,14 @@ describe("standalone detail page API integration", () => {
     expect(invalidReference.statusCode).toBe(400);
     expect(invalidReference.json().error.code).toBe("DETAIL_PAGE_REFERENCE_NOT_FOUND");
 
-    const missing = await app.inject({ method: "GET", url: "/api/client/detail-pages/999999" });
+    const missing = await clientInject({ method: "GET", url: "/api/client/detail-pages/999999" });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.code).toBe("DETAIL_PAGE_NOT_FOUND");
 
     const unknown = await prisma.detailPageConfig.create({
       data: { name: "未来类型详情", pageType: "future_type", richTextHtml: "<p>未来内容</p>" }
     });
-    const response = await app.inject({ method: "GET", url: `/api/client/detail-pages/${unknown.id}` });
+    const response = await clientInject({ method: "GET", url: `/api/client/detail-pages/${unknown.id}` });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("UNKNOWN_DETAIL_PAGE_TYPE");
   });

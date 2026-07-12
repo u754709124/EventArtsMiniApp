@@ -13,7 +13,7 @@ Create the monorepo baseline, shared contracts, project standards, and durable d
 2. Add root scripts: `dev:api`, `dev:admin`, `dev:h5`, `build:weapp`, `lint`, `test`, `e2e`, `assets:slice`, `release:check`.
 3. Add TypeScript strict baseline and ESLint/Prettier config.
 4. Add `AGENTS.md` with project goals, owned paths, test rules, API conventions, media rules, and menu enum.
-5. Add `README.md` setup, database, dev, build, test, default admin, production warnings, upload/object storage notes.
+5. Add `README.md` setup, database, dev, build, test, administrator bootstrap, production warnings, upload/object storage notes.
 6. Add stage docs with the required sections and unchecked acceptance lists.
 7. Add shared enums/types/Zod schemas and contract tests.
 

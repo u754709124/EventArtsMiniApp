@@ -127,7 +127,7 @@
 - `pnpm install`：Already up to date，pnpm `11.3.0`，无 lockfile 变更。
 - `pnpm assets:slice:artist-detail`：连续运行两次，均生成 26 个 deterministic artist detail assets；两次 SHA-256 清单 `diff` 无输出。
 - `pnpm db:push`：沙箱内因 `tsx` IPC pipe `listen EPERM` 失败；按权限规则在沙箱外重跑通过，输出 `SQLite schema ready`。
-- `pnpm db:seed`：沙箱内因 `tsx` IPC pipe `listen EPERM` 失败；按权限规则在沙箱外重跑通过，输出 `Seed complete: admin/admin123456`。
+- `pnpm db:seed`：沙箱内因 `tsx` IPC pipe `listen EPERM` 失败；按权限规则在沙箱外重跑通过，输出 seed 完成信息。G02 后该命令仅写演示内容，不再创建管理员。
 - `pnpm lint`：通过。
 - focused admin E2E：`pnpm e2e --project=admin --grep "人员 BANNER 富文本"`、`pnpm e2e --project=admin --grep "表单本地上传"`、`pnpm e2e --project=admin --grep "资源库上传"` 均通过。
 - focused miniapp E2E：`pnpm e2e --project=miniapp-h5 --grep "人员 BANNER 富文本详情"` 与 `pnpm e2e --project=miniapp-h5 --grep "人员单富文本详情"` 均通过。

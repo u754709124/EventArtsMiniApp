@@ -26,14 +26,19 @@ CI=true pnpm install
 复制 `.env.example` 为 `.env`，并按环境修改：
 
 - `API_PORT`：API 监听端口，默认 `3001`
-- `API_HOST`：API 监听地址，默认 `127.0.0.1`；生产反代部署不应直接暴露公网
+- `API_HOST`：API 监听地址，默认 `127.0.0.1`；`NODE_ENV=production` 只允许 loopback，禁止 `0.0.0.0` 或公网地址
 - `JWT_SECRET`：管理员 JWT 密钥，生产环境必须替换
 - `DATABASE_URL`：SQLite 数据库地址，默认 `file:./dev.db`
 - `UPLOAD_DIR`：本地上传目录，默认指向仓库根目录 `uploads`
 - `MAX_IMAGE_UPLOAD_BYTES`：图片上传上限，默认 `10MB`
 - `MAX_VIDEO_UPLOAD_BYTES`：视频上传上限，默认 `100MB`
 - `PUBLIC_BASE_URL`：资源 URL 前缀
-- `ADMIN_HOST`：Admin 生产静态服务监听地址，默认 `127.0.0.1`
+- `WECHAT_MINIAPP_APP_ID`：目标微信小程序 AppID；生产必填
+- `WECHAT_MINIAPP_APP_SECRET`：目标微信小程序 AppSecret；只放 API 服务端，生产必填
+- `WECHAT_AUTH_VERIFIER_MODE`：微信登录校验模式，生产只能为 `wechat`
+- `CLIENT_SESSION_TTL_SECONDS`：小程序客户端会话有效期，默认 `1800`
+- `WECHAT_CODE2SESSION_TIMEOUT_MS`：服务端调用微信 `code2Session` 超时，默认 `3000`
+- `ADMIN_HOST`：Admin 生产静态服务监听地址，默认 `127.0.0.1`；`NODE_ENV=production` 只允许 loopback，禁止 `0.0.0.0` 或公网地址
 - `ADMIN_PORT`：Admin 生产静态服务监听端口，默认 `4173`
 - `VITE_API_BASE_URL`：后台管理系统 API Base URL；本地也可留空走 Vite proxy，生产同源 Nginx 部署应留空
 - `TARO_APP_API_BASE_URL`：Taro H5/weapp 编译时注入的小程序 API Base URL
@@ -47,12 +52,15 @@ pnpm db:seed
 
 `db:push` 会创建独立详情页表、文章表并执行幂等 SQLite 兼容迁移；`db:seed` 可重复运行，并按稳定 seed key 写入公告、首页 BANNER、人员、案例和文章的已绑定/未绑定详情示例。旧 `DetailPageConfig.ownerType/ownerId` 只作为 deprecated 迁移痕迹保留，运行时由业务表的可空 `detailPageId` 外键引用独立详情页。升级前请同时备份 SQLite 文件和 `uploads`。
 
-默认管理员账号：
+`db:seed` 不会创建、覆盖或删除管理员。首次初始化管理员必须显式执行一次 bootstrap，并从标准输入传入强密码：
 
-- 用户名：`admin`
-- 密码：`admin123456`
+```bash
+read -r -s BOOTSTRAP_PASSWORD
+printf '%s\n' "$BOOTSTRAP_PASSWORD" | pnpm admin:bootstrap -- --username <admin-username> --password-stdin
+unset BOOTSTRAP_PASSWORD
+```
 
-生产环境上线前必须修改默认密码和 `JWT_SECRET`。
+bootstrap 只允许在没有管理员时创建首个管理员；重复执行不会覆盖已有凭据。生产环境禁止运行 `db:seed`，上线前必须配置强 `JWT_SECRET`。
 
 ## 本地启动
 
@@ -89,6 +97,7 @@ ADMIN_HOST=127.0.0.1 ADMIN_PORT=4173 pnpm start:admin
 ```
 
 该服务只服务 `apps/admin/dist`，支持 `/admin/*` SPA 刷新 fallback；缺失的真实静态资源仍返回 404。
+生产模式下 API 和 Admin 会在监听端口前拒绝非 loopback host；不要用 `API_HOST=0.0.0.0` 或 `ADMIN_HOST=0.0.0.0` 作为部署捷径。
 
 ## 人员列表参考资源
 
@@ -141,9 +150,11 @@ pnpm assets:slice:artist-detail
 pnpm lint
 pnpm test
 pnpm e2e
+pnpm security:release-gate
 ```
 
 E2E 会自动启动 API、Admin 和 Taro H5，并生成首页设计复核截图 `docs/design/actual-home-h5.png`。
+`security:release-gate` 是上线安全门禁，覆盖默认凭据、弱 JWT、生产 seed、loopback 反向代理、CORS、限流、会话撤销、日志脱敏和备份恢复文档契约；`pnpm release:check` 会先执行该门禁。
 
 聚焦公共详情工作流和四张视觉截图：
 
@@ -166,14 +177,21 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 
 ## 生产注意事项
 
-- 替换默认管理员密码和 `JWT_SECRET`。
+- 使用 `admin:bootstrap` 创建首个管理员，并配置强 `JWT_SECRET`。
+- 生产环境不要运行 `pnpm db:seed`；该命令会在写入前失败。
+- 上线前运行 `pnpm security:release-gate`；任一自动化 P0/P1 门禁失败都不得发布。
 - 推荐以 Nginx 作为唯一公网入口：`/admin/` 代理到 Admin 静态服务，`/api/` 和 `/uploads/` 代理到 API。
+- 生产 API/Admin 只能绑定 `127.0.0.1`、`localhost`、`::1` 等 loopback；禁止通过 `API_HOST=0.0.0.0` 或 `ADMIN_HOST=0.0.0.0` 暴露服务。容器、多主机或多实例部署必须先创建 Planner revision 重新定义网络边界。
 - 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`TARO_APP_API_BASE_URL`；同源 Nginx 部署下 `VITE_API_BASE_URL` 留空。
 - `PUBLIC_BASE_URL` 必须是公网 origin，例如 `https://your-domain.example`，不要追加 `/api`。
+- 生产 `/api/client/**` 除 `POST /api/client/auth/wechat` 外都需要微信小程序客户端会话；小程序端通过 `wx.login` 取得 code 后换取短期 client bearer token。CORS、Origin、Referer、User-Agent 或自定义 Header 不能作为“只有小程序可访问”的身份边界。
+- 生产必须配置真实 `WECHAT_MINIAPP_APP_ID`、`WECHAT_MINIAPP_APP_SECRET` 和 `WECHAT_AUTH_VERIFIER_MODE=wechat`；缺失、占位或 fake verifier 会让 API 启动失败。
 - Admin upstream 默认 `127.0.0.1:4173`，API upstream 默认 `127.0.0.1:3001`，公网只开放 Nginx。
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
+- 后台“账号安全 / 备份与恢复”支持创建全量备份、查看列表、删除、导入 `.tar`/`.tar.gz` 外部备份并执行 `RESTORE_FULL_BACKUP` 二次确认恢复。恢复成功会撤销所有管理员会话。
 - 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
-- 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名。
+- 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名；上线前用真实小程序复核 `wx.login -> /api/client/auth/wechat -> /api/client/home`。
+- 部署前运行 `pnpm deploy:smoke`、`pnpm test:deploy` 和 `pnpm security:release-gate` 检查配置层面的 loopback upstream 和 P0/P1 自动化安全契约；真实 TLS、防火墙、安全组、磁盘容量、异地备份、调度器和灾难演练仍必须在目标环境人工验证。
 - 使用 `pnpm build:weapp` 后在微信开发者工具中复核页面、TabBar、上传资源访问和接口域名。
 
 Nginx 模板和完整部署、验证、备份、回滚步骤见 `docs/deploy/nginx-production-routing.md`。

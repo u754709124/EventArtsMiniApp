@@ -18,6 +18,7 @@ playwright-report/
 test-results/
 uploads/*
 !uploads/.gitkeep
+var/
 .superpowers/
 .codex/runtime/
 !.codex/

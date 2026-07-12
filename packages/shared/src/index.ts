@@ -358,11 +358,51 @@ export type ApiSuccess<T> = {
   message: "ok";
 };
 
+export const apiErrorCodeValues = [
+  "BAD_REQUEST",
+  "VALIDATION_ERROR",
+  "UNAUTHORIZED",
+  "INVALID_CREDENTIALS",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "DUPLICATE_RESOURCE_NAME",
+  "FILE_TOO_LARGE",
+  "HASH_COLLISION",
+  "MD5_MISMATCH",
+  "INTERNAL_ERROR",
+  "MEDIA_RECOVERY_FAILED",
+  "RATE_LIMITED",
+  "CLIENT_AUTH_REQUIRED",
+  "CLIENT_SESSION_EXPIRED",
+  "CLIENT_SESSION_REVOKED",
+  "INVALID_WECHAT_CODE",
+  "WECHAT_AUTH_FAILED",
+  "WECHAT_AUTH_UNAVAILABLE",
+  "WECHAT_APPID_MISMATCH",
+  "WEAK_PASSWORD",
+  "SESSION_EXPIRED",
+  "SESSION_REVOKED",
+  "BACKUP_NOT_FOUND",
+  "BACKUP_INVALID",
+  "BACKUP_UNSUPPORTED_VERSION",
+  "BACKUP_CONFLICT",
+  "BACKUP_DELETE_CONFIRMATION_REQUIRED",
+  "BACKUP_RESTORE_CONFIRMATION_REQUIRED",
+  "BACKUP_RESTORE_FAILED",
+  "MAINTENANCE_MODE"
+] as const;
+
+export type ApiErrorCode = (typeof apiErrorCodeValues)[number];
+export type ApiErrorCodeLike = ApiErrorCode | (string & {});
+export const ApiErrorCodeSchema = z.enum(apiErrorCodeValues);
+
 export type ApiFailure = {
   success: false;
   error: {
-    code: string;
+    code: ApiErrorCodeLike;
     message: string;
+    requestId?: string;
   };
 };
 
@@ -370,9 +410,14 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
 export const ok = <T>(data: T): ApiSuccess<T> => ({ success: true, data, message: "ok" });
 
-export const fail = (code: string, message: string): ApiFailure => ({
+export const fail = (code: ApiErrorCodeLike, message: string): ApiFailure => ({
   success: false,
   error: { code, message }
+});
+
+export const failWithRequestId = (code: ApiErrorCodeLike, message: string, requestId: string): ApiFailure => ({
+  success: false,
+  error: { code, message, requestId }
 });
 
 export type MediaAssetDto = {
@@ -567,17 +612,325 @@ export type DashboardOverviewResponse = {
   todayPv: number;
   weekPv: number;
   monthPv: number;
+  estimated?: boolean;
+  sampleRate?: number;
+  sampleWeight?: number;
 };
 
-export const pageViewRequestSchema = z.object({
-  pagePath: z.string().min(1),
-  scene: z.string().min(1).optional()
-});
+export const passwordPolicy = {
+  minLength: 12,
+  maxLength: 128,
+  requiredCharacterClasses: 3
+} as const;
+
+function passwordCharacterClassCount(value: string) {
+  return [
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /\d/.test(value),
+    /[^A-Za-z0-9]/.test(value)
+  ].filter(Boolean).length;
+}
+
+export const strongPasswordSchema = z
+  .string()
+  .min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 个字符`)
+  .max(passwordPolicy.maxLength, `密码不能超过 ${passwordPolicy.maxLength} 个字符`)
+  .refine((value) => !/\s/.test(value), "密码不能包含空白字符")
+  .refine(
+    (value) => passwordCharacterClassCount(value) >= passwordPolicy.requiredCharacterClasses,
+    "密码必须包含大小写字母、数字、符号中的至少三类"
+  );
 
 export const loginRequestSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1)
-});
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(passwordPolicy.maxLength)
+}).strict();
+
+export const adminChangePasswordRequestSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(passwordPolicy.maxLength),
+    newPassword: strongPasswordSchema,
+    confirmPassword: z.string().min(1).max(passwordPolicy.maxLength)
+  })
+  .strict()
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "两次输入的新密码不一致"
+  });
+
+export const adminPasswordChangedResponseSchema = z.object({
+  revokedSessionCount: z.number().int().min(0)
+}).strict();
+
+export type AdminChangePasswordRequest = z.infer<typeof adminChangePasswordRequestSchema>;
+export type AdminPasswordChangedResponse = z.infer<typeof adminPasswordChangedResponseSchema>;
+
+export const adminSessionStatusValues = ["active", "expired", "revoked"] as const;
+export type AdminSessionStatus = (typeof adminSessionStatusValues)[number];
+export const AdminSessionStatusSchema = z.enum(adminSessionStatusValues);
+
+const apiIsoDateTimeStringSchema = z
+  .string()
+  .refine((value) => isoDateTimePattern.test(value), "时间必须是 ISO 字符串")
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), "时间必须有效");
+
+export const adminSessionDtoSchema = z.object({
+  id: z.string().min(1).max(128),
+  adminId: z.number().int().positive(),
+  username: z.string().min(1).max(64),
+  status: AdminSessionStatusSchema,
+  createdAt: apiIsoDateTimeStringSchema,
+  expiresAt: apiIsoDateTimeStringSchema,
+  revokedAt: apiIsoDateTimeStringSchema.nullable(),
+  revokeReason: z.string().max(120).nullable()
+}).strict();
+
+export const adminSessionListResponseSchema = z.object({
+  sessions: z.array(adminSessionDtoSchema)
+}).strict();
+
+export const adminLogoutResponseSchema = z.object({}).strict();
+
+export type AdminSessionDto = z.infer<typeof adminSessionDtoSchema>;
+export type AdminSessionListResponse = z.infer<typeof adminSessionListResponseSchema>;
+
+export const clientWechatLoginCodeMaxLength = 512 as const;
+
+export const clientWechatLoginRequestSchema = z.object({
+  code: z.string().trim().min(1).max(clientWechatLoginCodeMaxLength)
+}).strict();
+
+export const clientSessionTokenTypeValues = ["Bearer"] as const;
+export type ClientSessionTokenType = (typeof clientSessionTokenTypeValues)[number];
+export const ClientSessionTokenTypeSchema = z.enum(clientSessionTokenTypeValues);
+
+export const clientWechatLoginResponseSchema = z.object({
+  token: z.string().min(32).max(4096),
+  tokenType: z.literal("Bearer"),
+  expiresInSeconds: z.number().int().positive().max(86_400),
+  expiresAt: apiIsoDateTimeStringSchema
+}).strict();
+
+export const clientWechatLoginErrorCodeValues = [
+  "VALIDATION_ERROR",
+  "INVALID_WECHAT_CODE",
+  "WECHAT_AUTH_UNAVAILABLE",
+  "RATE_LIMITED",
+  "INTERNAL_ERROR"
+] as const;
+
+export const ClientWechatLoginErrorCodeSchema = z.enum(clientWechatLoginErrorCodeValues);
+
+export const clientProtectedRouteErrorCodeValues = [
+  "CLIENT_AUTH_REQUIRED",
+  "CLIENT_SESSION_EXPIRED",
+  "CLIENT_SESSION_REVOKED"
+] as const;
+
+export const ClientProtectedRouteErrorCodeSchema = z.enum(clientProtectedRouteErrorCodeValues);
+
+export type ClientWechatLoginRequest = z.infer<typeof clientWechatLoginRequestSchema>;
+export type ClientWechatLoginResponse = z.infer<typeof clientWechatLoginResponseSchema>;
+export type ClientWechatLoginErrorCode = z.infer<typeof ClientWechatLoginErrorCodeSchema>;
+export type ClientProtectedRouteErrorCode = z.infer<typeof ClientProtectedRouteErrorCodeSchema>;
+
+export const rateLimitPolicySchema = z.object({
+  windowMs: z.number().int().min(1_000),
+  limit: z.number().int().positive()
+}).strict();
+
+export const rateLimitErrorDataSchema = z.object({
+  retryAfterSeconds: z.number().int().positive()
+}).strict();
+
+export type RateLimitPolicy = z.infer<typeof rateLimitPolicySchema>;
+export type RateLimitErrorData = z.infer<typeof rateLimitErrorDataSchema>;
+
+export const analyticsFieldLimits = {
+  pagePathMaxLength: 256,
+  sceneMaxLength: 64,
+  userAgentMaxLength: 256
+} as const;
+
+export const pageViewRequestSchema = z.object({
+  pagePath: z.string().trim().min(1).max(analyticsFieldLimits.pagePathMaxLength),
+  scene: z.string().trim().min(1).max(analyticsFieldLimits.sceneMaxLength).optional()
+}).strict();
+
+export const pageViewTrackResponseSchema = z.object({}).strict();
+
+export type PageViewRequest = z.infer<typeof pageViewRequestSchema>;
+export type PageViewTrackResponse = z.infer<typeof pageViewTrackResponseSchema>;
+
+export const backupStatusValues = ["ready", "verifying", "restoring", "failed"] as const;
+export type BackupStatus = (typeof backupStatusValues)[number];
+export const BackupStatusSchema = z.enum(backupStatusValues);
+
+export const backupIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(160)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "备份 ID 只能包含字母、数字、点、下划线和连字符");
+
+export const backupCreateRequestSchema = z.object({
+  note: z.string().trim().max(200).optional()
+}).strict();
+
+export const backupDeleteRequestSchema = z.object({
+  backupId: backupIdSchema,
+  confirmation: z.literal("DELETE_BACKUP")
+}).strict();
+
+export const backupRestoreRequestSchema = z.object({
+  backupId: backupIdSchema,
+  confirmation: z.literal("RESTORE_FULL_BACKUP")
+}).strict();
+
+export const backupRelativePathSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) => {
+      if (value.includes("\0") || value.startsWith("/") || value.startsWith("\\")) return false;
+      return !value.split(/[\\/]+/).includes("..");
+    },
+    "备份路径必须是安全相对路径"
+  );
+
+export const backupManifestFileSchema = z.object({
+  path: backupRelativePathSchema,
+  size: z.number().int().min(0),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/i)
+}).strict();
+
+export const backupManifestCreatorSchema = z.object({
+  adminId: z.number().int().positive(),
+  username: z.string().min(1).max(64)
+}).strict();
+
+export const backupManifestAppSchema = z.object({
+  name: z.string().min(1).max(120),
+  version: z.string().min(1).max(80)
+}).strict();
+
+export const backupManifestSchemaMetadataSchema = z.object({
+  provider: z.literal("sqlite"),
+  sqliteVersion: z.string().min(1).max(80),
+  userVersion: z.number().int().min(0),
+  schemaHash: z.string().regex(/^[a-f0-9]{64}$/i),
+  migrationIds: z.array(z.string().min(1).max(160))
+}).strict();
+
+export const backupManifestDatabaseSchema = backupManifestFileSchema.extend({
+  snapshotMethod: z.literal("sqlite-vacuum-into"),
+  pageSize: z.number().int().positive(),
+  pageCount: z.number().int().min(0)
+}).strict();
+
+export const backupManifestUploadFileSchema = backupManifestFileSchema.extend({
+  modifiedAt: apiIsoDateTimeStringSchema
+}).strict();
+
+export const backupManifestSchema = z.object({
+  formatVersion: z.literal(1),
+  status: BackupStatusSchema,
+  app: backupManifestAppSchema,
+  schema: backupManifestSchemaMetadataSchema,
+  createdBy: backupManifestCreatorSchema,
+  createdAt: apiIsoDateTimeStringSchema,
+  note: z.string().max(200).nullable(),
+  database: backupManifestDatabaseSchema,
+  uploads: z.array(backupManifestUploadFileSchema),
+  totalBytes: z.number().int().min(0),
+  totalFiles: z.number().int().min(1),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/i)
+}).strict();
+
+export const backupDtoSchema = z.object({
+  id: backupIdSchema,
+  formatVersion: z.literal(1),
+  status: BackupStatusSchema,
+  createdBy: backupManifestCreatorSchema,
+  createdAt: apiIsoDateTimeStringSchema,
+  size: z.number().int().min(0),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  database: backupManifestDatabaseSchema.pick({ size: true, sha256: true, snapshotMethod: true }),
+  uploadFileCount: z.number().int().min(0),
+  note: z.string().max(200).nullable()
+}).strict();
+
+export const backupCreateResponseSchema = z.object({
+  backup: backupDtoSchema
+}).strict();
+
+export const backupListResponseSchema = z.object({
+  backups: z.array(backupDtoSchema)
+}).strict();
+
+export const backupDeleteResponseSchema = z.object({
+  backupId: backupIdSchema
+}).strict();
+
+export const backupPreflightTableImpactSchema = z.object({
+  table: z.string().min(1).max(80),
+  currentRows: z.number().int().min(0),
+  candidateRows: z.number().int().min(0),
+  deltaRows: z.number().int()
+}).strict();
+
+export const backupPreflightSummarySchema = z.object({
+  formatVersion: z.literal(1),
+  createdAt: apiIsoDateTimeStringSchema,
+  createdBy: backupManifestCreatorSchema,
+  note: z.string().max(200).nullable(),
+  source: z.enum(["existing_backup", "external_archive"]),
+  database: backupManifestDatabaseSchema.pick({ size: true, snapshotMethod: true, pageSize: true, pageCount: true }),
+  uploads: z.object({
+    fileCount: z.number().int().min(0),
+    totalBytes: z.number().int().min(0)
+  }).strict(),
+  totals: z.object({
+    fileCount: z.number().int().min(1),
+    totalBytes: z.number().int().min(0)
+  }).strict(),
+  checks: z.object({
+    manifest: z.literal("ok"),
+    checksums: z.literal("ok"),
+    sqliteIntegrity: z.literal("ok"),
+    schemaCompatible: z.literal(true),
+    mediaFiles: z.literal("ok")
+  }).strict(),
+  impact: z.object({
+    tables: z.array(backupPreflightTableImpactSchema)
+  }).strict()
+}).strict();
+
+export const backupImportPreflightResponseSchema = z.object({
+  backup: backupDtoSchema,
+  preflight: backupPreflightSummarySchema
+}).strict();
+
+export const backupRestoreAcceptedResponseSchema = z.object({
+  restoreId: z.string().min(1).max(128),
+  backupId: backupIdSchema,
+  snapshotBackupId: backupIdSchema,
+  revokedSessionCount: z.number().int().min(0)
+}).strict();
+
+export type BackupCreateRequest = z.infer<typeof backupCreateRequestSchema>;
+export type BackupDeleteRequest = z.infer<typeof backupDeleteRequestSchema>;
+export type BackupRestoreRequest = z.infer<typeof backupRestoreRequestSchema>;
+export type BackupManifest = z.infer<typeof backupManifestSchema>;
+export type BackupDto = z.infer<typeof backupDtoSchema>;
+export type BackupPreflightSummary = z.infer<typeof backupPreflightSummarySchema>;
+export type BackupCreateResponse = z.infer<typeof backupCreateResponseSchema>;
+export type BackupListResponse = z.infer<typeof backupListResponseSchema>;
+export type BackupDeleteResponse = z.infer<typeof backupDeleteResponseSchema>;
+export type BackupImportPreflightResponse = z.infer<typeof backupImportPreflightResponseSchema>;
+export type BackupRestoreAcceptedResponse = z.infer<typeof backupRestoreAcceptedResponseSchema>;
 
 export const menuConfigSchemaByType = {
   host: z.object({

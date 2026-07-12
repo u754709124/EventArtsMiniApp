@@ -37,7 +37,7 @@ Implement exactly:
 8. Page view tracking inserts a row; dashboard overview counts today/week/month PV.
 
 ## Seed Data
-- Admin `admin/admin123456`.
+- Admin login uses an explicitly bootstrapped administrator; seed must not define a reusable administrator credential.
 - Default site config.
 - Test announcement.
 - Five menus matching the fixed enum.

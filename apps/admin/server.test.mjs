@@ -2,7 +2,13 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defaultAdminHost, defaultAdminPort, resolveAdminStaticRequest } from "./server.mjs";
+import {
+  AdminServerConfigError,
+  defaultAdminHost,
+  defaultAdminPort,
+  resolveAdminServerConfig,
+  resolveAdminStaticRequest
+} from "./server.mjs";
 
 let tempDir;
 
@@ -25,6 +31,42 @@ describe("admin production static server", () => {
   it("defaults to the loopback production host and port", () => {
     expect(defaultAdminHost).toBe("127.0.0.1");
     expect(defaultAdminPort).toBe(4173);
+    expect(resolveAdminServerConfig({})).toEqual({
+      env: "development",
+      host: "127.0.0.1",
+      port: 4173
+    });
+  });
+
+  it("rejects non-loopback ADMIN_HOST values in production", () => {
+    for (const ADMIN_HOST of ["0.0.0.0", "::", "198.51.100.10", "2001:db8::10", "admin.example.com"]) {
+      expect(() => resolveAdminServerConfig({
+        NODE_ENV: "production",
+        ADMIN_HOST,
+        ADMIN_PORT: "4173"
+      }), ADMIN_HOST).toThrow(AdminServerConfigError);
+      expect(() => resolveAdminServerConfig({
+        NODE_ENV: "production",
+        ADMIN_HOST,
+        ADMIN_PORT: "4173"
+      }), ADMIN_HOST).toThrow(/ADMIN_HOST must be a loopback address in production/);
+    }
+  });
+
+  it("accepts loopback ADMIN_HOST values in production", () => {
+    for (const ADMIN_HOST of ["127.0.0.1", "127.42.0.9", "localhost", "::1", "0:0:0:0:0:0:0:1"]) {
+      expect(resolveAdminServerConfig({
+        NODE_ENV: "production",
+        ADMIN_HOST,
+        ADMIN_PORT: "4173"
+      }).host, ADMIN_HOST).toBe(ADMIN_HOST);
+    }
+  });
+
+  it("rejects invalid ADMIN_PORT values", () => {
+    expect(() => resolveAdminServerConfig({ ADMIN_PORT: "0" })).toThrow(/ADMIN_PORT/);
+    expect(() => resolveAdminServerConfig({ ADMIN_PORT: "abc" })).toThrow(/ADMIN_PORT/);
+    expect(() => resolveAdminServerConfig({ ADMIN_PORT: "4173abc" })).toThrow(/ADMIN_PORT/);
   });
 
   it("redirects /admin to /admin/", async () => {

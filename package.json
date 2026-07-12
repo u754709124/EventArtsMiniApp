@@ -20,6 +20,10 @@
     "e2e": "playwright test",
     "db:push": "pnpm --filter api db:push",
     "db:seed": "pnpm --filter api db:seed",
+    "admin:bootstrap": "pnpm --filter api admin:bootstrap",
+    "analytics:cleanup": "pnpm --filter api analytics:cleanup",
+    "deploy:smoke": "node scripts/deploy/production-smoke-check.mjs",
+    "security:release-gate": "node scripts/deploy/security-release-gate.mjs",
     "assets:slice": "tsx scripts/slice-home-assets.ts",
     "assets:slice:artists": "tsx scripts/slice-artist-assets.ts",
     "assets:slice:artist-detail": "node --import tsx scripts/slice-artist-detail-assets.ts",
@@ -31,7 +35,7 @@
     "codex:plan:cleanup": "node scripts/codex/cleanup-plan-run.mjs",
     "test:deploy": "vitest run scripts/deploy",
     "test:codex": "vitest run scripts/codex",
-    "release:check": "pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
+    "release:check": "pnpm security:release-gate && pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

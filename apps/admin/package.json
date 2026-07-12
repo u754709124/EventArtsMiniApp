@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "start": "node server.mjs",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests --no-file-parallelism --maxWorkers=1"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",

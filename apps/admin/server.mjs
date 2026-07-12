@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
+import net from "node:net";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,6 +29,57 @@ const contentTypes = new Map([
   [".ttf", "font/ttf"],
   [".map", "application/json; charset=utf-8"]
 ]);
+
+export class AdminServerConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AdminServerConfigError";
+  }
+}
+
+function isValidHost(value) {
+  if (value === "localhost") return true;
+  if (net.isIP(value)) return true;
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(value);
+}
+
+export function isLoopbackHost(value) {
+  const host = value.trim().toLowerCase();
+  if (host === "localhost") return true;
+
+  if (net.isIPv4(host)) {
+    return host.split(".")[0] === "127";
+  }
+
+  if (net.isIPv6(host)) {
+    return host === "::1" || host === "0:0:0:0:0:0:0:1";
+  }
+
+  return false;
+}
+
+export function resolveAdminServerConfig(processEnv = process.env) {
+  const host = (processEnv.ADMIN_HOST || defaultAdminHost).trim();
+  const rawPort = processEnv.ADMIN_PORT || String(defaultAdminPort);
+  const port = Number.parseInt(rawPort, 10);
+  const env = processEnv.NODE_ENV || "development";
+  const issues = [];
+
+  if (!/^\d+$/.test(rawPort) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    issues.push("ADMIN_PORT must be an integer between 1 and 65535");
+  }
+  if (!isValidHost(host)) {
+    issues.push(`ADMIN_HOST is not a valid hostname or IP address: ${host}`);
+  }
+  if (env === "production" && !isLoopbackHost(host)) {
+    issues.push("ADMIN_HOST must be a loopback address in production; use Nginx as the public entrypoint");
+  }
+  if (issues.length) {
+    throw new AdminServerConfigError(`Invalid Admin server configuration:\n${issues.map((issue) => `- ${issue}`).join("\n")}`);
+  }
+
+  return { env, host, port };
+}
 
 function send(res, statusCode, body, headers = {}) {
   res.writeHead(statusCode, headers);
@@ -145,10 +197,14 @@ export function createAdminStaticServer(options = {}) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const host = process.env.ADMIN_HOST || defaultAdminHost;
-  const port = Number.parseInt(process.env.ADMIN_PORT || String(defaultAdminPort), 10);
-  const server = createAdminStaticServer();
-  server.listen(port, host, () => {
-    console.log(`Admin static server listening on http://${host}:${port}/admin/`);
-  });
+  try {
+    const { host, port } = resolveAdminServerConfig();
+    const server = createAdminStaticServer();
+    server.listen(port, host, () => {
+      console.log(`Admin static server listening on http://${host}:${port}/admin/`);
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

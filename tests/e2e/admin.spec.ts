@@ -1,12 +1,21 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { gzipSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { adminApi, adminPath, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
+import { adminApi, adminPath, adminToken, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
 type DetailPageSummary = { id: number; name: string; type: string; typeLabel: string; referenceCount: number };
 type MediaAssetSummary = { id: number; resourceName: string; url: string };
+type BackupSummary = {
+  id: string;
+  note: string | null;
+  database: { size: number };
+  uploadFileCount: number;
+};
 
 function assetUrl(url: string) {
   return new URL(url, apiBase).href;
@@ -72,6 +81,117 @@ async function createUniqueLibraryUploadPng() {
       }
     }
   }).png().toBuffer();
+}
+
+function writeTarOctal(header: Buffer, value: number, start: number, length: number) {
+  const text = value.toString(8).padStart(length - 1, "0").slice(-(length - 1));
+  header.write(`${text}\0`, start, length, "ascii");
+}
+
+function tarEntry(input: { name: string; data: Buffer }) {
+  const header = Buffer.alloc(512, 0);
+  header.write(input.name, 0, Math.min(Buffer.byteLength(input.name), 100), "utf8");
+  writeTarOctal(header, 0o644, 100, 8);
+  writeTarOctal(header, 0, 108, 8);
+  writeTarOctal(header, 0, 116, 8);
+  writeTarOctal(header, input.data.byteLength, 124, 12);
+  writeTarOctal(header, 0, 136, 12);
+  header.fill(0x20, 148, 156);
+  header.write("0", 156, 1, "ascii");
+  header.write("ustar", 257, 5, "ascii");
+  header.write("00", 263, 2, "ascii");
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+  const padding = Buffer.alloc((512 - (input.data.byteLength % 512)) % 512, 0);
+  return Buffer.concat([header, input.data, padding]);
+}
+
+function tarArchive(entries: Array<{ name: string; data: Buffer }>) {
+  return Buffer.concat([...entries.map(tarEntry), Buffer.alloc(1024, 0)]);
+}
+
+function backupDigest(database: { path: string; size: number; sha256: string }, uploads: Array<{ path: string; size: number; sha256: string }>) {
+  const hash = createHash("sha256");
+  hash.update("format:1\n");
+  hash.update(`database:${database.path}:${database.size}:${database.sha256}\n`);
+  for (const file of uploads) {
+    hash.update(`upload:${file.path}:${file.size}:${file.sha256}\n`);
+  }
+  return hash.digest("hex");
+}
+
+function uploadPathFromAssetUrl(url: string) {
+  const pathname = new URL(url, apiBase).pathname;
+  if (!pathname.startsWith("/uploads/")) return null;
+  return decodeURIComponent(pathname.slice(1));
+}
+
+async function archiveBackupFromDisk(backupId: string, allowedUploadPaths?: Set<string>) {
+  const backupRoot = path.resolve(process.cwd(), "var/backups", backupId);
+  const manifestPath = path.join(backupRoot, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    database: { path: string; size: number; sha256: string };
+    uploads: Array<{ path: string; size: number; sha256: string }>;
+    totalFiles: number;
+    totalBytes: number;
+    sha256: string;
+  };
+  if (allowedUploadPaths) {
+    const availablePaths = new Set(manifest.uploads.map((file) => file.path));
+    const missingPaths = [...allowedUploadPaths].filter((filePath) => !availablePaths.has(filePath));
+    if (missingPaths.length > 0) {
+      throw new Error(`备份归档缺少数据库引用的媒体文件：${missingPaths.slice(0, 5).join(", ")}`);
+    }
+    manifest.uploads = manifest.uploads.filter((file) => allowedUploadPaths.has(file.path));
+    manifest.totalFiles = 1 + manifest.uploads.length;
+    manifest.totalBytes = manifest.database.size + manifest.uploads.reduce((total, file) => total + file.size, 0);
+    manifest.sha256 = backupDigest(manifest.database, manifest.uploads);
+  }
+  const manifestData = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+  const entries = [
+    { name: "manifest.json", data: manifestData },
+    { name: manifest.database.path, data: await readFile(path.join(backupRoot, manifest.database.path)) },
+    ...await Promise.all(manifest.uploads.map(async (file) => ({
+      name: file.path,
+      data: await readFile(path.join(backupRoot, file.path))
+    })))
+  ];
+  return gzipSync(tarArchive(entries));
+}
+
+async function proxyBackupApiThroughPlaywright(page: Page, apiRequest: Parameters<typeof adminToken>[0], importArchive?: Buffer) {
+  await page.route("**/api/admin/backups**", async (route) => {
+    const browserRequest = route.request();
+    const targetUrl = new URL(browserRequest.url());
+    const headers = { ...browserRequest.headers() };
+    delete headers.origin;
+    delete headers.host;
+    delete headers["content-length"];
+    const response = targetUrl.pathname.endsWith("/import") && browserRequest.method() === "POST" && importArchive
+      ? await apiRequest.post(`${apiBase}${targetUrl.pathname}${targetUrl.search}`, {
+        headers: { authorization: headers.authorization ?? "" },
+        multipart: {
+          file: {
+            name: "e2e-backup.tar.gz",
+            mimeType: "application/gzip",
+            buffer: importArchive
+          }
+        }
+      })
+      : await apiRequest.fetch(`${apiBase}${targetUrl.pathname}${targetUrl.search}`, {
+        method: browserRequest.method(),
+        headers,
+        data: browserRequest.postDataBuffer() ?? undefined
+      });
+    const responseHeaders = { ...response.headers() };
+    delete responseHeaders["access-control-allow-origin"];
+    await route.fulfill({
+      status: response.status(),
+      headers: responseHeaders,
+      body: await response.body()
+    });
+  });
 }
 
 async function deleteDetailPagesByName(request: Parameters<typeof adminApi>[0], name: string) {
@@ -196,6 +316,58 @@ test("登录成功进入看板并展示 PV", async ({ page }) => {
   await expect(page.getByTestId("dashboard-pv-today")).toContainText(/\d+/);
   await expect(page.getByTestId("dashboard-pv-week")).toContainText(/\d+/);
   await expect(page.getByTestId("dashboard-pv-month")).toContainText(/\d+/);
+});
+
+test("修改密码后撤销旧 token 并要求重新登录", async ({ page, request }) => {
+  const username = process.env.E2E_ADMIN_USERNAME;
+  const previousPassword = process.env.E2E_ADMIN_PASSWORD;
+  if (!username || !previousPassword) throw new Error("E2E admin credentials are missing");
+
+  await loginAdminUi(page);
+  const oldToken = await page.evaluate(() => localStorage.getItem("eventarts.admin.token"));
+  if (!oldToken) throw new Error("old admin token was not stored");
+
+  await page.getByTestId("sidebar-change-password").click();
+  await expect(page.getByRole("heading", { level: 2, name: "修改密码" })).toBeVisible();
+
+  const nextPassword = `E2eNext-${Date.now()}-Aa1!`;
+  await page.getByTestId("change-current-password").fill(previousPassword);
+  await page.getByTestId("change-new-password").fill(nextPassword);
+  await page.getByTestId("change-confirm-password").fill(nextPassword);
+  await page.getByTestId("change-password-submit").click();
+  await waitForToast(page, "密码已修改，请重新登录");
+  await expect(page).toHaveURL(/\/admin\/login$/);
+
+  process.env.E2E_ADMIN_PASSWORD = nextPassword;
+
+  const oldTokenResponse = await request.get(`${apiBase}/api/admin/auth/me`, {
+    headers: { authorization: `Bearer ${oldToken}` }
+  });
+  expect(oldTokenResponse.status()).toBe(401);
+  await expect(oldTokenResponse.json()).resolves.toMatchObject({
+    success: false,
+    error: { code: "UNAUTHORIZED" }
+  });
+
+  const oldPasswordResponse = await request.post(`${apiBase}/api/admin/auth/login`, {
+    data: { username, password: previousPassword }
+  });
+  expect(oldPasswordResponse.status()).toBe(401);
+
+  const restoreToken = await adminToken(request);
+  const restorePasswordResponse = await request.post(`${apiBase}/api/admin/auth/change-password`, {
+    headers: { authorization: `Bearer ${restoreToken}` },
+    data: {
+      currentPassword: nextPassword,
+      newPassword: previousPassword,
+      confirmPassword: previousPassword
+    }
+  });
+  expect(restorePasswordResponse.ok()).toBeTruthy();
+  process.env.E2E_ADMIN_PASSWORD = previousPassword;
+
+  await loginAdminUi(page);
+  await expect(page.getByTestId("dashboard-pv-today")).toBeVisible();
 });
 
 test("首页配置可保存", async ({ page }) => {
@@ -656,6 +828,93 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "删除所选资源" }).click();
   await expect(page.getByText(/已删除 1 项/).last()).toBeVisible();
+});
+
+test("备份与恢复后台可走真实创建、删除、导入预检和恢复链路", async ({ page, request }) => {
+  const runId = `E2E-${Date.now()}-${randomBytes(3).toString("hex")}`;
+  const sourceNote = `${runId} 恢复源备份`;
+  const removableNote = `${runId} 待删除备份`;
+  const uiCreateNote = `${runId} UI 创建备份`;
+  const source = await adminApi<{ backup: BackupSummary }>(request, "POST", "/api/admin/backups", {
+    note: sourceNote
+  });
+  const media = await adminApi<{ items: Array<{ url: string }> }>(request, "GET", "/api/admin/media-assets?pageSize=100");
+  const referencedUploadPaths = new Set(
+    media.items.map((item) => uploadPathFromAssetUrl(item.url)).filter((item): item is string => Boolean(item))
+  );
+  const archive = await archiveBackupFromDisk(source.backup.id, referencedUploadPaths);
+  const removable = await adminApi<{ backup: BackupSummary }>(request, "POST", "/api/admin/backups", {
+    note: removableNote
+  });
+
+  const uiToken = await adminToken(request);
+  await proxyBackupApiThroughPlaywright(page, request, archive);
+  await page.goto(adminPath("/login"));
+  await page.evaluate((token) => localStorage.setItem("eventarts.admin.token", token), uiToken);
+  await page.goto(adminPath("/backups"));
+  await expect(page.getByRole("heading", { level: 2, name: "备份与恢复" })).toBeVisible();
+  await expect(page.getByTestId("sidebar-backups")).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(source.backup.id) })).toBeVisible();
+
+  await page.getByTestId(`backup-delete-${removable.backup.id}`).click();
+  const deleteDialog = page.getByRole("dialog", { name: "确认删除备份？" });
+  await expect(deleteDialog).toBeVisible();
+  await expect(deleteDialog).toContainText(removable.backup.id);
+  await deleteDialog.getByRole("button", { name: /删\s*除\s*备\s*份/ }).click();
+  await waitForToast(page, "备份已删除");
+  const afterDelete = await adminApi<{ backups: BackupSummary[] }>(request, "GET", "/api/admin/backups");
+  expect(afterDelete.backups.some((backup) => backup.id === removable.backup.id)).toBe(false);
+
+  await page.getByTestId("backup-create-open").click();
+  const createDialog = page.getByRole("dialog", { name: "创建备份" });
+  await expect(createDialog).toBeVisible();
+  await createDialog.getByTestId("backup-create-note").fill(uiCreateNote);
+  await createDialog.getByRole("button", { name: /创\s*建/ }).click();
+  await waitForToast(page, "备份已创建");
+  await expect(page.getByRole("row", { name: uiCreateNote })).toBeVisible();
+
+  const importResponsePromise = page.waitForResponse((response) => response.url().includes("/api/admin/backups/import"));
+  await page.getByTestId("backup-import-input").setInputFiles({
+    name: "e2e-backup.tar.gz",
+    mimeType: "application/gzip",
+    buffer: archive
+  });
+  const importResponse = await importResponsePromise;
+  const importBody = await importResponse.json();
+  expect(importBody.success, JSON.stringify(importBody)).toBe(true);
+  const importedBackupId = importBody.data.backup.id as string;
+  const preflight = page.getByTestId("backup-import-preflight");
+  await expect(preflight).toBeVisible();
+  await expect(preflight).toContainText("外部归档");
+  await expect(preflight).toContainText("清单：通过");
+  await expect(preflight).not.toContainText("manifest.json");
+  await expect(preflight).not.toContainText("database.sqlite");
+
+  const oldToken = uiToken;
+  await page.getByRole("button", { name: /恢\s*复\s*此\s*备\s*份/ }).click();
+  const restoreDialog = page.getByTestId("backup-restore-modal");
+  await expect(restoreDialog).toBeVisible();
+  await expect(restoreDialog).toContainText("当前登录和其他管理员会话都会失效");
+  await page.getByTestId("backup-restore-confirmation").fill("RESTORE_FULL_BACKUP");
+  const restoreResponsePromise = page.waitForResponse((response) =>
+    response.url().includes(`/api/admin/backups/${importedBackupId}/restore`)
+  );
+  await page.getByRole("button", { name: /确\s*认\s*恢\s*复/ }).click();
+  const restoreResponse = await restoreResponsePromise;
+  const restoreBody = await restoreResponse.json();
+  expect(restoreBody.success, JSON.stringify(restoreBody)).toBe(true);
+  await expect(page).toHaveURL(/\/admin\/login$/, { timeout: 45_000 });
+
+  const oldTokenResponse = await request.get(`${apiBase}/api/admin/auth/me`, {
+    headers: { authorization: `Bearer ${oldToken}` }
+  });
+  expect(oldTokenResponse.status()).toBe(401);
+  await expect(oldTokenResponse.json()).resolves.toMatchObject({
+    success: false,
+    error: { code: "UNAUTHORIZED" }
+  });
+
+  expect(await adminToken(request)).toBeTruthy();
 });
 
 test("后台布局横向滚动只作用于右侧表格内容", async ({ page }) => {

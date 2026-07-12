@@ -42,13 +42,13 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 ## API Response Rules
 - Success: `{ "success": true, "data": {}, "message": "ok" }`.
 - Failure: `{ "success": false, "error": { "code": "ERROR_CODE", "message": "错误信息" } }`.
-- Client APIs do not require login. Admin APIs require `Authorization: Bearer <token>`.
+- Production client APIs under `/api/client/**` require a server-issued WeChat miniapp client session, except the explicit WeChat login exchange endpoint. Admin APIs require administrator `Authorization: Bearer <token>`.
 
 ## Database and Migration Rules
 - Prisma schema is the source of truth.
 - SQLite is used for local development and tests.
-- Seeds must be idempotent and include the default admin `admin/admin123456`.
-- Production deployments must change the default password and JWT secret.
+- Seeds must be idempotent for demo content and must not create or overwrite administrators; create the first administrator with the explicit `admin:bootstrap` command.
+- Production deployments must not rely on any default administrator password; create the first administrator with `admin:bootstrap` and provide a strong production JWT secret.
 
 ## Media Rules
 - The media library is purpose-neutral. Library uploads do not include `usage`; form-local uploads may include `fieldKey` for early slot validation.

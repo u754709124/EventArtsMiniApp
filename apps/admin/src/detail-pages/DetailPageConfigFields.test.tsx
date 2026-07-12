@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { useEffect } from "react";
+import { act, useEffect } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Button, Form, type FormInstance } from "antd";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,7 +72,21 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+async function flushReactScheduler() {
+  await new Promise<void>((resolve) => {
+    if (typeof setImmediate === "function") setImmediate(resolve);
+    else setTimeout(resolve, 0);
+  });
+}
+
+async function cleanupHarness() {
+  cleanup();
+  await act(async () => {
+    await flushReactScheduler();
+  });
+}
+
+afterEach(cleanupHarness);
 beforeEach(() => vi.clearAllMocks());
 
 let form: FormInstance;
@@ -135,7 +149,7 @@ describe("DetailPageConfigFields", () => {
     expect(await screen.findByTestId("detail-rich-text-editor")).toBeTruthy();
     expect(screen.getByTestId("detail-page-preview")).toBeTruthy();
 
-    cleanup();
+    await cleanupHarness();
     render(<Harness />);
     await chooseType("单富文本");
     expect(screen.queryByTestId("detail-hero-subtitle")).toBeNull();

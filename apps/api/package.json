@@ -11,6 +11,9 @@
     "test": "vitest run",
     "db:push": "prisma generate --schema prisma/schema.prisma && node --import tsx src/bootstrap-db.ts",
     "db:seed": "node --import tsx prisma/seed.ts",
+    "admin:bootstrap": "node --import tsx src/admin-bootstrap.ts",
+    "admin:sessions:cleanup": "node --import tsx src/admin-sessions.ts",
+    "analytics:cleanup": "node --import tsx src/analytics.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma"
   },
   "dependencies": {

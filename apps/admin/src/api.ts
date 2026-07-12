@@ -1,4 +1,12 @@
-import type { ApiResponse } from "@event-arts/shared";
+import type {
+  ApiResponse,
+  BackupCreateRequest,
+  BackupCreateResponse,
+  BackupDeleteResponse,
+  BackupImportPreflightResponse,
+  BackupListResponse,
+  BackupRestoreAcceptedResponse
+} from "@event-arts/shared";
 import { isAdminLoginPathname, withAdminBasename } from "./routes/admin-paths";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -102,4 +110,38 @@ export async function request<T>(path: string, init: RequestInit = {}) {
     throw error;
   }
   return body.data;
+}
+
+export function listBackups() {
+  return request<BackupListResponse>("/api/admin/backups");
+}
+
+export function createBackup(payload: BackupCreateRequest = {}) {
+  return request<BackupCreateResponse>("/api/admin/backups", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteBackup(backupId: string) {
+  return request<BackupDeleteResponse>(`/api/admin/backups/${encodeURIComponent(backupId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ backupId, confirmation: "DELETE_BACKUP" })
+  });
+}
+
+export function importBackupArchive(file: File) {
+  const formData = new FormData();
+  formData.set("file", file);
+  return request<BackupImportPreflightResponse>("/api/admin/backups/import", {
+    method: "POST",
+    body: formData
+  });
+}
+
+export function restoreBackup(backupId: string) {
+  return request<BackupRestoreAcceptedResponse>(`/api/admin/backups/${encodeURIComponent(backupId)}/restore`, {
+    method: "POST",
+    body: JSON.stringify({ backupId, confirmation: "RESTORE_FULL_BACKUP" })
+  });
 }

@@ -85,7 +85,7 @@ async function ensureSeedAssetFile(source: string, target: string, expectedMd5: 
 
 export async function registerSeedAssets(
   prisma: AppPrismaClient,
-  options: { assetRoot: string; uploadDir: string; publicBaseUrl: string; createdBy: number; specs?: SeedAssetSpec[] }
+  options: { assetRoot: string; uploadDir: string; publicBaseUrl: string; createdBy?: number | null; specs?: SeedAssetSpec[] }
 ) {
   const assets = new Map<string, { id: number; url: string; mediaType: string }>();
   for (const spec of options.specs ?? seedAssetSpecs) {
@@ -123,7 +123,7 @@ export async function registerSeedAssets(
       height: dimensions.height,
       size: buffer.length,
       storageType: "local",
-      createdBy: options.createdBy
+      createdBy: options.createdBy ?? null
     };
     if (asset) {
       asset = await prisma.mediaAsset.update({ where: { id: asset.id }, data });

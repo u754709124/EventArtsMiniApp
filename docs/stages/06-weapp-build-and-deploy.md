@@ -53,7 +53,7 @@ pnpm build:weapp
 - `pnpm build:weapp`：通过；微信小程序端产物已生成到 `apps/miniapp/dist`。
 - 首页视觉校准后复跑：`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 均通过；H5 截图已更新，Playwright 总数为 20。
 - `.env.example` 已修正为 `VITE_API_BASE_URL` 与 `TARO_APP_API_BASE_URL`。
-- README 已补全安装、数据库、seed、启动、构建、测试、默认账号、生产注意事项、上传目录和对象存储预留说明。
+- README 已补全安装、数据库、seed、管理员 bootstrap、启动、构建、测试、生产注意事项、上传目录和对象存储预留说明。
 
 ## 构建命令
 ```bash
@@ -73,8 +73,8 @@ apps/miniapp/dist
 
 ## 生产环境变量
 - `API_PORT`：API 服务端口。
-- `API_HOST`：API 监听地址；生产 Nginx 反代部署默认 `127.0.0.1`。
-- `ADMIN_HOST`：Admin 静态服务监听地址；生产默认 `127.0.0.1`。
+- `API_HOST`：API 监听地址；生产 Nginx 反代部署默认 `127.0.0.1`，`NODE_ENV=production` 禁止 `0.0.0.0` 或公网地址。
+- `ADMIN_HOST`：Admin 静态服务监听地址；生产默认 `127.0.0.1`，`NODE_ENV=production` 禁止 `0.0.0.0` 或公网地址。
 - `ADMIN_PORT`：Admin 静态服务端口；生产默认 `4173`。
 - `JWT_SECRET`：管理员 JWT 密钥，生产必须替换。
 - `DATABASE_URL`：生产数据库连接；一期本地默认为 SQLite。
@@ -88,19 +88,21 @@ apps/miniapp/dist
 - 微信小程序生产构建：`TARO_APP_API_BASE_URL=https://your-domain.example pnpm build:weapp`。
 - 生产推荐同源 Nginx 反代：`/admin/` 转发到 Admin 静态服务，`/api/` 和 `/uploads/` 原样转发到 API。
 - 同源部署下后台 `VITE_API_BASE_URL` 留空，让 Admin 请求 `/api/...`；`PUBLIC_BASE_URL` 使用公网 origin，例如 `https://your-domain.example`，不要追加 `/api`。
+- 不允许用 `API_HOST=0.0.0.0` 或 `ADMIN_HOST=0.0.0.0` 作为部署捷径；容器、多主机或多实例部署必须先创建 Planner revision 重新定义网络边界。
 
 ## 图片/视频资源存储
 一期使用本地 `uploads` 目录和 `media_assets.storageType=local`。上传资源统一记录唯一资源名、原文件名、随机存储名、MD5、真实类型、URL、宽高、大小、标签、上传人和时间；资源库不区分业务用途。生产迁移对象存储时保留 `media_assets.url` 返回语义，并将 `PUBLIC_BASE_URL` 指向 CDN 或对象存储公开域名。
 
 ## 上线前检查清单
-- 修改默认管理员密码 `admin/admin123456`。
+- 使用 `admin:bootstrap` 创建首个管理员；不要在生产运行 `pnpm db:seed`。
 - 替换 `JWT_SECRET`。
 - 配置生产 `DATABASE_URL` 并备份数据库。
 - 配置 HTTPS 域名和微信小程序 request 合法域名；同源部署时该域名同时承载 `/admin/`、`/api/` 和 `/uploads/`。
 - 确认 `TARO_APP_API_BASE_URL` 指向生产 API 后重新执行 `pnpm build:weapp`。
 - 按 `docs/deploy/nginx-production-routing.md` 启用 Nginx 模板，并在服务器执行 `nginx -t` 后 reload。
+- 执行 `pnpm test:deploy`、`pnpm deploy:smoke` 和 `pnpm security:release-gate` 检查配置层 loopback upstream、默认凭据、弱 JWT、生产 seed 防护、CORS、限流、session 撤销、日志脱敏和备份/恢复契约；目标服务器防火墙、安全组和公网端口不可达性仍需人工验证。
 - 在微信开发者工具导入 `apps/miniapp/dist`，复核首页、公告、Banner、菜单跳转、案例详情、TabBar 和异常状态。
-- 复核上传目录或对象存储的读写权限、备份策略和 CDN 缓存策略。
+- 复核上传目录或对象存储的读写权限、`BACKUP_DIR` 容量、异地备份复制、备份保留调度、CDN 缓存策略和灾难恢复演练结果。
 - 复核后台资源删除保护、推荐尺寸提示、可解析元数据校验和保存后立即生效。
 - 运行 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm build:weapp`。
 

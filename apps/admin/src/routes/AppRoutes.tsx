@@ -8,6 +8,8 @@ import { configs } from "../crud/config";
 import { DetailPageDesigner } from "../detail-pages/DetailPageDesigner";
 import { DetailPageList } from "../detail-pages/DetailPageList";
 import { MediaPage } from "../media/MediaPage";
+import { BackupPage } from "../pages/BackupPage";
+import { ChangePasswordPage } from "../pages/ChangePasswordPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { Protected } from "../pages/Protected";
@@ -51,6 +53,8 @@ export const router = createBrowserRouter(
         { path: "detail-pages/new", element: <DetailPageDesigner /> },
         { path: "detail-pages/:id/edit", element: <DetailPageDesigner /> },
         { path: "media-assets", element: <MediaPage /> },
+        { path: "backups", element: <BackupPage /> },
+        { path: "change-password", element: <ChangePasswordPage /> },
         { path: "*", element: <NotFoundPage /> }
       ]
     }

@@ -4,8 +4,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { mediaReferenceCount } from "../src/media";
-import { hashPassword } from "../src/security";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
+import {
+  clientAuthHeaders,
+  createTestWeChatLoginCodeVerifier,
+  loginClient,
+  resetTestAdmin,
+  testAdminCredentials,
+  testClientAuthConfig
+} from "./fixtures";
 
 const root = path.join(process.cwd(), ".tmp/detail-page-review-regressions");
 const databasePath = path.join(root, "review.db");
@@ -14,8 +21,10 @@ const uploadDir = path.join(root, "uploads");
 let prisma: AppPrismaClient;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let assetSequence = 0;
+let clientToken: string;
 
 async function resetDatabase() {
+  await prisma.clientSession.deleteMany();
   await prisma.activityCaseMedia.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.activityCase.deleteMany();
@@ -24,13 +33,7 @@ async function resetDatabase() {
   await prisma.announcement.deleteMany();
   await prisma.detailPageConfig.deleteMany();
   await prisma.mediaAsset.deleteMany();
-  await prisma.adminUser.deleteMany();
-  await prisma.adminUser.create({
-    data: {
-      username: "admin",
-      passwordHash: hashPassword("admin123456", "detail-review-admin")
-    }
-  });
+  await resetTestAdmin(prisma);
   assetSequence = 0;
 }
 
@@ -38,10 +41,17 @@ async function token() {
   const response = await app.inject({
     method: "POST",
     url: "/api/admin/auth/login",
-    payload: { username: "admin", password: "admin123456" }
+    payload: testAdminCredentials
   });
   expect(response.statusCode).toBe(200);
   return response.json().data.token as string;
+}
+
+function clientInject(options: { method: "GET"; url: string }) {
+  return app.inject({
+    ...options,
+    headers: clientAuthHeaders(clientToken)
+  });
 }
 
 async function createAsset(
@@ -130,11 +140,16 @@ beforeAll(async () => {
     prisma,
     jwtSecret: "detail-review-secret",
     uploadDir,
-    publicBaseUrl: "http://127.0.0.1:3001"
+    publicBaseUrl: "http://127.0.0.1:3001",
+    clientAuth: testClientAuthConfig,
+    weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier()
   });
 });
 
-beforeEach(resetDatabase);
+beforeEach(async () => {
+  await resetDatabase();
+  clientToken = await loginClient(app);
+});
 
 afterAll(async () => {
   await app.close();
@@ -261,9 +276,9 @@ describe("detail page review regressions", () => {
     });
     const id = created.json().data.id;
 
-    const list = await app.inject({ method: "GET", url: "/api/client/cases" });
-    const home = await app.inject({ method: "GET", url: "/api/client/home" });
-    const detail = await app.inject({ method: "GET", url: `/api/client/cases/${id}` });
+    const list = await clientInject({ method: "GET", url: "/api/client/cases" });
+    const home = await clientInject({ method: "GET", url: "/api/client/home" });
+    const detail = await clientInject({ method: "GET", url: `/api/client/cases/${id}` });
 
     expect(list.json().data.find((item: { id: number }) => item.id === id)).not.toHaveProperty("detailPage");
     expect(home.json().data.featuredCases.find((item: { id: number }) => item.id === id)).not.toHaveProperty("detailPage");

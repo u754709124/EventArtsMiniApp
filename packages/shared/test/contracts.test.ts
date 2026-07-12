@@ -2,14 +2,28 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ArtistCreateRequestSchema,
   ArticleCreateRequestSchema,
+  ApiErrorCodeSchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
+  adminChangePasswordRequestSchema,
   adminArticleListQuerySchema,
+  adminSessionDtoSchema,
+  analyticsFieldLimits,
   artistListQuerySchema,
   artistTypeLabels,
+  backupDeleteRequestSchema,
+  backupImportPreflightResponseSchema,
+  backupManifestSchema,
+  backupPreflightSummarySchema,
+  backupRestoreAcceptedResponseSchema,
+  backupRestoreRequestSchema,
   batchDeleteMediaRequestSchema,
   caseListQuerySchema,
   clientArticleListQuerySchema,
+  clientProtectedRouteErrorCodeValues,
+  clientWechatLoginErrorCodeValues,
+  clientWechatLoginRequestSchema,
+  clientWechatLoginResponseSchema,
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
@@ -20,7 +34,10 @@ import {
   normalizeArtistTags,
   normalizeResourceName,
   ok,
+  pageViewRequestSchema,
+  rateLimitErrorDataSchema,
   serializeArtistTags,
+  strongPasswordSchema,
   updateMediaMetadataSchema,
   type ActivityCaseDetailDto,
   type ActivityCaseListItemDto,
@@ -164,6 +181,233 @@ describe("shared contracts", () => {
       success: false,
       error: { code: "BAD_REQUEST", message: "参数错误" }
     });
+    expect(ApiErrorCodeSchema.parse("RATE_LIMITED")).toBe("RATE_LIMITED");
+    expect(ApiErrorCodeSchema.parse("SESSION_REVOKED")).toBe("SESSION_REVOKED");
+    expect(ApiErrorCodeSchema.parse("BACKUP_INVALID")).toBe("BACKUP_INVALID");
+    expect(ApiErrorCodeSchema.parse("INVALID_WECHAT_CODE")).toBe("INVALID_WECHAT_CODE");
+    expect(clientWechatLoginErrorCodeValues).toEqual([
+      "VALIDATION_ERROR",
+      "INVALID_WECHAT_CODE",
+      "WECHAT_AUTH_UNAVAILABLE",
+      "RATE_LIMITED",
+      "INTERNAL_ERROR"
+    ]);
+    expect(clientProtectedRouteErrorCodeValues).toEqual([
+      "CLIENT_AUTH_REQUIRED",
+      "CLIENT_SESSION_EXPIRED",
+      "CLIENT_SESSION_REVOKED"
+    ]);
+  });
+
+  it("defines password, session and rate limit security contracts", () => {
+    expect(strongPasswordSchema.parse("StrongPass123!")).toBe("StrongPass123!");
+    expect(() => strongPasswordSchema.parse("weak-password")).toThrow();
+    expect(() => adminChangePasswordRequestSchema.parse({
+      currentPassword: "old-password",
+      newPassword: "StrongPass123!",
+      confirmPassword: "StrongPass123?"
+    })).toThrow();
+    expect(adminChangePasswordRequestSchema.parse({
+      currentPassword: "old-password",
+      newPassword: "StrongPass123!",
+      confirmPassword: "StrongPass123!"
+    })).toMatchObject({ newPassword: "StrongPass123!" });
+
+    expect(adminSessionDtoSchema.parse({
+      id: "jti-1",
+      adminId: 1,
+      username: "admin",
+      status: "active",
+      createdAt: "2026-07-12T08:00:00.000Z",
+      expiresAt: "2026-07-12T10:00:00.000Z",
+      revokedAt: null,
+      revokeReason: null
+    })).toMatchObject({ status: "active" });
+    expect(rateLimitErrorDataSchema.parse({ retryAfterSeconds: 60 })).toEqual({ retryAfterSeconds: 60 });
+  });
+
+  it("defines the WeChat miniapp login exchange contract without exposing upstream secrets", () => {
+    const loginCode = ["temporary", "login", "code"].join("-");
+    const sessionToken = Array.from(
+      { length: 40 },
+      (_, index) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[index % 32]
+    ).join("");
+    expect(clientWechatLoginRequestSchema.parse({ code: ` ${loginCode} ` })).toEqual({
+      code: loginCode
+    });
+    expect(() => clientWechatLoginRequestSchema.parse({ code: "" })).toThrow();
+    expect(() => clientWechatLoginRequestSchema.parse({
+      code: "x".repeat(513)
+    })).toThrow();
+    expect(() => clientWechatLoginRequestSchema.parse({
+      code: loginCode,
+      session_key: "must-not-be-client-input"
+    })).toThrow();
+
+    expect(clientWechatLoginResponseSchema.parse({
+      token: sessionToken,
+      tokenType: "Bearer",
+      expiresInSeconds: 1800,
+      expiresAt: "2026-07-12T10:30:00.000Z"
+    })).toEqual({
+      token: sessionToken,
+      tokenType: "Bearer",
+      expiresInSeconds: 1800,
+      expiresAt: "2026-07-12T10:30:00.000Z"
+    });
+    expect(() => clientWechatLoginResponseSchema.parse({
+      token: "short",
+      tokenType: "Bearer",
+      expiresInSeconds: 1800,
+      expiresAt: "2026-07-12T10:30:00.000Z"
+    })).toThrow();
+    expect(() => clientWechatLoginResponseSchema.parse({
+      token: sessionToken,
+      tokenType: "Bearer",
+      expiresInSeconds: 1800,
+      expiresAt: "2026-07-12T10:30:00.000Z",
+      session_key: "must-not-be-returned"
+    })).toThrow();
+  });
+
+  it("defines analytics field limits without implementing sampling runtime", () => {
+    expect(analyticsFieldLimits).toEqual({
+      pagePathMaxLength: 256,
+      sceneMaxLength: 64,
+      userAgentMaxLength: 256
+    });
+    expect(pageViewRequestSchema.parse({ pagePath: " /pages/index/index ", scene: " home " })).toEqual({
+      pagePath: "/pages/index/index",
+      scene: "home"
+    });
+    expect(() => pageViewRequestSchema.parse({ pagePath: "x".repeat(257), scene: "home" })).toThrow();
+    expect(() => pageViewRequestSchema.parse({ pagePath: "/pages/index/index", scene: "x".repeat(65) })).toThrow();
+  });
+
+  it("defines backup manifest and delete/restore confirmation contracts", () => {
+    const sha256 = "a".repeat(64);
+    const backupManifest = {
+      formatVersion: 1,
+      status: "ready",
+      app: { name: "api", version: "0.1.0" },
+      schema: {
+        provider: "sqlite",
+        sqliteVersion: "3.45.0",
+        userVersion: 0,
+        schemaHash: sha256,
+        migrationIds: ["manual-sqlite-schema"]
+      },
+      createdBy: { adminId: 1, username: "admin" },
+      createdAt: "2026-07-12T08:00:00.000Z",
+      note: "手动备份",
+      database: {
+        path: "database.sqlite",
+        size: 1024,
+        sha256,
+        snapshotMethod: "sqlite-vacuum-into",
+        pageSize: 4096,
+        pageCount: 1
+      },
+      uploads: [{ path: "uploads/demo.png", size: 2048, sha256, modifiedAt: "2026-07-12T07:59:00.000Z" }],
+      totalBytes: 3072,
+      totalFiles: 2,
+      sha256
+    } as const;
+    expect(backupManifestSchema.parse({
+      ...backupManifest
+    })).toMatchObject({ formatVersion: 1, totalBytes: 3072 });
+    expect(backupDeleteRequestSchema.parse({
+      backupId: "backup_20260712",
+      confirmation: "DELETE_BACKUP"
+    })).toEqual({
+      backupId: "backup_20260712",
+      confirmation: "DELETE_BACKUP"
+    });
+    expect(() => backupDeleteRequestSchema.parse({
+      backupId: "backup_20260712"
+    })).toThrow();
+    expect(() => backupManifestSchema.parse({
+      ...backupManifest,
+      database: { ...backupManifest.database, snapshotMethod: "raw-copy" }
+    })).toThrow();
+    expect(() => backupManifestSchema.parse({
+      ...backupManifest,
+      uploads: [{ ...backupManifest.uploads[0], path: "/uploads/demo.png" }]
+    })).toThrow();
+    expect(backupRestoreRequestSchema.parse({
+      backupId: "backup_20260712.zip",
+      confirmation: "RESTORE_FULL_BACKUP"
+    })).toEqual({
+      backupId: "backup_20260712.zip",
+      confirmation: "RESTORE_FULL_BACKUP"
+    });
+    const preflight = backupPreflightSummarySchema.parse({
+      formatVersion: 1,
+      createdAt: backupManifest.createdAt,
+      createdBy: backupManifest.createdBy,
+      note: backupManifest.note,
+      source: "external_archive",
+      database: {
+        size: backupManifest.database.size,
+        snapshotMethod: "sqlite-vacuum-into",
+        pageSize: 4096,
+        pageCount: 1
+      },
+      uploads: { fileCount: 1, totalBytes: 2048 },
+      totals: { fileCount: 2, totalBytes: 3072 },
+      checks: {
+        manifest: "ok",
+        checksums: "ok",
+        sqliteIntegrity: "ok",
+        schemaCompatible: true,
+        mediaFiles: "ok"
+      },
+      impact: { tables: [{ table: "media_assets", currentRows: 1, candidateRows: 2, deltaRows: 1 }] }
+    });
+    expect(backupImportPreflightResponseSchema.parse({
+      backup: {
+        id: "import_20260712",
+        formatVersion: 1,
+        status: "ready",
+        createdBy: backupManifest.createdBy,
+        createdAt: backupManifest.createdAt,
+        size: 3072,
+        sha256,
+        database: { size: 1024, sha256, snapshotMethod: "sqlite-vacuum-into" },
+        uploadFileCount: 1,
+        note: backupManifest.note
+      },
+      preflight
+    })).toMatchObject({ preflight: { source: "external_archive" } });
+    expect(() => backupImportPreflightResponseSchema.parse({
+      backup: {
+        id: "import_20260712",
+        formatVersion: 1,
+        status: "ready",
+        createdBy: backupManifest.createdBy,
+        createdAt: backupManifest.createdAt,
+        size: 3072,
+        sha256,
+        database: { size: 1024, sha256, snapshotMethod: "sqlite-vacuum-into" },
+        uploadFileCount: 1,
+        note: backupManifest.note
+      },
+      manifest: backupManifest
+    })).toThrow();
+    expect(backupRestoreAcceptedResponseSchema.parse({
+      restoreId: "restore_20260712",
+      backupId: "backup_20260712",
+      snapshotBackupId: "backup_20260712_snapshot",
+      revokedSessionCount: 2
+    })).toMatchObject({ revokedSessionCount: 2 });
+    expect(() => backupRestoreRequestSchema.parse({
+      backupId: "../backup.zip",
+      confirmation: "RESTORE_FULL_BACKUP"
+    })).toThrow();
+    expect(() => backupManifestSchema.parse({
+      ...backupManifest,
+      database: { ...backupManifest.database, path: "../database.sqlite" }
+    })).toThrow();
   });
 
   it("types client home response with required top-level fields", () => {

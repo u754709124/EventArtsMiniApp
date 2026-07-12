@@ -16,7 +16,7 @@ Playwright 后台和 H5 流程、接口夹具、首页截图、模块对照、�
 - `apps/miniapp/src/assets/generated/tab-*.png`
 
 ## 数据结构或接口
-测试使用 seed 数据、后台鉴权接口、CMS CRUD 接口、`GET /api/client/home`、`POST /api/client/track/page-view`。E2E 启动时先执行 `db:push` 与 `db:seed`，确保场景可重复。
+测试使用 seed 数据、后台鉴权接口、CMS CRUD 接口、`GET /api/client/home`、`POST /api/client/track/page-view`。E2E 启动时先执行 `db:push`、`db:seed`，再用一次性 `admin:bootstrap` 创建测试管理员，确保场景可重复且不依赖默认账号。
 
 ## 测试方式
 - `pnpm lint`：通过。

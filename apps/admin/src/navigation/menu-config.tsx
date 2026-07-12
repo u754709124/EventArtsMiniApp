@@ -5,6 +5,8 @@ import {
   FileImageOutlined,
   FileTextOutlined,
   HomeOutlined,
+  LockOutlined,
+  SafetyCertificateOutlined,
   PictureOutlined,
   TeamOutlined
 } from "@ant-design/icons";
@@ -142,6 +144,32 @@ export const adminMenuConfig: AdminMenuItem[] = [
         matchPaths: ["/media-assets"],
         breadcrumb: "素材库",
         testid: "sidebar-media-assets"
+      }
+    ]
+  },
+  {
+    key: "account",
+    label: "账号安全",
+    icon: <LockOutlined />,
+    breadcrumb: "账号安全",
+    testid: "sidebar-group-account",
+    children: [
+      {
+        key: "backups",
+        label: "备份与恢复",
+        icon: <SafetyCertificateOutlined />,
+        path: "/backups",
+        matchPaths: ["/backups"],
+        breadcrumb: "备份与恢复",
+        testid: "sidebar-backups"
+      },
+      {
+        key: "change-password",
+        label: "修改密码",
+        path: "/change-password",
+        matchPaths: ["/change-password"],
+        breadcrumb: "修改密码",
+        testid: "sidebar-change-password"
       }
     ]
   }

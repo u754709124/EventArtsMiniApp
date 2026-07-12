@@ -1,16 +1,21 @@
-import path from "node:path";
+import { loadApiConfig } from "../src/config";
 import { createPrismaClient } from "../src/db";
-import { seedDatabase } from "../src/seed";
+import { assertCanSeedDatabase, seedDatabase } from "../src/seed";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 
-const prisma = createPrismaClient();
+const config = loadApiConfig();
 
-await ensureDatabaseSchema(prisma);
+assertCanSeedDatabase(config.env);
+
+const prisma = createPrismaClient(config.databaseUrl);
+
+await ensureDatabaseSchema(prisma, { uploadDir: config.paths.uploadDir });
 await seedDatabase(prisma, {
-  uploadDir: path.resolve(process.cwd(), "../../uploads"),
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "http://127.0.0.1:3001",
+  uploadDir: config.paths.uploadDir,
+  publicBaseUrl: config.publicBaseUrl,
+  env: config.env,
   reset: true
 });
 
 await prisma.$disconnect();
-console.log("Seed complete: admin/admin123456");
+console.log("Seed complete: demo content only");

@@ -14,8 +14,42 @@ model AdminUser {
   status       String   @default("enabled")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  sessions     AdminSession[]
 
   @@map("admin_users")
+}
+
+model AdminSession {
+  jti          String    @id
+  adminId      Int
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokeReason String?
+  admin        AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("admin_sessions")
+}
+
+model ClientSession {
+  id           String    @id @default(uuid())
+  tokenHash    String    @unique
+  appId        String
+  openidHash   String
+  unionidHash  String?
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokeReason String?
+  lastSeenAt   DateTime?
+
+  @@index([openidHash])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("client_sessions")
 }
 
 model SiteConfig {
@@ -281,12 +315,16 @@ model DetailPageContentMedia {
 }
 
 model PageViewEvent {
-  id        Int      @id @default(autoincrement())
-  pagePath  String
-  scene     String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  id                   Int      @id @default(autoincrement())
+  pagePath             String
+  scene                String?
+  userAgent            String?
+  anonymousFingerprint String   @default("")
+  sampleWeight         Int      @default(1)
+  createdAt            DateTime @default(now())
 
+  @@index([createdAt])
+  @@index([anonymousFingerprint, pagePath, scene, createdAt])
   @@map("page_view_events")
 }
 

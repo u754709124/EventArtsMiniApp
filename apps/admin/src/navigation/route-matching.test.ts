@@ -22,7 +22,19 @@ describe("admin route matching", () => {
       title: "分类菜单"
     });
     expect(matchAdminRoute("/media-assets").breadcrumbs).toEqual(["素材管理", "素材库"]);
-    expect(validOpenKeys(["home", "content", "unknown"])).toEqual(["home", "content"]);
+    expect(matchAdminRoute("/change-password")).toMatchObject({
+      selectedKeys: ["change-password"],
+      openKeys: ["account"],
+      breadcrumbs: ["账号安全", "修改密码"],
+      title: "修改密码"
+    });
+    expect(matchAdminRoute("/backups")).toMatchObject({
+      selectedKeys: ["backups"],
+      openKeys: ["account"],
+      breadcrumbs: ["账号安全", "备份与恢复"],
+      title: "备份与恢复"
+    });
+    expect(validOpenKeys(["home", "content", "account", "unknown"])).toEqual(["home", "content", "account"]);
   });
 
   it("does not select another menu for unknown or similar-prefix routes", () => {

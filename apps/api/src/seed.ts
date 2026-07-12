@@ -8,18 +8,19 @@ import {
 import { registerSeedAssets } from "./assets";
 import type { AppPrismaClient } from "./db";
 import { createDetailPage, updateDetailPage } from "./detail-pages/detail-page-service";
-import { hashPassword } from "./security";
 
 type SeedOptions = {
   uploadDir: string;
   publicBaseUrl: string;
   reset?: boolean;
   assetRoot?: string;
+  env?: string;
 };
 
 const assetRoot = path.resolve(process.cwd(), "../../apps/miniapp/src/assets/generated");
 
 async function resetDatabase(prisma: AppPrismaClient) {
+  await prisma.clientSession.deleteMany();
   await prisma.seedRecord.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.pageViewEvent.deleteMany();
@@ -33,7 +34,6 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.detailPageConfig.deleteMany();
   await prisma.siteConfig.deleteMany();
   await prisma.mediaAsset.deleteMany();
-  await prisma.adminUser.deleteMany();
 }
 
 type SeedEntity = { id: number };
@@ -86,28 +86,16 @@ async function upsertSeedDetailPage(
 }
 
 export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions) {
+  assertCanSeedDatabase(options.env ?? process.env.NODE_ENV);
+
   if (options.reset) {
     await resetDatabase(prisma);
   }
 
-  const admin = await prisma.adminUser.upsert({
-    where: { username: "admin" },
-    update: {
-      passwordHash: hashPassword("admin123456", "event-arts-admin"),
-      status: "enabled"
-    },
-    create: {
-      username: "admin",
-      passwordHash: hashPassword("admin123456", "event-arts-admin"),
-      status: "enabled"
-    }
-  });
-
   const assets = await registerSeedAssets(prisma, {
     assetRoot: options.assetRoot ?? assetRoot,
     uploadDir: options.uploadDir,
-    publicBaseUrl: options.publicBaseUrl,
-    createdBy: admin.id
+    publicBaseUrl: options.publicBaseUrl
   });
   const placeholderBanner = assets.get("placeholder-banner.png")!;
   const placeholderIcon = assets.get("placeholder-icon.png")!;
@@ -680,5 +668,11 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       create: () => prisma.artist.create({ data }),
       update: (id) => prisma.artist.update({ where: { id }, data })
     });
+  }
+}
+
+export function assertCanSeedDatabase(env = process.env.NODE_ENV) {
+  if (env === "production") {
+    throw new Error("db:seed is disabled in production; use admin:bootstrap for administrator initialization.");
   }
 }

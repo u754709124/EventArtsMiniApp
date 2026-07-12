@@ -1,19 +1,38 @@
 # EventArtsMiniApp production reverse proxy template.
 # Replace server_name and TLS settings for the target server before enabling.
+# API/Admin upstreams must stay on loopback; do not expose their ports publicly.
 
 upstream eventarts_admin {
+    # Internal Admin static service only. Keep ADMIN_HOST loopback in production.
     server 127.0.0.1:4173;
     keepalive 16;
 }
 
 upstream eventarts_api {
+    # Internal Fastify API service only. Keep API_HOST loopback in production.
     server 127.0.0.1:3001;
     keepalive 16;
 }
 
+# TLS/HSTS guardrail:
+# - Do not uncomment these lines with placeholder paths.
+# - Install real certificates first, then move this server to listen 443 ssl http2.
+# - HSTS is only safe after HTTPS works for the final production domain.
+#
+# listen 443 ssl http2;
+# ssl_certificate /etc/letsencrypt/live/your-domain.example/fullchain.pem;
+# ssl_certificate_key /etc/letsencrypt/live/your-domain.example/privkey.pem;
+# add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
 server {
     listen 80;
     server_name _;
+    server_tokens off;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
     # Keep this above the API video upload limit. Default API example is 100 MiB.
     client_max_body_size 120m;

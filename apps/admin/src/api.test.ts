@@ -1,7 +1,18 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, clearToken, getToken, request, setSessionExpiredHandler, setToken } from "./api";
+import {
+  ApiError,
+  clearToken,
+  createBackup,
+  deleteBackup,
+  getToken,
+  importBackupArchive,
+  request,
+  restoreBackup,
+  setSessionExpiredHandler,
+  setToken
+} from "./api";
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async () => response);
@@ -26,7 +37,7 @@ describe("admin API client", () => {
 
     await expect(request<{ token: string }>("/api/admin/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username: "admin", password: "admin123456" })
+      body: JSON.stringify({ username: "unit-admin", password: "UnitOnlyPassword#1" })
     })).resolves.toEqual({ token: "next-token" });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -107,5 +118,62 @@ describe("admin API client", () => {
       message: "网络请求失败：Failed to fetch",
       status: 0
     });
+  });
+
+  it("calls backup management endpoints with explicit confirmations", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { backupId: "backup-20260712" },
+      message: "ok"
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteBackup("backup-20260712");
+    const deleteCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(deleteCall[0]).toBe("/api/admin/backups/backup-20260712");
+    const deleteInit = deleteCall[1];
+    expect(deleteInit.method).toBe("DELETE");
+    expect(JSON.parse(String(deleteInit.body))).toEqual({
+      backupId: "backup-20260712",
+      confirmation: "DELETE_BACKUP"
+    });
+
+    fetchMock.mockClear();
+    await restoreBackup("backup-20260712");
+    const restoreCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(restoreCall[0]).toBe("/api/admin/backups/backup-20260712/restore");
+    const restoreInit = restoreCall[1];
+    expect(restoreInit.method).toBe("POST");
+    expect(JSON.parse(String(restoreInit.body))).toEqual({
+      backupId: "backup-20260712",
+      confirmation: "RESTORE_FULL_BACKUP"
+    });
+  });
+
+  it("creates backups with notes and imports archives as form data", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { backup: { id: "backup-20260712" } },
+      message: "ok"
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createBackup({ note: "发布前检查点" });
+    const createCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(createCall[0]).toBe("/api/admin/backups");
+    const createInit = createCall[1];
+    expect(createInit.method).toBe("POST");
+    expect(JSON.parse(String(createInit.body))).toEqual({ note: "发布前检查点" });
+    expect((createInit.headers as Headers).get("content-type")).toBe("application/json");
+
+    fetchMock.mockClear();
+    const file = new File(["backup"], "backup.tar.gz", { type: "application/gzip" });
+    await importBackupArchive(file);
+    const importCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(importCall[0]).toBe("/api/admin/backups/import");
+    const importInit = importCall[1];
+    expect(importInit.method).toBe("POST");
+    expect(importInit.body).toBeInstanceOf(FormData);
+    expect((importInit.headers as Headers).get("content-type")).toBeNull();
   });
 });

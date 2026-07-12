@@ -3,10 +3,21 @@ import { expect, type APIRequestContext, type Locator, type Page } from "@playwr
 
 export const apiBase = "http://127.0.0.1:3001";
 export const adminPath = (path: string) => `/admin${path.startsWith("/") ? path : `/${path}`}`;
+const clientAuthTokens = new WeakMap<APIRequestContext, Promise<string>>();
+
+function e2eAdminCredentials() {
+  const username = process.env.E2E_ADMIN_USERNAME;
+  const password = process.env.E2E_ADMIN_PASSWORD;
+  if (!username || !password) {
+    throw new Error("E2E_ADMIN_USERNAME and E2E_ADMIN_PASSWORD must be provided by playwright.config.ts");
+  }
+  return { username, password };
+}
 
 export async function adminToken(request: APIRequestContext) {
+  const credentials = e2eAdminCredentials();
   const response = await request.post(`${apiBase}/api/admin/auth/login`, {
-    data: { username: "admin", password: "admin123456" }
+    data: credentials
   });
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
@@ -51,9 +62,46 @@ export async function adminUploadMedia(
   return body.data.asset as { id: number; resourceName: string };
 }
 
+async function clientAuthToken(request: APIRequestContext) {
+  let tokenPromise = clientAuthTokens.get(request);
+  if (!tokenPromise) {
+    tokenPromise = (async () => {
+      const response = await request.post(`${apiBase}/api/client/auth/wechat`, {
+        data: { code: `e2e-login-${process.pid}-${Date.now()}` }
+      });
+      const body = await response.json();
+      if (!body.success) {
+        throw new Error(body.error?.message ?? "Client auth exchange failed");
+      }
+      return String(body.data.token);
+    })();
+    clientAuthTokens.set(request, tokenPromise);
+  }
+  return tokenPromise;
+}
+
+function isClientSessionError(body: { success?: boolean; error?: { code?: string } }) {
+  return body.success === false && [
+    "CLIENT_AUTH_REQUIRED",
+    "CLIENT_SESSION_EXPIRED",
+    "CLIENT_SESSION_REVOKED"
+  ].includes(body.error?.code ?? "");
+}
+
 export async function clientApi<T>(request: APIRequestContext, path: string) {
-  const response = await request.get(`${apiBase}${path}`);
-  const body = await response.json();
+  const token = await clientAuthToken(request);
+  let response = await request.get(`${apiBase}${path}`, {
+    headers: { authorization: `Bearer ${token}` }
+  });
+  let body = await response.json();
+  if (isClientSessionError(body)) {
+    clientAuthTokens.delete(request);
+    const freshToken = await clientAuthToken(request);
+    response = await request.get(`${apiBase}${path}`, {
+      headers: { authorization: `Bearer ${freshToken}` }
+    });
+    body = await response.json();
+  }
   if (!body.success) {
     throw new Error(body.error?.message ?? `Client API failed: ${path}`);
   }
@@ -61,9 +109,10 @@ export async function clientApi<T>(request: APIRequestContext, path: string) {
 }
 
 export async function loginAdminUi(page: Page) {
+  const credentials = e2eAdminCredentials();
   await page.goto(adminPath("/login"));
-  await page.getByTestId("login-username").fill("admin");
-  await page.getByTestId("login-password").fill("admin123456");
+  await page.getByTestId("login-username").fill(credentials.username);
+  await page.getByTestId("login-password").fill(credentials.password);
   await page.getByTestId("login-submit").click();
   await expect(page.getByTestId("dashboard-pv-today")).toBeVisible();
 }

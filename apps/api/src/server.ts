@@ -1,16 +1,67 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildApp } from "./app";
+import { ConfigValidationError, loadApiConfig, type LoadApiConfigOptions } from "./config";
 import { createPrismaClient } from "./db";
+import { redactSensitive } from "./logging";
 
-const prisma = createPrismaClient();
-const app = await buildApp({
-  prisma,
-  jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
-  uploadDir: path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? "../../uploads"),
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "http://127.0.0.1:3001"
-});
+type StartApiServerOptions = {
+  config?: LoadApiConfigOptions;
+  createPrisma?: typeof createPrismaClient;
+  build?: typeof buildApp;
+};
 
-const host = process.env.API_HOST ?? "127.0.0.1";
-const port = Number(process.env.API_PORT ?? 3001);
-await app.listen({ port, host });
-console.log(`API listening on http://${host}:${port}`);
+export async function startApiServer(options: StartApiServerOptions = {}) {
+  const config = loadApiConfig(options.config);
+  const prisma = (options.createPrisma ?? createPrismaClient)(config.databaseUrl);
+  try {
+    const app = await (options.build ?? buildApp)({
+      prisma,
+      jwtSecret: config.jwt.secret,
+      uploadDir: config.paths.uploadDir,
+      backupDir: config.paths.backupDir,
+      databaseUrl: config.databaseUrl,
+      publicBaseUrl: config.publicBaseUrl,
+      cors: config.cors,
+      rateLimit: config.rateLimit,
+      analytics: config.analytics,
+      clientAuth: config.clientAuth
+    });
+    await app.listen({ port: config.server.port, host: config.server.host });
+    app.log.info({
+      event: "api_listening",
+      config: redactSensitive({
+        env: config.env,
+        server: config.server,
+        publicBaseUrl: config.publicBaseUrl,
+        databaseUrl: config.databaseUrl,
+        paths: config.paths,
+        jwt: config.jwt,
+        clientAuth: config.clientAuth,
+        cors: config.cors,
+        rateLimit: config.rateLimit,
+        analytics: config.analytics
+      })
+    }, "API listening");
+    return { app, prisma, config };
+  } catch (error) {
+    await prisma.$disconnect().catch(() => undefined);
+    throw error;
+  }
+}
+
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  return pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+}
+
+if (isEntryPoint()) {
+  startApiServer().catch((error) => {
+    if (error instanceof ConfigValidationError) {
+      console.error(error.message);
+    } else {
+      console.error(error);
+    }
+    process.exitCode = 1;
+  });
+}

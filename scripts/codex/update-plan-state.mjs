@@ -31,6 +31,8 @@ function printHelp() {
 Actions:
   goal --task-id ID --goal G01 --status in_progress|passed|blocked|failed
   result --task-id ID --goal G01 --result results/G01-result.md --test-result <text>
+         or, for active revision N > 0:
+         --result revisions/rN/results/G01-result.md
   agent-start --task-id ID --agent-id ID --role ROLE --goal G01
   agent-finish --task-id ID --agent-id ID --outcome passed|failed
   verification --task-id ID --name NAME --status passed|failed [--command TEXT]
@@ -126,7 +128,13 @@ async function registerResult(run, options) {
   const goal = getGoal(run.manifest, options.goalId);
   if (goal.status !== "passed") throw new Error(`Goal ${goal.id} must pass before registering its result.`);
   if (goal.implementation_result || goal.test_result) throw new Error(`Goal ${goal.id} already has a recorded result.`);
-  if (!/^results\/G\d+-result\.md$/.test(options.result || "")) throw new Error("Result path must use results/Gxx-result.md.");
+  const allowedResultPaths = [`results/${goal.id}-result.md`];
+  if (run.manifest.active_revision > 0) {
+    allowedResultPaths.push(`revisions/r${run.manifest.active_revision}/results/${goal.id}-result.md`);
+  }
+  if (!allowedResultPaths.includes(options.result || "")) {
+    throw new Error(`Result path must be one of: ${allowedResultPaths.join(", ")}.`);
+  }
   if (!options.testResult) throw new Error("--test-result is required when registering a result.");
   await assertRealRegularFileWithin(run.planDirectory, `${run.planDirectory}/${options.result}`);
   const goals = run.manifest.goals.map((candidate) => candidate.id === goal.id ? { ...candidate, implementation_result: options.result, test_result: options.testResult } : candidate);

@@ -1,17 +1,28 @@
+import { randomUUID } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
 
 const apiBase = "http://127.0.0.1:3001";
 const adminBase = "http://127.0.0.1:5173";
 const h5Base = "http://127.0.0.1:10086";
+const e2eAdminUsername = process.env.E2E_ADMIN_USERNAME ?? `e2e-admin-${process.pid}`;
+const e2eAdminPassword = process.env.E2E_ADMIN_PASSWORD ?? `E2e-${randomUUID()}-Aa1!`;
+
+process.env.E2E_ADMIN_USERNAME = e2eAdminUsername;
+process.env.E2E_ADMIN_PASSWORD = e2eAdminPassword;
 
 const apiEnv = {
   ...process.env,
   API_HOST: "127.0.0.1",
   API_PORT: "3001",
-  DATABASE_URL: "file:./dev.db",
+  DATABASE_URL: `file:../.tmp/e2e-${process.pid}.db`,
   JWT_SECRET: "dev-secret-change-me",
+  CORS_ALLOWED_ORIGINS: [adminBase, h5Base].join(","),
   PUBLIC_BASE_URL: apiBase,
-  UPLOAD_DIR: "../../uploads"
+  UPLOAD_DIR: "../../uploads",
+  WECHAT_MINIAPP_APP_ID: "wx0000000000000000",
+  WECHAT_AUTH_VERIFIER_MODE: "fake",
+  E2E_ADMIN_USERNAME: e2eAdminUsername,
+  E2E_ADMIN_PASSWORD: e2eAdminPassword
 };
 
 export default defineConfig({
@@ -27,7 +38,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "pnpm db:push && pnpm db:seed && pnpm dev:api",
+      command: "mkdir -p apps/api/.tmp && pnpm db:push && pnpm db:seed && node -e \"process.stdout.write(process.env.E2E_ADMIN_PASSWORD + '\\n')\" | pnpm admin:bootstrap -- --username \"$E2E_ADMIN_USERNAME\" --password-stdin && pnpm dev:api",
       url: `${apiBase}/api/client/home`,
       timeout: 120_000,
       reuseExistingServer: false,

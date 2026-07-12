@@ -28,7 +28,7 @@
 ## 已完成事项
 - 已实现 `apps/api` Fastify app factory、server entry、JWT 管理员鉴权、统一响应和错误封装。
 - 已实现 Prisma schema，覆盖统一资源标签、案例有序媒体关联、文章模块与稳定 seed 身份记录，以及 `admin_users`、`site_config`、`media_assets`、`announcements`、`banners`、`menu_items`、`artists`、`activity_cases`、`articles`、`page_view_events`、`operation_logs`。
-- 已实现 SQLite bootstrap helper、内容寻址 seed 资源和稳定业务 seed 身份，默认管理员 `admin/admin123456`、默认站点配置、公告、文章菜单、文章示例、菜单、三条精选案例和三类人员可安全重复初始化。
+- 已实现 SQLite bootstrap helper、内容寻址 seed 资源和稳定业务 seed 身份；seed 只负责默认站点配置、公告、文章菜单、文章示例、菜单、三条精选案例和三类人员的可重复初始化，不再创建或覆盖管理员。首个管理员通过显式 `admin:bootstrap` 初始化。
 - 已实现用途无关的统一媒体库：流式临时文件、服务端 MD5、Sharp 图片探测、ffprobe MP4 探测、随机存储名、标签和全局唯一资源名。
 - 已实现共享 `MediaFieldKey` 规则，所有业务保存接口重新验证资源存在性、类型和可解析元数据；尺寸作为后台推荐值展示，不作为图片硬限制。案例详情改用 `ActivityCaseMedia` 有序关联。
 - 已实现资源查询/详情/标签/MD5 查询/名称检查/元数据编辑/未使用扫描/批量删除接口，并在删除前重新统计全部引用，包含文章封面 `article_cover`。

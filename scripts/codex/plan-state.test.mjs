@@ -92,6 +92,28 @@ describe("plan state, recovery, and cleanup", () => {
     expect(run(stateScript, stateArguments("create-revision", taskId, plansRoot, ["--revision", "1", "--planner-approved"])).status).toBe(1);
   });
 
+  it("records results inside the active revision result directory", async () => {
+    const plansRoot = await createPlansRoot();
+    const taskId = "20260712T000000Z-revision-result-test";
+    const planDirectory = initializeAndPersist(plansRoot, taskId);
+
+    expect(run(stateScript, stateArguments("create-revision", taskId, plansRoot, ["--revision", "1", "--planner-approved"])).status).toBe(0);
+    expect(run(persistScript, ["--task-id", taskId, "--planner-output", validFixture, "--revision", "1", "--plans-root", plansRoot]).status).toBe(0);
+    expect(run(stateScript, stateArguments("goal", taskId, plansRoot, ["--goal", "G01", "--status", "in_progress"])).status).toBe(0);
+    expect(run(stateScript, stateArguments("goal", taskId, plansRoot, ["--goal", "G01", "--status", "passed"])).status).toBe(0);
+
+    const revisionResult = "revisions/r1/results/G01-result.md";
+    await writeFile(resolve(planDirectory, revisionResult), "# G01 revision result\n", "utf8");
+    expect(run(stateScript, stateArguments("result", taskId, plansRoot, [
+      "--goal", "G01",
+      "--result", revisionResult,
+      "--test-result", "revision passed"
+    ])).status).toBe(0);
+
+    const manifest = JSON.parse(await readFile(resolve(planDirectory, "manifest.json"), "utf8"));
+    expect(manifest.goals.find((goal) => goal.id === "G01").implementation_result).toBe(revisionResult);
+  });
+
   it("rejects cleanup until completion evidence is complete, then supports dry-run and task-only removal", async () => {
     const plansRoot = await createPlansRoot();
     const taskId = "20260712T000000Z-cleanup-test";

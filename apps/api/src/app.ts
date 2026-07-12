@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, unlink } from "node:fs/promises";
+import path from "node:path";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
-import multipart from "@fastify/multipart";
+import multipart, { type MultipartFile } from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import type { Prisma } from "@prisma/client";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -19,14 +21,25 @@ import {
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
   adminArticleListQuerySchema,
+  adminChangePasswordRequestSchema,
   adminReorderRequestSchema,
   artistListQuerySchema,
+  backupCreateRequestSchema,
+  backupDeleteRequestSchema,
+  backupIdSchema,
+  backupImportPreflightResponseSchema,
+  backupRestoreAcceptedResponseSchema,
+  backupRestoreRequestSchema,
   batchDeleteMediaRequestSchema,
   caseListQuerySchema,
   checkMediaNameRequestSchema,
   clientArticleListQuerySchema,
+  clientWechatLoginRequestSchema,
+  clientWechatLoginResponseSchema,
   fail,
+  failWithRequestId,
   lookupMediaRequestSchema,
+  loginRequestSchema,
   mediaFieldRules,
   mediaListQuerySchema,
   menuConfigSchemaByType,
@@ -59,6 +72,15 @@ import {
 import { extractRichTextMedia } from "./detail-pages/detail-page-sanitizer";
 import { DetailPageDomainError } from "./detail-pages/detail-page-types";
 import {
+  ADMIN_SESSION_JWT_EXPIRES_IN,
+  adminSessionRevokeReasons,
+  createAdminSession,
+  revokeAllAdminSessions,
+  revokeAdminSession,
+  revokeAdminSessionsForAdmin,
+  type SessionClock
+} from "./admin-sessions";
+import {
   createMediaAsset,
   deleteStoredFile,
   getUploadConfig,
@@ -74,17 +96,84 @@ import {
   toMediaAssetDto,
   validateAssetForField
 } from "./media";
-import { verifyPassword } from "./security";
+import { hashPassword, verifyPassword } from "./security";
+import type { ApiConfig, ApiCorsConfig } from "./config";
+import { BackupServiceError, backupArchiveMaxBytes, createBackupService, type BackupServiceHooks } from "./backup";
+import {
+  createApiLoggerOptions,
+  logSecurityEvent,
+  requestIdFromHeaders,
+  redactSensitive,
+  serializeErrorForLog,
+  type ApiLoggerOptions
+} from "./logging";
+import {
+  defaultPageViewAnalyticsConfig,
+  recordPageViewEvent,
+  weightedPageViewCount,
+  type PageViewAnalyticsConfig
+} from "./analytics";
+import {
+  FixedWindowRateLimiter,
+  analyticsRateLimitKey,
+  createInMemoryRateLimitStore,
+  loginRateLimitKey,
+  normalizeClientIp,
+  type FixedWindowRateLimitPolicy,
+  type RateLimitDenied,
+  type RateLimitStore
+} from "./rate-limit";
+import {
+  clientAuthLoginExchangePath,
+  clientAuthProtectedRoutePrefix,
+  createClientAuthVerifier,
+  createClientSession,
+  defaultTestClientAuthConfig,
+  verifyClientSessionToken,
+  type WeChatLoginCodeVerifier
+} from "./client-auth";
+
+type AppRateLimitConfig = {
+  login: {
+    windowMs: number;
+    maxFailures: number;
+  };
+  analytics: {
+    windowMs: number;
+    maxRequests: number;
+  };
+};
 
 type BuildOptions = {
   prisma: AppPrismaClient;
   jwtSecret: string;
   uploadDir: string;
+  backupDir?: string;
+  databaseUrl?: string;
   publicBaseUrl: string;
+  cors?: ApiCorsConfig;
+  logger?: ApiLoggerOptions;
+  now?: SessionClock;
+  backupHooks?: BackupServiceHooks;
+  rateLimit?: AppRateLimitConfig;
+  rateLimitStore?: RateLimitStore;
+  analytics?: PageViewAnalyticsConfig;
+  clientAuth?: ApiConfig["clientAuth"];
+  weChatLoginCodeVerifier?: WeChatLoginCodeVerifier;
 };
 
 type AdminRequest = FastifyRequest & {
-  admin?: { id: number; username: string };
+  admin?: { id: number; username: string; sessionJti: string };
+};
+
+type ClientRequest = FastifyRequest & {
+  clientSession?: {
+    id: string;
+    appId: string;
+    openidHash: string;
+    unionidHash: string | null;
+    expiresAt: Date;
+  };
 };
 
 class MediaRecoveryError extends Error {
@@ -92,6 +181,16 @@ class MediaRecoveryError extends Error {
 }
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
+const defaultCorsConfig: ApiCorsConfig = {
+  allowedOrigins: [],
+  allowRequestsWithoutOrigin: true
+};
+const publicInternalErrorMessage = "服务异常，请稍后再试";
+const publicMediaRecoveryErrorMessage = "资源处理失败，请联系管理员并提供请求 ID";
+const defaultAppRateLimit: AppRateLimitConfig = {
+  login: { windowMs: 900_000, maxFailures: 5 },
+  analytics: { windowMs: 60_000, maxRequests: 60 }
+};
 const statusInputSchema = z.enum(["enabled", "disabled"]);
 const positiveIdSchema = z.coerce.number().int().positive();
 const positiveBodyIdSchema = z.number().int().positive();
@@ -144,8 +243,129 @@ const articleCategoryQuerySchema = z.object({
   q: z.string().trim().transform((value) => value || undefined).optional(),
   limit: positiveIdSchema.max(100).default(100)
 });
+const mediaMutationReleaseSymbol = Symbol("mediaMutationRelease");
+const businessMutationReleaseSymbol = Symbol("businessMutationRelease");
+
 function sendError(reply: FastifyReply, statusCode: number, code: string, message: string) {
   return reply.code(statusCode).headers(jsonHeaders).send(fail(code, message));
+}
+
+function sendPublicErrorWithRequestId(
+  reply: FastifyReply,
+  statusCode: number,
+  code: string,
+  message: string,
+  requestId: string
+) {
+  return reply.code(statusCode).headers(jsonHeaders).send(failWithRequestId(code, message, requestId));
+}
+
+function sendRateLimitError(reply: FastifyReply, decision: RateLimitDenied) {
+  return reply
+    .code(429)
+    .header("Retry-After", String(decision.retryAfterSeconds))
+    .headers(jsonHeaders)
+    .send(fail("RATE_LIMITED", "请求过于频繁，请稍后再试"));
+}
+
+function loginRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLimitPolicy {
+  return {
+    windowMs: config.login.windowMs,
+    limit: config.login.maxFailures
+  };
+}
+
+function analyticsRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLimitPolicy {
+  return {
+    windowMs: config.analytics.windowMs,
+    limit: config.analytics.maxRequests
+  };
+}
+
+function trustedClientIp(request: FastifyRequest) {
+  return normalizeClientIp(request.ip);
+}
+
+function firstZodIssueMessage(error: z.ZodError, fallback: string) {
+  return error.issues[0]?.message ?? fallback;
+}
+
+function requiresBackupDeleteConfirmation(error: z.ZodError) {
+  return error.issues.some((issue) => issue.path[0] === "confirmation");
+}
+
+function requiresBackupRestoreConfirmation(error: z.ZodError) {
+  return error.issues.some((issue) => issue.path[0] === "confirmation");
+}
+
+function backupErrorCode(error: unknown) {
+  return error instanceof BackupServiceError ? error.code : "INTERNAL_ERROR";
+}
+
+function backupErrorStatusCode(error: unknown) {
+  return error instanceof BackupServiceError ? error.statusCode : 500;
+}
+
+function isMediaMutationRequest(request: FastifyRequest) {
+  const pathname = request.url.split("?")[0] ?? request.url;
+  return (
+    (request.method === "POST" && pathname === "/api/admin/media-assets/upload") ||
+    (request.method === "POST" && pathname === "/api/admin/media-assets/batch-delete") ||
+    (request.method === "DELETE" && /^\/api\/admin\/media-assets\/[1-9]\d*$/.test(pathname))
+  );
+}
+
+function isUnsafeHttpMethod(method: string) {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
+function isRestoreRoute(request: FastifyRequest) {
+  const pathname = request.url.split("?")[0] ?? request.url;
+  return request.method === "POST" && /^\/api\/admin\/backups\/[A-Za-z0-9][A-Za-z0-9._-]*\/restore$/.test(pathname);
+}
+
+function requestPathname(request: FastifyRequest) {
+  return request.url.split("?")[0] ?? request.url;
+}
+
+function isClientLoginExchangeRequest(request: FastifyRequest) {
+  return request.method === "POST" && requestPathname(request) === clientAuthLoginExchangePath;
+}
+
+function isClientProtectedRequest(request: FastifyRequest) {
+  const pathname = requestPathname(request);
+  return pathname.startsWith(clientAuthProtectedRoutePrefix) && !isClientLoginExchangeRequest(request);
+}
+
+function bearerTokenFromRequest(request: FastifyRequest) {
+  const header = request.headers.authorization;
+  if (Array.isArray(header) || typeof header !== "string") return null;
+  const match = /^Bearer\s+([A-Za-z0-9._~+/=-]+)$/.exec(header.trim());
+  return match?.[1] ?? null;
+}
+
+function clientWechatLoginRateLimitKey(clientIp: string) {
+  return loginRateLimitKey({ clientIp, username: "client:wechat" });
+}
+
+function wechatAuthFailureStatus(reason: string) {
+  if (reason === "upstream_timeout") return 504;
+  if (reason === "upstream_error" || reason === "misconfigured") return 502;
+  return 401;
+}
+
+async function readBackupArchive(part: MultipartFile) {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of part.file) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.byteLength;
+    if (total > backupArchiveMaxBytes) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档过大", 413);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 function parseRouteId(params: unknown) {
@@ -484,16 +704,180 @@ function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
   };
 }
 
+type CorsDecision =
+  | { allowed: true; origin: string | false }
+  | { allowed: false; reason: "missing_origin" | "invalid_origin" | "origin_not_allowed" | "wildcard_not_allowed" };
+
+function normalizeOriginHeader(value: unknown) {
+  const origin = Array.isArray(value) ? value[0] : value;
+  if (typeof origin !== "string" || !origin.trim()) return null;
+  try {
+    const parsed = new URL(origin);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function evaluateCorsRequest(corsConfig: ApiCorsConfig, originHeader: unknown): CorsDecision {
+  const normalizedOrigin = normalizeOriginHeader(originHeader);
+  if (!normalizedOrigin) {
+    return originHeader
+      ? { allowed: false, reason: "invalid_origin" }
+      : corsConfig.allowRequestsWithoutOrigin
+        ? { allowed: true, origin: false }
+        : { allowed: false, reason: "missing_origin" };
+  }
+
+  if (corsConfig.allowedOrigins.includes("*")) {
+    return { allowed: false, reason: "wildcard_not_allowed" };
+  }
+
+  return corsConfig.allowedOrigins.includes(normalizedOrigin)
+    ? { allowed: true, origin: normalizedOrigin }
+    : { allowed: false, reason: "origin_not_allowed" };
+}
+
+function corsOriginResolver(corsConfig: ApiCorsConfig) {
+  return (origin: string | undefined, callback: (error: Error | null, origin: string | boolean) => void) => {
+    const decision = evaluateCorsRequest(corsConfig, origin);
+    callback(null, decision.allowed ? decision.origin : false);
+  };
+}
+
 export async function buildApp(options: BuildOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: options.logger ?? createApiLoggerOptions(),
+    trustProxy: "loopback",
+    requestIdHeader: "x-request-id",
+    genReqId: (request) => requestIdFromHeaders(request.headers)
+  });
   const { prisma } = options;
+  const corsConfig = options.cors ?? defaultCorsConfig;
   const uploadLimits = getUploadLimits();
+  const currentTime = options.now ?? (() => new Date());
+  const rateLimitConfig = options.rateLimit ?? defaultAppRateLimit;
+  const analyticsConfig = options.analytics ?? defaultPageViewAnalyticsConfig;
+  const clientAuthConfig = options.clientAuth ?? defaultTestClientAuthConfig();
+  const weChatLoginCodeVerifier =
+    options.weChatLoginCodeVerifier ?? createClientAuthVerifier(clientAuthConfig);
+  const rateLimiter = new FixedWindowRateLimiter(
+    options.rateLimitStore ?? createInMemoryRateLimitStore(),
+    currentTime
+  );
+  const backupService = createBackupService({
+    prisma,
+    uploadDir: options.uploadDir,
+    backupDir: options.backupDir ?? path.resolve(options.uploadDir, "..", "backups"),
+    databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL ?? "file:./dev.db",
+    now: currentTime,
+    hooks: options.backupHooks
+  });
+  let backupCreateInProgress = false;
+  let backupDonePromise: Promise<void> | null = null;
+  let resolveBackupDone: (() => void) | null = null;
+  let activeMediaMutations = 0;
+  let mediaIdleResolvers: Array<() => void> = [];
+  let restoreInProgress = false;
+  let activeBusinessMutations = 0;
+  let businessIdleResolvers: Array<() => void> = [];
+  const loginLimiterPolicy = loginRateLimitPolicy(rateLimitConfig);
+  const analyticsLimiterPolicy = analyticsRateLimitPolicy(rateLimitConfig);
+  const invalidLoginPasswordHash = hashPassword(randomUUID());
+
+  async function waitForBackupCreate() {
+    while (backupDonePromise) await backupDonePromise;
+  }
+
+  async function waitForMediaMutations() {
+    if (activeMediaMutations === 0) return;
+    await new Promise<void>((resolve) => {
+      mediaIdleResolvers.push(resolve);
+    });
+  }
+
+  async function waitForBusinessMutations() {
+    if (activeBusinessMutations === 0) return;
+    await new Promise<void>((resolve) => {
+      businessIdleResolvers.push(resolve);
+    });
+  }
+
+  function releaseMediaMutation() {
+    activeMediaMutations = Math.max(0, activeMediaMutations - 1);
+    if (activeMediaMutations === 0) {
+      const resolvers = mediaIdleResolvers;
+      mediaIdleResolvers = [];
+      resolvers.forEach((resolve) => resolve());
+    }
+  }
+
+  function releaseBusinessMutation() {
+    activeBusinessMutations = Math.max(0, activeBusinessMutations - 1);
+    if (activeBusinessMutations === 0) {
+      const resolvers = businessIdleResolvers;
+      businessIdleResolvers = [];
+      resolvers.forEach((resolve) => resolve());
+    }
+  }
+
+  async function runBackupCreateExclusive<T>(handler: () => Promise<T>) {
+    if (backupCreateInProgress) {
+      throw new BackupServiceError("BACKUP_CONFLICT", "已有备份创建任务正在进行，请稍后重试", 409);
+    }
+    backupCreateInProgress = true;
+    backupDonePromise = new Promise<void>((resolve) => {
+      resolveBackupDone = resolve;
+    });
+    try {
+      await waitForMediaMutations();
+      return await handler();
+    } finally {
+      backupCreateInProgress = false;
+      const resolve = resolveBackupDone;
+      resolveBackupDone = null;
+      backupDonePromise = null;
+      resolve?.();
+    }
+  }
+
+  async function runRestoreExclusive<T>(handler: () => Promise<T>) {
+    if (restoreInProgress || backupCreateInProgress) {
+      throw new BackupServiceError("BACKUP_CONFLICT", "已有备份或恢复任务正在进行，请稍后重试", 409);
+    }
+    restoreInProgress = true;
+    try {
+      await waitForBusinessMutations();
+      await waitForMediaMutations();
+      return await handler();
+    } finally {
+      restoreInProgress = false;
+    }
+  }
 
   await mkdir(options.uploadDir, { recursive: true });
-  await app.register(cors, { origin: true });
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("X-Request-Id", request.id);
+    const corsDecision = evaluateCorsRequest(corsConfig, request.headers.origin);
+    if (!corsDecision.allowed) {
+      logSecurityEvent(request, "cors_rejected", {
+        reason: corsDecision.reason,
+        origin: request.headers.origin
+      }, "warn");
+      return sendError(reply, 403, "FORBIDDEN", "请求来源不被允许");
+    }
+  });
+  await app.register(cors, {
+    origin: corsOriginResolver(corsConfig),
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-Request-Id"],
+    exposedHeaders: ["X-Request-Id"]
+  });
   await app.register(jwt, { secret: options.jwtSecret });
   await app.register(multipart, {
-    limits: { fileSize: Math.max(uploadLimits.imageMaxBytes, uploadLimits.videoMaxBytes), files: 1 }
+    limits: { fileSize: Math.max(uploadLimits.imageMaxBytes, uploadLimits.videoMaxBytes, backupArchiveMaxBytes), files: 1 }
   });
   await app.register(fastifyStatic, {
     root: options.uploadDir,
@@ -501,29 +885,136 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     decorateReply: false
   });
 
-  app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, _request, reply) => {
+  app.addHook("preHandler", async (request, reply) => {
+    if (isUnsafeHttpMethod(request.method) && !isRestoreRoute(request)) {
+      if (restoreInProgress) {
+        return sendError(
+          reply,
+          503,
+          "MAINTENANCE_MODE",
+          "系统正在恢复备份，请稍后再试"
+        );
+      }
+      activeBusinessMutations += 1;
+      (request as FastifyRequest & { [businessMutationReleaseSymbol]?: () => void })[
+        businessMutationReleaseSymbol
+      ] = releaseBusinessMutation;
+    }
+    if (!isMediaMutationRequest(request)) return;
+    await waitForBackupCreate();
+    activeMediaMutations += 1;
+    (request as FastifyRequest & { [mediaMutationReleaseSymbol]?: () => void })[mediaMutationReleaseSymbol] =
+      releaseMediaMutation;
+  });
+
+  app.addHook("onResponse", async (request) => {
+    const businessRelease = (request as FastifyRequest & { [businessMutationReleaseSymbol]?: () => void })[
+      businessMutationReleaseSymbol
+    ];
+    if (businessRelease) {
+      delete (request as FastifyRequest & { [businessMutationReleaseSymbol]?: () => void })[
+        businessMutationReleaseSymbol
+      ];
+      businessRelease();
+    }
+    const release = (request as FastifyRequest & { [mediaMutationReleaseSymbol]?: () => void })[
+      mediaMutationReleaseSymbol
+    ];
+    if (!release) return;
+    delete (request as FastifyRequest & { [mediaMutationReleaseSymbol]?: () => void })[mediaMutationReleaseSymbol];
+    release();
+  });
+
+  app.setErrorHandler((error: Error & { statusCode?: number; code?: string }, request, reply) => {
     if (error instanceof DetailPageDomainError) {
       return sendError(reply, error.statusCode, error.code, error.message);
     }
     if (error.code === "MEDIA_RECOVERY_FAILED") {
-      return sendError(reply, 500, error.code, error.message);
+      logSecurityEvent(request, "media_recovery_failed", {
+        error: serializeErrorForLog(error),
+        headers: request.headers,
+        body: request.body
+      }, "error");
+      return sendPublicErrorWithRequestId(
+        reply,
+        500,
+        error.code,
+        publicMediaRecoveryErrorMessage,
+        request.id
+      );
     }
     const statusCode = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
-    return sendError(reply, statusCode, "INTERNAL_ERROR", error.message || "服务异常");
+    if (statusCode < 500) {
+      return sendError(reply, statusCode, error.code ?? "BAD_REQUEST", "请求参数错误");
+    }
+
+    request.log.error({
+      event: "request_error",
+      requestId: request.id,
+      error: serializeErrorForLog(error),
+      headers: redactSensitive(request.headers),
+      body: redactSensitive(request.body)
+    }, "request failed");
+    return sendPublicErrorWithRequestId(reply, statusCode, "INTERNAL_ERROR", publicInternalErrorMessage, request.id);
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    return sendError(reply, 404, "NOT_FOUND", "接口不存在");
   });
 
   async function requireAdmin(request: AdminRequest, reply: FastifyReply) {
     try {
-      const decoded = await request.jwtVerify<{ id: number; username: string }>();
-      const admin = await prisma.adminUser.findFirst({
-        where: { id: decoded.id, status: "enabled" }
+      const decoded = await request.jwtVerify<{ id: number; username: string; jti?: string }>();
+      if (!decoded.jti) throw new Error("missing session id");
+      const session = await prisma.adminSession.findUnique({
+        where: { jti: decoded.jti },
+        include: { admin: true }
       });
-      if (!admin) throw new Error("missing admin");
-      request.admin = { id: admin.id, username: admin.username };
+      if (
+        !session ||
+        session.adminId !== decoded.id ||
+        session.revokedAt ||
+        session.expiresAt <= currentTime() ||
+        session.admin.status !== "enabled"
+      ) {
+        throw new Error("invalid admin session");
+      }
+      request.admin = { id: session.admin.id, username: session.admin.username, sessionJti: session.jti };
     } catch {
       return sendError(reply, 401, "UNAUTHORIZED", "请先登录");
     }
   }
+
+  async function requireClientSession(request: ClientRequest, reply: FastifyReply) {
+    const result = await verifyClientSessionToken(prisma, {
+      token: bearerTokenFromRequest(request),
+      now: currentTime(),
+      touch: true
+    });
+    if (!result.ok) {
+      logSecurityEvent(request, "client_session_rejected", {
+        reason: result.reason,
+        code: result.publicErrorCode,
+        hasAuthorization: Boolean(request.headers.authorization),
+        origin: request.headers.origin,
+        referer: request.headers.referer,
+        userAgent: request.headers["user-agent"]
+      }, "warn");
+      return sendError(reply, 401, result.publicErrorCode, result.publicMessage);
+    }
+    request.clientSession = {
+      id: result.session.id,
+      appId: result.session.appId,
+      openidHash: result.session.openidHash,
+      unionidHash: result.session.unionidHash,
+      expiresAt: result.session.expiresAt
+    };
+  }
+
+  app.addHook("preHandler", async (request, reply) => {
+    if (!isClientProtectedRequest(request)) return;
+    return requireClientSession(request as ClientRequest, reply);
+  });
 
   async function deleteMediaAssetWithFile(id: number) {
     const asset = await prisma.mediaAsset.findUnique({ where: { id }, include: { tags: true } });
@@ -585,6 +1076,16 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return { status: "deleted" as const };
   }
 
+  async function writeOperationLog(action: string, detail: Record<string, unknown>, createdBy?: number) {
+    await prisma.operationLog.create({
+      data: {
+        action,
+        detail: JSON.stringify(redactSensitive(detail)),
+        createdBy
+      }
+    });
+  }
+
   async function mediaDtosForReferences(rows: Array<{ id: number; referenceCount: number }>) {
     if (!rows.length) return [];
     const assets: Array<Prisma.MediaAssetGetPayload<{ include: { tags: true } }>> = [];
@@ -611,32 +1112,551 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   }
 
   app.post("/api/admin/auth/login", async (request, reply) => {
-    const body = request.body as { username?: string; password?: string };
-    const admin = await prisma.adminUser.findUnique({ where: { username: body.username ?? "" } });
-    if (!admin || admin.status !== "enabled" || !verifyPassword(body.password ?? "", admin.passwordHash)) {
+    const parsed = loginRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "登录参数错误"));
+    }
+
+    const clientIp = trustedClientIp(request);
+    const loginLimiterKey = loginRateLimitKey({
+      clientIp,
+      username: parsed.data.username
+    });
+    const admin = await prisma.adminUser.findUnique({ where: { username: parsed.data.username } });
+    const candidatePasswordHash = admin?.status === "enabled" ? admin.passwordHash : invalidLoginPasswordHash;
+    const passwordMatches = verifyPassword(parsed.data.password, candidatePasswordHash);
+    if (!admin || admin.status !== "enabled" || !passwordMatches) {
+      const limitDecision = await rateLimiter.consume(loginLimiterKey, loginLimiterPolicy);
+      logSecurityEvent(request, "admin_login_failed", {
+        username: parsed.data.username,
+        clientIp,
+        adminExists: Boolean(admin),
+        adminStatus: admin?.status ?? "missing"
+      }, "warn");
+      if (!limitDecision.allowed) {
+        logSecurityEvent(request, "admin_login_rate_limited", {
+          username: parsed.data.username,
+          clientIp,
+          retryAfterSeconds: limitDecision.retryAfterSeconds,
+          resetAt: limitDecision.resetAt
+        }, "warn");
+        return sendRateLimitError(reply, limitDecision);
+      }
       return sendError(reply, 401, "INVALID_CREDENTIALS", "用户名或密码错误");
     }
 
-    const token = app.jwt.sign({ id: admin.id, username: admin.username }, { expiresIn: "7d" });
+    await rateLimiter.reset(loginLimiterKey);
+    const session = await createAdminSession(prisma, { adminId: admin.id, now: currentTime() });
+    const token = app.jwt.sign(
+      { id: admin.id, username: admin.username, jti: session.jti },
+      { expiresIn: ADMIN_SESSION_JWT_EXPIRES_IN }
+    );
     return reply.send(ok({ token, id: admin.id, username: admin.username }));
   });
 
-  app.post("/api/admin/auth/logout", { preHandler: requireAdmin }, async (_request, reply) => {
+  app.post("/api/admin/auth/logout", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const revoked = await revokeAdminSession(prisma, {
+      jti: request.admin!.sessionJti,
+      reason: adminSessionRevokeReasons.logout,
+      now: currentTime()
+    });
+    logSecurityEvent(request, "admin_session_revoked", {
+      adminId: request.admin!.id,
+      username: request.admin!.username,
+      sessionJti: request.admin!.sessionJti,
+      reason: adminSessionRevokeReasons.logout,
+      revokedSessionCount: revoked.count
+    });
     return reply.send(ok({}));
   });
 
   app.get("/api/admin/auth/me", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
-    return reply.send(ok(request.admin));
+    return reply.send(ok({ id: request.admin!.id, username: request.admin!.username }));
+  });
+
+  app.post("/api/admin/auth/change-password", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = adminChangePasswordRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      const hasWeakPasswordIssue = parsed.error.issues.some((issue) => issue.path[0] === "newPassword");
+      logSecurityEvent(request, "admin_password_change_failed", {
+        adminId: request.admin!.id,
+        reason: hasWeakPasswordIssue ? "weak_password" : "validation_error"
+      }, "warn");
+      return sendError(
+        reply,
+        400,
+        hasWeakPasswordIssue ? "WEAK_PASSWORD" : "VALIDATION_ERROR",
+        firstZodIssueMessage(parsed.error, "密码参数错误")
+      );
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const admin = await tx.adminUser.findFirst({
+        where: { id: request.admin!.id, status: "enabled" }
+      });
+      if (!admin || !verifyPassword(parsed.data.currentPassword, admin.passwordHash)) {
+        return { status: "invalid_current_password" as const };
+      }
+
+      const updated = await tx.adminUser.updateMany({
+        where: { id: admin.id, status: "enabled", passwordHash: admin.passwordHash },
+        data: { passwordHash: hashPassword(parsed.data.newPassword) }
+      });
+      if (updated.count !== 1) return { status: "stale_password" as const };
+
+      const revoked = await revokeAdminSessionsForAdmin(tx, {
+        adminId: admin.id,
+        reason: adminSessionRevokeReasons.passwordChanged,
+        now: currentTime()
+      });
+      return { status: "changed" as const, revokedSessionCount: revoked.count };
+    });
+
+    if (result.status !== "changed") {
+      logSecurityEvent(request, "admin_password_change_failed", {
+        adminId: request.admin!.id,
+        reason: result.status
+      }, "warn");
+      return sendError(reply, 401, "INVALID_CREDENTIALS", "当前密码错误");
+    }
+
+    logSecurityEvent(request, "admin_password_changed", {
+      adminId: request.admin!.id,
+      username: request.admin!.username
+    });
+    logSecurityEvent(request, "admin_sessions_revoked", {
+      adminId: request.admin!.id,
+      reason: adminSessionRevokeReasons.passwordChanged,
+      revokedSessionCount: result.revokedSessionCount
+    });
+    return reply.send(ok({ revokedSessionCount: result.revokedSessionCount }));
   });
 
   app.get("/api/admin/dashboard/overview", { preHandler: requireAdmin }, async (_request, reply) => {
-    const now = new Date();
+    const now = currentTime();
     const [todayPv, weekPv, monthPv] = await Promise.all([
-      prisma.pageViewEvent.count({ where: { createdAt: { gte: startOfDay(now) } } }),
-      prisma.pageViewEvent.count({ where: { createdAt: { gte: startOfWeek(now) } } }),
-      prisma.pageViewEvent.count({ where: { createdAt: { gte: startOfMonth(now) } } })
+      weightedPageViewCount(prisma, startOfDay(now)),
+      weightedPageViewCount(prisma, startOfWeek(now)),
+      weightedPageViewCount(prisma, startOfMonth(now))
     ]);
-    return reply.send(ok({ todayPv, weekPv, monthPv }));
+    return reply.send(
+      ok({
+        todayPv,
+        weekPv,
+        monthPv,
+        estimated: analyticsConfig.sampleRate < 1,
+        sampleRate: analyticsConfig.sampleRate,
+        sampleWeight: Math.max(1, Math.round(1 / analyticsConfig.sampleRate))
+      })
+    );
+  });
+
+  app.get("/api/admin/backups", { preHandler: requireAdmin }, async (_request, reply) => {
+    return reply.send(ok({ backups: await backupService.listBackups() }));
+  });
+
+  app.post("/api/admin/backups", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = backupCreateRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      await writeOperationLog(
+        "CREATE_BACKUP_FAILED",
+        { code: "VALIDATION_ERROR" },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_create_failed", {
+        adminId: request.admin!.id,
+        code: "VALIDATION_ERROR"
+      }, "warn");
+      return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "备份参数错误"));
+    }
+
+    logSecurityEvent(request, "backup_create_requested", {
+      adminId: request.admin!.id,
+      username: request.admin!.username
+    });
+    try {
+      const backup = await runBackupCreateExclusive(() =>
+        backupService.createBackup({
+          createdBy: { id: request.admin!.id, username: request.admin!.username },
+          note: parsed.data.note
+        })
+      );
+      await writeOperationLog(
+        "CREATE_BACKUP",
+        { backupId: backup.id, size: backup.size, sha256: backup.sha256, status: backup.status },
+        request.admin!.id
+      );
+      logSecurityEvent(request, "backup_create_completed", {
+        adminId: request.admin!.id,
+        backupId: backup.id,
+        size: backup.size,
+        sha256: backup.sha256
+      });
+      return reply.send(ok({ backup }));
+    } catch (error) {
+      await writeOperationLog(
+        "CREATE_BACKUP_FAILED",
+        { code: backupErrorCode(error) },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_create_failed", {
+        adminId: request.admin!.id,
+        code: backupErrorCode(error),
+        error: serializeErrorForLog(error)
+      }, "error");
+      if (error instanceof BackupServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/admin/backups/import", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    let archive: Buffer | null = null;
+    let originalName: string | null = null;
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === "field") continue;
+        if (part.fieldname !== "file" && part.fieldname !== "archive") {
+          for await (const chunk of part.file) void chunk;
+          return sendError(reply, 400, "VALIDATION_ERROR", "导入归档字段必须为 file 或 archive");
+        }
+        if (archive) return sendError(reply, 400, "VALIDATION_ERROR", "每次只能导入一个备份归档");
+        originalName = path.basename(part.filename || "backup.tar").slice(0, 160);
+        archive = await readBackupArchive(part);
+      }
+    } catch (error) {
+      if ((error as Error).message === "FILE_TOO_LARGE" || (error as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
+        return sendError(reply, 413, "BACKUP_INVALID", "备份归档过大");
+      }
+      if (error instanceof BackupServiceError) return sendError(reply, error.statusCode, error.code, error.message);
+      throw error;
+    }
+    if (!archive) return sendError(reply, 400, "VALIDATION_ERROR", "导入归档不能为空");
+
+    logSecurityEvent(request, "backup_import_requested", {
+      adminId: request.admin!.id,
+      username: request.admin!.username,
+      source: "external_archive",
+      archiveName: originalName,
+      archiveBytes: archive.byteLength
+    });
+    try {
+      const imported = await backupService.importArchive({
+        archive,
+        originalName,
+        importedBy: { id: request.admin!.id, username: request.admin!.username }
+      });
+      await writeOperationLog(
+        "IMPORT_BACKUP",
+        {
+          backupId: imported.backup.id,
+          source: "external_archive",
+          operator: { adminId: request.admin!.id, username: request.admin!.username },
+          archiveName: originalName,
+          archiveBytes: archive.byteLength,
+          result: "completed",
+          requestId: request.id
+        },
+        request.admin!.id
+      );
+      logSecurityEvent(request, "backup_import_completed", {
+        adminId: request.admin!.id,
+        backupId: imported.backup.id,
+        source: "external_archive",
+        archiveName: originalName,
+        archiveBytes: archive.byteLength,
+        requestId: request.id
+      });
+      return reply.send(ok(backupImportPreflightResponseSchema.parse({
+        backup: imported.backup,
+        preflight: imported.summary
+      })));
+    } catch (error) {
+      await writeOperationLog(
+        "IMPORT_BACKUP_FAILED",
+        {
+          source: "external_archive",
+          operator: { adminId: request.admin!.id, username: request.admin!.username },
+          archiveName: originalName,
+          archiveBytes: archive.byteLength,
+          result: "failed",
+          requestId: request.id,
+          code: backupErrorCode(error)
+        },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_import_rejected", {
+        adminId: request.admin!.id,
+        source: "external_archive",
+        archiveName: originalName,
+        archiveBytes: archive.byteLength,
+        requestId: request.id,
+        code: backupErrorCode(error),
+        error: serializeErrorForLog(error)
+      }, "warn");
+      if (error instanceof BackupServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/admin/backups/:id/restore", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsedId = backupIdSchema.safeParse((request.params as { id?: string }).id);
+    if (!parsedId.success) return sendError(reply, 400, "VALIDATION_ERROR", "备份 ID 无效");
+    const parsed = backupRestoreRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      const confirmationMissing = requiresBackupRestoreConfirmation(parsed.error);
+      return sendError(
+        reply,
+        400,
+        confirmationMissing ? "BACKUP_RESTORE_CONFIRMATION_REQUIRED" : "VALIDATION_ERROR",
+        confirmationMissing ? "恢复备份需要显式确认" : firstZodIssueMessage(parsed.error, "恢复备份参数错误")
+      );
+    }
+    if (parsed.data.backupId !== parsedId.data) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "路径备份 ID 与请求体不一致");
+    }
+
+    logSecurityEvent(request, "backup_restore_requested", {
+      adminId: request.admin!.id,
+      username: request.admin!.username,
+      backupId: parsedId.data,
+      source: "backup",
+      requestId: request.id
+    });
+    try {
+      const restore = await runRestoreExclusive(() =>
+        backupService.restoreBackup({
+          backupId: parsedId.data,
+          createdBy: { id: request.admin!.id, username: request.admin!.username }
+        })
+      );
+      const revoked = await revokeAllAdminSessions(prisma, {
+        reason: adminSessionRevokeReasons.restoreCompleted,
+        now: currentTime()
+      });
+      await writeOperationLog(
+        "RESTORE_BACKUP",
+        {
+          backupId: restore.backupId,
+          snapshotBackupId: restore.snapshotBackupId,
+          restoreId: restore.restoreId,
+          source: "backup",
+          operator: { adminId: request.admin!.id, username: request.admin!.username },
+          result: "completed",
+          requestId: request.id,
+          revokedSessionCount: revoked.count
+        },
+        request.admin!.id
+      );
+      logSecurityEvent(request, "backup_restore_completed", {
+        adminId: request.admin!.id,
+        backupId: restore.backupId,
+        snapshotBackupId: restore.snapshotBackupId,
+        restoreId: restore.restoreId,
+        source: "backup",
+        result: "completed",
+        requestId: request.id,
+        revokedSessionCount: revoked.count
+      });
+      return reply.send(ok(backupRestoreAcceptedResponseSchema.parse({
+        restoreId: restore.restoreId,
+        backupId: restore.backupId,
+        snapshotBackupId: restore.snapshotBackupId,
+        revokedSessionCount: revoked.count
+      })));
+    } catch (error) {
+      await writeOperationLog(
+        "RESTORE_BACKUP_FAILED",
+        {
+          backupId: parsedId.data,
+          source: "backup",
+          operator: { adminId: request.admin!.id, username: request.admin!.username },
+          result: "failed",
+          requestId: request.id,
+          code: backupErrorCode(error)
+        },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_restore_failed", {
+        adminId: request.admin!.id,
+        backupId: parsedId.data,
+        source: "backup",
+        result: "failed",
+        requestId: request.id,
+        code: backupErrorCode(error),
+        statusCode: backupErrorStatusCode(error),
+        error: serializeErrorForLog(error)
+      }, "error");
+      if (error instanceof BackupServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/api/admin/backups/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsedId = backupIdSchema.safeParse((request.params as { id?: string }).id);
+    if (!parsedId.success) {
+      await writeOperationLog(
+        "DELETE_BACKUP_FAILED",
+        { code: "VALIDATION_ERROR" },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_delete_failed", {
+        adminId: request.admin!.id,
+        code: "VALIDATION_ERROR"
+      }, "warn");
+      return sendError(reply, 400, "VALIDATION_ERROR", "备份 ID 无效");
+    }
+    const parsed = backupDeleteRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      const confirmationMissing = requiresBackupDeleteConfirmation(parsed.error);
+      const code = confirmationMissing ? "BACKUP_DELETE_CONFIRMATION_REQUIRED" : "VALIDATION_ERROR";
+      await writeOperationLog(
+        "DELETE_BACKUP_FAILED",
+        { backupId: parsedId.data, code },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_delete_failed", {
+        adminId: request.admin!.id,
+        backupId: parsedId.data,
+        code
+      }, "warn");
+      return sendError(
+        reply,
+        400,
+        code,
+        confirmationMissing ? "删除备份需要显式确认" : firstZodIssueMessage(parsed.error, "删除备份参数错误")
+      );
+    }
+    if (parsed.data.backupId !== parsedId.data) {
+      await writeOperationLog(
+        "DELETE_BACKUP_FAILED",
+        { backupId: parsedId.data, code: "VALIDATION_ERROR" },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_delete_failed", {
+        adminId: request.admin!.id,
+        backupId: parsedId.data,
+        code: "VALIDATION_ERROR"
+      }, "warn");
+      return sendError(reply, 400, "VALIDATION_ERROR", "路径备份 ID 与请求体不一致");
+    }
+
+    logSecurityEvent(request, "backup_delete_requested", {
+      adminId: request.admin!.id,
+      username: request.admin!.username,
+      backupId: parsedId.data
+    });
+    try {
+      const result = await backupService.deleteBackup(parsedId.data);
+      await writeOperationLog("DELETE_BACKUP", { backupId: result.backupId }, request.admin!.id);
+      logSecurityEvent(request, "backup_delete_completed", {
+        adminId: request.admin!.id,
+        backupId: result.backupId
+      });
+      return reply.send(ok(result));
+    } catch (error) {
+      await writeOperationLog(
+        "DELETE_BACKUP_FAILED",
+        { backupId: parsedId.data, code: backupErrorCode(error) },
+        request.admin!.id
+      ).catch(() => undefined);
+      logSecurityEvent(request, "backup_delete_failed", {
+        adminId: request.admin!.id,
+        backupId: parsedId.data,
+        code: backupErrorCode(error),
+        error: serializeErrorForLog(error)
+      }, "error");
+      if (error instanceof BackupServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post(clientAuthLoginExchangePath, async (request, reply) => {
+    const clientIp = trustedClientIp(request);
+    const limiterKey = clientWechatLoginRateLimitKey(clientIp);
+    const preLimitDecision = await rateLimiter.peek(limiterKey, loginLimiterPolicy);
+    if (!preLimitDecision.allowed) {
+      logSecurityEvent(request, "client_wechat_login_rate_limited", {
+        clientIp,
+        retryAfterSeconds: preLimitDecision.retryAfterSeconds,
+        resetAt: preLimitDecision.resetAt
+      }, "warn");
+      return sendRateLimitError(reply, preLimitDecision);
+    }
+
+    const parsed = clientWechatLoginRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      await rateLimiter.consume(limiterKey, loginLimiterPolicy);
+      logSecurityEvent(request, "client_wechat_login_failed", {
+        clientIp,
+        reason: "validation_error"
+      }, "warn");
+      return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "微信登录参数错误"));
+    }
+
+    const verification = await weChatLoginCodeVerifier.verifyLoginCode({
+      code: parsed.data.code,
+      expectedAppId: clientAuthConfig.wechat.appId,
+      timeoutMs: clientAuthConfig.wechat.code2SessionTimeoutMs,
+      requestId: request.id
+    });
+    if (!verification.ok) {
+      await rateLimiter.consume(limiterKey, loginLimiterPolicy);
+      logSecurityEvent(request, "client_wechat_login_failed", {
+        clientIp,
+        reason: verification.reason,
+        code: verification.publicErrorCode,
+        retryable: verification.retryable,
+        upstreamErrCode: verification.upstreamErrCode
+      }, verification.retryable ? "error" : "warn");
+      return sendError(
+        reply,
+        wechatAuthFailureStatus(verification.reason),
+        verification.publicErrorCode,
+        verification.publicMessage
+      );
+    }
+
+    if (verification.appId !== clientAuthConfig.wechat.appId) {
+      await rateLimiter.consume(limiterKey, loginLimiterPolicy);
+      logSecurityEvent(request, "client_wechat_login_failed", {
+        clientIp,
+        reason: "appid_mismatch",
+        code: "INVALID_WECHAT_CODE"
+      }, "warn");
+      return sendError(reply, 401, "INVALID_WECHAT_CODE", "微信登录凭证无效，请重新登录");
+    }
+
+    await rateLimiter.reset(limiterKey);
+    const issued = await createClientSession(prisma, {
+      appId: verification.appId,
+      openid: verification.openid,
+      unionid: verification.unionid,
+      ttlSeconds: clientAuthConfig.sessionTtlSeconds,
+      now: currentTime()
+    });
+    logSecurityEvent(request, "client_wechat_login_succeeded", {
+      clientIp,
+      sessionId: issued.session.id,
+      appId: issued.session.appId,
+      openidHash: issued.session.openidHash,
+      unionidHash: issued.session.unionidHash,
+      expiresAt: issued.expiresAt
+    });
+
+    return reply.send(ok(clientWechatLoginResponseSchema.parse({
+      token: issued.token,
+      tokenType: issued.tokenType,
+      expiresInSeconds: issued.expiresInSeconds,
+      expiresAt: issued.expiresAt.toISOString()
+    })));
   });
 
   app.get("/api/client/home", async (_request, reply) => {
@@ -695,14 +1715,29 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   app.post("/api/client/track/page-view", async (request, reply) => {
+    const limitDecision = await rateLimiter.consume(
+      analyticsRateLimitKey(trustedClientIp(request)),
+      analyticsLimiterPolicy
+    );
+    if (!limitDecision.allowed) {
+      logSecurityEvent(request, "analytics_rate_limited", {
+        clientIp: trustedClientIp(request),
+        retryAfterSeconds: limitDecision.retryAfterSeconds,
+        resetAt: limitDecision.resetAt
+      }, "warn");
+      return sendRateLimitError(reply, limitDecision);
+    }
+
     const parsed = pageViewRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "页面统计参数错误");
-    await prisma.pageViewEvent.create({
-      data: {
-        pagePath: parsed.data.pagePath,
-        scene: parsed.data.scene,
-        userAgent: request.headers["user-agent"]
-      }
+    await recordPageViewEvent(prisma, {
+      pagePath: parsed.data.pagePath,
+      scene: parsed.data.scene,
+      userAgent: request.headers["user-agent"],
+      clientIp: trustedClientIp(request),
+      now: currentTime(),
+      hmacSecret: options.jwtSecret,
+      config: analyticsConfig
     });
     return reply.send(ok({}));
   });
@@ -1148,7 +2183,11 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           continue;
         }
         deletedIds.push(id);
-      } catch {
+      } catch (error) {
+        logSecurityEvent(request, "media_recovery_failed", {
+          mediaAssetId: id,
+          error: serializeErrorForLog(error)
+        }, "error");
         failed.push({ id, reason: "DELETE_FAILED" });
       }
     }

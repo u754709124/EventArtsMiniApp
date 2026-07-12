@@ -24,6 +24,33 @@ const statements = [
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS admin_sessions (
+    jti TEXT PRIMARY KEY,
+    adminId INTEGER NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    revokedAt DATETIME,
+    revokeReason TEXT,
+    FOREIGN KEY(adminId) REFERENCES admin_users(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS admin_sessions_adminId_idx ON admin_sessions(adminId)`,
+  `CREATE INDEX IF NOT EXISTS admin_sessions_expiresAt_idx ON admin_sessions(expiresAt)`,
+  `CREATE INDEX IF NOT EXISTS admin_sessions_revokedAt_idx ON admin_sessions(revokedAt)`,
+  `CREATE TABLE IF NOT EXISTS client_sessions (
+    id TEXT PRIMARY KEY,
+    tokenHash TEXT NOT NULL UNIQUE,
+    appId TEXT NOT NULL,
+    openidHash TEXT NOT NULL,
+    unionidHash TEXT,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    revokedAt DATETIME,
+    revokeReason TEXT,
+    lastSeenAt DATETIME
+  )`,
+  `CREATE INDEX IF NOT EXISTS client_sessions_openidHash_idx ON client_sessions(openidHash)`,
+  `CREATE INDEX IF NOT EXISTS client_sessions_expiresAt_idx ON client_sessions(expiresAt)`,
+  `CREATE INDEX IF NOT EXISTS client_sessions_revokedAt_idx ON client_sessions(revokedAt)`,
   `CREATE TABLE IF NOT EXISTS media_assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     resourceName TEXT NOT NULL,
@@ -237,9 +264,11 @@ const statements = [
     ON detail_page_content_media(mediaAssetId)`,
   `CREATE TABLE IF NOT EXISTS page_view_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pagePath TEXT NOT NULL,
-    scene TEXT,
-    userAgent TEXT,
+    pagePath TEXT NOT NULL CHECK(length(pagePath) <= 256),
+    scene TEXT CHECK(scene IS NULL OR length(scene) <= 64),
+    userAgent TEXT CHECK(userAgent IS NULL OR length(userAgent) <= 256),
+    anonymousFingerprint TEXT NOT NULL DEFAULT '',
+    sampleWeight INTEGER NOT NULL DEFAULT 1,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS operation_logs (
@@ -298,6 +327,23 @@ async function ensureMenuItemColumns(prisma: AppPrismaClient) {
   if (!names.has("showOnHome")) {
     await prisma.$executeRawUnsafe("ALTER TABLE menu_items ADD COLUMN showOnHome BOOLEAN NOT NULL DEFAULT true");
   }
+}
+
+async function ensurePageViewEventColumns(prisma: AppPrismaClient) {
+  if (!(await tableExists(prisma, "page_view_events"))) return;
+  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(page_view_events)");
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("anonymousFingerprint")) {
+    await prisma.$executeRawUnsafe("ALTER TABLE page_view_events ADD COLUMN anonymousFingerprint TEXT NOT NULL DEFAULT ''");
+  }
+  if (!names.has("sampleWeight")) {
+    await prisma.$executeRawUnsafe("ALTER TABLE page_view_events ADD COLUMN sampleWeight INTEGER NOT NULL DEFAULT 1");
+  }
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS page_view_events_createdAt_idx ON page_view_events(createdAt)");
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS page_view_events_anonymousFingerprint_pagePath_scene_createdAt_idx
+      ON page_view_events(anonymousFingerprint, pagePath, scene, createdAt)`
+  );
 }
 
 function isDeferredDetailPageIndex(statement: string) {
@@ -475,7 +521,7 @@ async function migrateLegacyMedia(prisma: AppPrismaClient, uploadDir: string) {
 export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: SchemaOptions = {}) {
   const hasMediaTable = await tableExists(prisma, "media_assets");
   if (hasMediaTable) {
-    const uploadDir = options.uploadDir ?? path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? "../../uploads");
+    const uploadDir = options.uploadDir ?? path.resolve(process.cwd(), "../../uploads");
     await migrateLegacyMedia(prisma, uploadDir);
   }
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
@@ -485,5 +531,6 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
   }
   await ensureArtistColumns(prisma);
   await ensureMenuItemColumns(prisma);
+  await ensurePageViewEventColumns(prisma);
   await runDetailPageMigration(prisma);
 }
