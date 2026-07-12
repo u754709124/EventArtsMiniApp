@@ -10,6 +10,7 @@ $detail-border: #eee8df;
 $detail-shadow: 0 8rpx 30rpx rgba(71, 51, 31, 0.07);
 $detail-counter-background: rgba(25, 18, 13, 0.64);
 $detail-back-background: rgba(255, 255, 255, 0.94);
+$detail-share-background: rgba(255, 255, 255, 0.96);
 $detail-banner-height: 404rpx;
 $detail-card-radius: 20rpx;
 $detail-card-padding: 24rpx;
@@ -262,6 +263,48 @@ $detail-body-line-height: 1.72;
     margin-top: 0;
     padding-top: 24rpx;
   }
+
+  &--with-floating-share {
+    padding-bottom: calc(156rpx + env(safe-area-inset-bottom));
+  }
+}
+
+.detail-share-button {
+  position: fixed;
+  right: 30rpx;
+  bottom: calc(40rpx + env(safe-area-inset-bottom));
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 104rpx;
+  height: 104rpx;
+  min-width: 104rpx;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid rgba(218, 193, 160, 0.78);
+  border-radius: 999rpx;
+  color: #2d2d2d;
+  background: $detail-share-background;
+  box-shadow: 0 10rpx 30rpx rgba(71, 51, 31, 0.16);
+  line-height: 1;
+
+  &::after {
+    border: 0;
+  }
+
+  &:active {
+    opacity: 0.78;
+    transform: scale(0.98);
+  }
+}
+
+.detail-share-button__icon {
+  display: block;
+  width: 52rpx;
+  height: 52rpx;
 }
 
 .detail-rich-content {

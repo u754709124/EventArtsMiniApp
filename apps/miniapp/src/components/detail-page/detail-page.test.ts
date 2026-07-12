@@ -21,6 +21,13 @@ import {
   updateFailedMediaIds
 } from "./media-health";
 import { createDetailRequestGate } from "./request-race";
+import {
+  buildDetailSharePath,
+  buildDetailShareState,
+  normalizeDetailShareId,
+  resolveDetailShareImage,
+  resolveDetailShareTitle
+} from "./detail-share";
 import { getVideoAspectRatioPadding } from "./video-layout";
 
 const miniappSourceRoot = resolve(import.meta.dirname, "../..");
@@ -301,15 +308,74 @@ describe("recoverable detail media", () => {
   });
 });
 
+describe("detail page share model", () => {
+  it("normalizes only positive integer detail IDs into public detail paths", () => {
+    expect(normalizeDetailShareId("101")).toBe(101);
+    expect(normalizeDetailShareId(101)).toBe(101);
+    expect(normalizeDetailShareId("0")).toBeNull();
+    expect(normalizeDetailShareId("1.5")).toBeNull();
+    expect(normalizeDetailShareId("abc")).toBeNull();
+    expect(buildDetailSharePath("101")).toBe("/pages/detail/index?id=101");
+    expect(buildDetailSharePath("abc")).toBeNull();
+  });
+
+  it("builds stable share payloads from the current loaded detail only", () => {
+    const detailPage = artist().detailPage;
+    detailPage.banners = [
+      { id: 2, assetId: 12, url: "/uploads/second.png", width: 100, height: 100, sortOrder: 2 },
+      { id: 1, assetId: 11, url: "/uploads/first.png", width: 100, height: 100, sortOrder: 1 }
+    ];
+    const share = buildDetailShareState({
+      routeId: "101",
+      detailPage,
+      hero: { ...detailPage.hero, title: "分享标题" }
+    });
+    expect(share).toEqual({
+      canShare: true,
+      payload: {
+        title: "分享标题",
+        path: "/pages/detail/index?id=101",
+        imageUrl: "/uploads/first.png"
+      }
+    });
+    expect(buildDetailShareState({ routeId: "999", detailPage }).canShare).toBe(false);
+    expect(buildDetailShareState({ routeId: "abc", detailPage }).canShare).toBe(false);
+    expect(buildDetailShareState({ routeId: "101", detailPage: null }).canShare).toBe(false);
+  });
+
+  it("falls back to detail names and omits imageUrl when no reliable banner exists", () => {
+    const detailPage = activityCase().detailPage;
+    expect(resolveDetailShareTitle(detailPage, { ...detailPage.hero, title: "" })).toBe("年度品牌盛典详情");
+    expect(resolveDetailShareImage(detailPage)).toBeNull();
+    expect(buildDetailShareState({ routeId: 201, detailPage }).payload).toEqual({
+      title: "年度品牌盛典详情",
+      path: "/pages/detail/index?id=201"
+    });
+  });
+});
+
 describe("detail routes forbid removed business actions", () => {
-  it("contains no favorite/share/consult/booking/fixed action or residual spacer strings", () => {
+  it("allows only the floating native share entry and keeps removed business actions banned", () => {
     const sources = [
+      "pages/detail/index.tsx",
+      "pages/detail/index.config.ts",
       "pages/artists/detail.tsx",
       "pages/cases/detail.tsx",
       "components/detail-page/DetailPageRenderer.tsx",
+      "components/detail-page/DetailNavigation.tsx",
+      "components/detail-page/detail-share.ts",
       "components/detail-page/detail-page.scss"
     ].map((file) => readFileSync(resolve(miniappSourceRoot, file), "utf8"));
-    const forbidden = ["收藏", "分享", "在线咨询", "立即预约", "fixed-action", "action-spacer"];
-    forbidden.forEach((text) => expect(sources.join("\n")).not.toContain(text));
+    const joined = sources.join("\n");
+    const forbidden = ["收藏", "在线咨询", "立即预约", "fixed-action", "action-spacer"];
+    forbidden.forEach((text) => expect(joined).not.toContain(text));
+    expect(joined).toContain('openType="share"');
+    expect(joined).toContain("useShareAppMessage");
+    expect(joined).toContain("enableShareAppMessage: true");
+    expect(joined).toContain("/pages/detail/index?id=");
+    expect(joined).toContain("detail-share-button");
+    expect(joined).not.toContain("detail-navigation__share");
+    expect(joined).not.toContain("fixed-bottom");
+    expect(joined).not.toContain("business-action");
   });
 });

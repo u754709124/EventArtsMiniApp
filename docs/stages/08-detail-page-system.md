@@ -71,6 +71,17 @@
 - 富文本图片会预检并提供失败重试/remount；BANNER 图片失败可见、使用占位图且可重试；视频使用独立 Taro `Video`，有 controls、无 autoplay/loop，可信尺寸按真实比例，非法尺寸回退 16:9。
 - 请求切换使用 abort 和序列门控，切换 ID 立即清空旧数据；错误、配置缺失和媒体异常有明确 retry 或状态文案。提交为 `e4780a6`，review 修复为 `3b2d7c3`，Task 13 复审结论为 Approved。
 
+## 已完成：详情页微信分享入口
+
+- 公共详情页新增右下角悬浮圆形分享按钮；入口不在自定义导航区，不改变微信系统胶囊，也不恢复固定底部操作栏。
+- 分享按钮使用微信原生 `Button openType="share"`，页面配置启用 `enableShareAppMessage`，分享回调路径固定为 `/pages/detail/index?id=<当前详情页ID>`。
+- 分享标题优先使用当前详情 Hero 标题，空值回退详情页名称；BANNER 富文本详情使用排序后的首张有效 BANNER 作为分享图，单富文本或无可靠图片时省略 `imageUrl`。
+- 用户提供的 `/Users/chdon/Downloads/icon_font.png` 已无损复制为 `apps/miniapp/src/assets/generated/icon-share.png`；副本为 `64×64`、带 alpha，SHA-256 与原文件一致，保留深灰黑上传/分享形态。
+- 分享 payload 由纯模型生成，只有当前路由 ID 为正整数且 DTO ID 一致时才可分享；加载、错误、非法 ID 或迟到旧请求不会生成错误详情深链。
+- H5 生产页面隐藏微信原生分享按钮，不模拟分享面板，也不保留布局占位；H5 E2E 断言不存在不可用分享按钮。
+- 仍禁止收藏、在线咨询、立即预约、导航区分享按钮、第二个分享入口、固定底部业务栏和旧 spacer。
+- 微信分享卡片的端到端点击进入能力需要微信开发者工具或真机验证；自动化测试不能替代该验证。
+
 ## 已完成：Task 14 视觉文档、E2E 与截图证据
 
 - `docs/design/detail-page-system.md` 已记录公共架构、接口契约、HTML/CSS 白名单、媒体生命周期、SQLite 迁移、Tiptap 选择、Taro renderer/adapters、参考资产、测量 token、平台差异、移除业务操作和新增第三种 renderer 的八步流程。
@@ -90,6 +101,15 @@
 
 ## 当前验证证据
 
+- 2026-07-12 详情页分享入口更新：
+  - `pnpm --filter miniapp test`：通过，4 files / 22 tests。
+  - `pnpm lint`：通过。
+  - `pnpm test`：通过，shared 26 tests、miniapp 22 tests、admin 60 tests、api 100 tests。
+  - `pnpm e2e -- --project=miniapp-h5 --grep "详情页"`：命令实际触发 46/46 Playwright tests，通过；覆盖 admin 与 miniapp-h5 全量。
+  - `pnpm --filter miniapp build:h5`：通过。
+  - `pnpm build:weapp`：通过，详情页产物包含 `openType="share"`、`useShareAppMessage` 和 `enableShareAppMessage`。
+  - `pnpm release:check`：通过，覆盖 lint、unit、E2E、API build、Admin build、H5 build 和 WeApp build。
+  - 微信开发者工具或真机“发送给朋友”卡片点击直达验证尚未在本机自动化环境执行，不能宣称端到端已通过。
 - 2026-07-11 最终完成审计基线：
   - `git branch --show-current`：`codex/phase-one-delivery`。
   - `git rev-parse HEAD`：`e86c9d8574b5e953bdbfbdced6c04705e754d5c4`。

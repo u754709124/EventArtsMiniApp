@@ -1,7 +1,10 @@
-import { Text, View } from "@tarojs/components";
+import { Button, Image, Text, View } from "@tarojs/components";
 import type { ComponentType } from "react";
 import type { DetailPageRendererKey } from "@event-arts/shared";
 import { resolveDetailPagePresentation } from "@event-arts/shared/detail-page-presentation";
+import { generatedAssets } from "../../assets";
+import type { DetailShareState } from "./detail-share";
+import { canRenderDetailShareButton } from "./detail-share-platform";
 import { BannerRichTextRenderer } from "./BannerRichTextRenderer";
 import { DetailNavigation } from "./DetailNavigation";
 import { RichTextRenderer } from "./RichTextRenderer";
@@ -36,7 +39,37 @@ export function DetailPageRenderer(props: DetailRendererProps) {
       />
     );
   }
-  return <Renderer {...props} />;
+  const showShareButton = canRenderDetailShareButton(props.share);
+  return (
+    <>
+      <Renderer {...props} showShareButton={showShareButton} />
+      <DetailFloatingShareButton share={props.share} visible={showShareButton} />
+    </>
+  );
+}
+
+function DetailFloatingShareButton({
+  share,
+  visible
+}: {
+  share?: DetailShareState;
+  visible: boolean;
+}) {
+  if (!visible || !share?.canShare) return null;
+  return (
+    <Button
+      aria-label="分享页面"
+      className="detail-share-button"
+      data-testid="detail-floating-share"
+      openType="share"
+    >
+      <Image
+        className="detail-share-button__icon"
+        mode="aspectFit"
+        src={generatedAssets.iconShare}
+      />
+    </Button>
+  );
 }
 
 function DetailConfigState({

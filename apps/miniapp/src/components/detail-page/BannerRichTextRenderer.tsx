@@ -10,7 +10,7 @@ import { updateFailedMediaIds } from "./media-health";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailRendererProps } from "./types";
 
-export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailRendererProps) {
+export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShareButton = false }: DetailRendererProps) {
   const banners = useMemo(() => getDisplayDetailPageBanners(config.banners), [config.banners]);
   const [current, setCurrent] = useState(0);
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
@@ -69,7 +69,10 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
           {Math.min(current + 1, banners.length)}/{banners.length}
         </Text>
       </View>
-      <View className="detail-content detail-content--overlap" data-testid="detail-content-overlap">
+      <View
+        className={`detail-content detail-content--overlap ${showShareButton ? "detail-content--with-floating-share" : ""}`}
+        data-testid="detail-content-overlap"
+      >
         {failedBannerIds.length > 0 && (
           <View
             className="detail-banner-media-error"

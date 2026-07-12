@@ -331,6 +331,7 @@ async function expectCommonDetailQuality(page: Page) {
     documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
   }));
   expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  await expect(page.getByTestId("detail-floating-share")).toHaveCount(0);
   await expect(page.getByText(/收藏|分享|在线咨询|立即预约/)).toHaveCount(0);
   await expect(
     page.locator('[class*="fixed-bottom"], [class*="business-action"], [class*="booking-bar"]')

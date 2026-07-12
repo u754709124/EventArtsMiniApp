@@ -5,6 +5,7 @@ import { DetailPageRenderer } from "./DetailPageRenderer";
 import { DetailPageSkeleton } from "./DetailPageSkeleton";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailHeroViewModel } from "./types";
+import type { DetailShareState } from "./detail-share";
 import type { DetailResourceState } from "./useDetailResource";
 
 type DetailData = { detailPage: NonNullable<Parameters<typeof DetailPageRenderer>[0]["config"]> };
@@ -22,6 +23,7 @@ export function DetailRouteView<T extends DetailData>({
   retry,
   buildHero,
   fallbackTabUrl,
+  share,
   // The renderer is unknown before the DTO arrives. A neutral card skeleton avoids
   // speculatively creating banner DOM for a route that may resolve to rich-only.
   loadingLayout = "richText",
@@ -31,6 +33,7 @@ export function DetailRouteView<T extends DetailData>({
   retry: () => void;
   buildHero: (data: T) => DetailHeroViewModel;
   fallbackTabUrl: string;
+  share?: DetailShareState;
   loadingLayout?: DetailPageRendererKey;
   loadingTitle?: string;
 }) {
@@ -50,6 +53,7 @@ export function DetailRouteView<T extends DetailData>({
         config={state.data.detailPage}
         hero={buildHero(state.data)}
         fallbackTabUrl={fallbackTabUrl}
+        share={share}
       />
     );
   }

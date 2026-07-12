@@ -188,12 +188,16 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 
 - H5 视觉证据固定 viewport `427 × 922`、DPR 2；微信端以 `statusBarHeight` 和胶囊矩形计算导航安全区。
 - H5 测试通过 `globalThis.__TARO_DETAIL_E2E_FIXED__ = true` 固定第一张 BANNER 并关闭自动轮播；正式运行多图间隔 6500ms。
-- 微信原生菜单可以保留平台分享能力，但业务 DOM 不渲染分享按钮。
+- 微信小程序端公共详情页启用“发送给朋友”分享能力，并在右下角渲染独立悬浮圆形分享按钮；按钮使用 `Button openType="share"`，不绘制自定义分享面板。
+- 分享按钮图标来自用户提供的 `icon_font.png`，项目内副本为 `apps/miniapp/src/assets/generated/icon-share.png`，保留 64×64 RGBA、透明背景和深灰黑上传/分享图形。
+- 分享卡片路径固定为 `/pages/detail/index?id=<detailPageId>`；标题优先使用当前详情 Hero 标题，空值回退详情页名称；`banner_rich_text` 使用排序后的首张有效 BANNER 作为卡片图，无可靠图片时省略 `imageUrl`。
+- 加载中、错误、非法 ID、DTO 与当前路由 ID 不一致时不显示可用悬浮分享按钮，也不生成错误详情深链。快速切换详情 ID 时仍由现有 race gate 清空旧状态，分享 payload 只来自当前成功 DTO。
+- H5 生产页面不模拟微信原生分享面板，也不渲染不可用的业务分享按钮；H5 自动化只验证无运行时异常、无占位和公共分享模型。
 - H5 的 `env(safe-area-inset-bottom)` 常为 0；微信端保留真实设备安全区。两端最后一张卡片后都只允许正常内容间距、安全区和约 24–32rpx 自然留白。
 
 ## 已移除操作
 
-人员和案例详情都不得出现收藏、分享、在线咨询、立即预约、固定底部业务栏、浮动业务按钮或旧底栏 spacer。该限制同时由公共 renderer 结构、静态单元测试和 H5 E2E 文本/选择器/尾部几何断言覆盖。
+公共详情页允许且仅允许右下角悬浮微信原生分享按钮。人员和案例详情仍不得出现收藏、在线咨询、立即预约、固定底部业务栏、导航区分享按钮、第二个分享入口或旧底栏 spacer。该限制同时由公共 renderer 结构、静态单元测试和 H5 E2E 文本/选择器/尾部几何断言覆盖。
 
 ## 视觉截图、overlay 与 diff
 
@@ -216,6 +220,8 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 对齐方法不拉伸比例：把参考图按实际截图宽度等比缩放，实际图和参考图都从顶部对齐，再裁到两者较短高度；不遮罩 BANNER、Hero、返回按钮、首卡、富文本、边距或底部。overlay 使用 50% alpha，diff 使用逐像素 difference。H5 与微信状态栏、安全区、字体渲染及内容高度客观不同，因此这些文件用于定位差异，不宣称 pixel parity。
 
 当前运行证据必须以文件真实存在和 JSON hash 为准；不能以文档中的路径替代产物。2026-07-11 最终审计中，`pnpm e2e` 已真实执行通过 37/37，`pnpm release:check` 已真实执行通过并覆盖 lint、unit、E2E、API build、Admin build、H5 build 和 WeApp build。E2E 运行已重新生成详情页视觉截图、首页截图和 `docs/design/detail-page-visual-evidence.json`，当前哈希以该 JSON 文件为准。
+
+2026-07-12 分享入口更新后，`pnpm --filter miniapp test`、`pnpm lint`、`pnpm test`、详情页 H5 E2E 命令、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 与 `pnpm release:check` 均真实执行通过。微信开发者工具或真机“发送给朋友”卡片点击直达仍需人工验证，自动化环境未宣称该端到端链路已通过。
 
 ## 新增第三种 renderer 的精确八步
 
