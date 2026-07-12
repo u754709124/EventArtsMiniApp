@@ -10,7 +10,6 @@ export const artistTypeValues = ["host", "singer", "actor"] as const;
 export const bannerLinkTypeValues = ["none", "announcement", "case", "internal"] as const;
 export const mediaTypeValues = ["image", "video"] as const;
 export const mediaFieldKeyValues = [
-  "site.defaultBanner",
   "site.placeholderBanner",
   "site.placeholderIcon",
   "site.placeholderCase",
@@ -52,7 +51,6 @@ export type MediaFieldRule = {
 };
 
 export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
-  "site.defaultBanner": { label: "默认 Banner 图", allowedTypes: ["image"], width: 1420, height: 580 },
   "site.placeholderBanner": { label: "Banner 占位图", allowedTypes: ["image"], width: 1420, height: 580 },
   "site.placeholderIcon": { label: "菜单图标占位图", allowedTypes: ["image"], width: 176, height: 176 },
   "site.placeholderCase": { label: "案例封面占位图", allowedTypes: ["image"], width: 460, height: 320 },
@@ -333,6 +331,24 @@ export const updateMediaMetadataSchema = z
 export const batchDeleteMediaRequestSchema = z.object({
   ids: z.array(positiveIntFromInput).min(1).transform((ids) => [...new Set(ids)])
 });
+
+export const adminReorderRequestSchema = z
+  .object({
+    ids: z.array(positiveIntFromInput).min(1)
+  })
+  .superRefine((value, context) => {
+    const seen = new Set<number>();
+    for (const [index, id] of value.ids.entries()) {
+      if (seen.has(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["ids", index],
+          message: "排序 ID 不能重复"
+        });
+      }
+      seen.add(id);
+    }
+  });
 
 export const caseDetailMediaIdsSchema = z.array(positiveIntFromInput).transform((ids) => [...new Set(ids)]);
 

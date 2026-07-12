@@ -51,7 +51,6 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
                 className="detail-banner__image"
                 src={banner.url}
                 fallback={generatedAssets.placeholderBanner}
-                mode="aspectFill"
                 testid="detail-banner-image"
                 onError={() =>
                   setFailedBannerIds((ids) => updateFailedMediaIds(ids, banner.id, true))

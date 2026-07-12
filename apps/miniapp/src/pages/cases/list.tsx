@@ -3,6 +3,7 @@ import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityCaseListItemDto } from "@event-arts/shared";
 import { CaseCard } from "../../components/CaseCard";
+import { MiniappPageHeader } from "../../components/MiniappPageHeader";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getCases } from "../../services/api";
 import { consumePendingCaseMenuFilter } from "../../utils/menu-navigation";
@@ -63,7 +64,7 @@ export default function CaseList() {
 
   return (
     <View className="page" data-testid="case-list-page">
-      <Text className="home-title">活动案例</Text>
+      <MiniappPageHeader title="活动案例" />
       <View className="case-search" data-testid="case-search-box">
         <Input
           className="case-search__input"

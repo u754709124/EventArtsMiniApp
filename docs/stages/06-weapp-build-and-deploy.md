@@ -94,7 +94,7 @@ apps/miniapp/dist
 - 确认 `TARO_APP_API_BASE_URL` 指向生产 API 后重新执行 `pnpm build:weapp`。
 - 在微信开发者工具导入 `apps/miniapp/dist`，复核首页、公告、Banner、菜单跳转、案例详情、TabBar 和异常状态。
 - 复核上传目录或对象存储的读写权限、备份策略和 CDN 缓存策略。
-- 复核后台资源删除保护、图片尺寸校验和保存后立即生效。
+- 复核后台资源删除保护、推荐尺寸提示、可解析元数据校验和保存后立即生效。
 - 运行 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm build:weapp`。
 
 ## 对应 git commit hash

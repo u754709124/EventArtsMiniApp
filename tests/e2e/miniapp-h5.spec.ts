@@ -1278,16 +1278,14 @@ test("首页接口失败展示异常页，重新加载可恢复", async ({ page 
   await expect(page.getByTestId("miniapp-home")).toBeVisible();
 });
 
-test("图片失败时使用占位图", async ({ page, request }) => {
+test("无 Banner 时使用占位图", async ({ page, request }) => {
   await setBannerStatus(request, "disabled");
   const home = await clientApi<HomeResponse>(request, "/api/client/home");
-  await page.route(home.site.defaultBannerUrl, (route) => route.abort());
   await openHome(page);
   await expect(page.getByTestId("home-banner-image").first()).toHaveAttribute(
     "data-current-src",
     home.site.placeholderBannerUrl
   );
-  await page.unroute(home.site.defaultBannerUrl);
 });
 
 test("设计复核截图", async ({ page, request }) => {

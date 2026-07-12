@@ -580,7 +580,7 @@ test("文章管理支持分类输入、详情页引用、筛选、删除和菜�
   await adminApi(request, "DELETE", `/api/admin/menu-items/${savedMenu.id}`);
 });
 
-test("表单本地上传在客户端拦截错误尺寸，引用资源不可删除", async ({ page, request }) => {
+test("表单本地上传允许非推荐尺寸，引用资源不可删除", async ({ page, request }) => {
   const media = await adminApi<{ items: { id: number; resourceName: string }[] }>(request, "GET", "/api/admin/media-assets?pageSize=100");
   const referencedAssetId = media.items.find((item) => item.resourceName === "placeholder-icon.png")?.id;
   expect(referencedAssetId).toBeTruthy();
@@ -604,7 +604,10 @@ test("表单本地上传在客户端拦截错误尺寸，引用资源不可删�
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64")
   });
-  await expect(page.getByText(/Banner 图片尺寸必须为 1420x580/).last()).toBeVisible();
+  const uploadDialog = page.getByRole("dialog", { name: "上传资源" });
+  await expect(uploadDialog).toBeVisible();
+  await expect(page.getByText(/实际尺寸：1×1/)).toBeVisible();
+  await uploadDialog.getByRole("button", { name: /取\s*消/ }).click();
 
   await page.locator(".ant-drawer-close").click();
   await page.getByTestId("sidebar-media-assets").click();

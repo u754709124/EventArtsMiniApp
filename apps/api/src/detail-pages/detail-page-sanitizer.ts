@@ -154,6 +154,41 @@ function inlineChildren(element: Element) {
   return element.childNodes.flatMap((child) => cloneInlineNode(child));
 }
 
+function safeTemplateAttributes(element: Element) {
+  const style = getAttribute(element, "style");
+  if (!style) return [];
+  const alignments = style
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => /^text-align\s*:\s*(?:left|center|right|justify)$/i.test(declaration));
+  return alignments.length ? [{ name: "style", value: alignments.join(";") }] : [];
+}
+
+function cloneCanonicalNode(
+  node: ChildNode,
+  assets: ReadonlyMap<number, DetailPageMediaAsset>,
+  skipNode?: ChildNode
+): ChildNode[] {
+  if (node === skipNode) return [];
+  if (isTextNode(node)) return [createText(node.value)];
+  if (!isElement(node)) return [];
+  if (node.tagName === "img" || node.tagName === "video") return [canonicalMediaElement(node, assets)];
+  if (node.tagName === "br") return [createElement("br")];
+  if (node.tagName === "hr") return [createElement("hr", safeTemplateAttributes(node))];
+  if (node.tagName === "div" || node.tagName === "section") {
+    return node.childNodes.flatMap((child) => cloneCanonicalNode(child, assets, skipNode));
+  }
+  if (["p", "blockquote", "ul", "ol", "li", "h2", "h3", "h4", "h5", "h6"].includes(node.tagName)) {
+    const children = node.childNodes.flatMap((child) => cloneCanonicalNode(child, assets, skipNode));
+    const normalizedChildren =
+      ["p", "h2", "h3", "h4", "h5", "h6"].includes(node.tagName) && !hasRenderableInline(children)
+        ? children.length ? children : [createElement("br")]
+        : children;
+    return [createElement(node.tagName, safeTemplateAttributes(node), normalizedChildren)];
+  }
+  return cloneInlineNode(node);
+}
+
 function hasRenderableInline(nodes: ChildNode[]) {
   const html = serializeNodes(nodes);
   return Boolean(
@@ -230,22 +265,20 @@ function appendCanonicalContent(
     output.push(createElement("br"));
     return;
   }
-  const paragraphTags = new Set(["p", "li", "blockquote", "h2", "h3", "h4", "h5", "h6"]);
+  if (node.tagName === "hr") {
+    output.push(createElement("hr", safeTemplateAttributes(node)));
+    return;
+  }
+  if (node.tagName === "div" || node.tagName === "section") {
+    for (const child of node.childNodes) appendCanonicalContent(child, output, assets, skipNode);
+    return;
+  }
+  if (["p", "blockquote", "ul", "ol", "li", "h2", "h3", "h4", "h5", "h6"].includes(node.tagName)) {
+    output.push(...cloneCanonicalNode(node, assets, skipNode));
+    return;
+  }
   const directInline = inlineChildren(node);
-  if (paragraphTags.has(node.tagName) || directInline.length) {
-    appendParagraph(directInline, output, paragraphTags.has(node.tagName));
-  }
-  for (const child of node.childNodes) {
-    if (child === skipNode) continue;
-    if (!isElement(child)) continue;
-    if (child.tagName === "img" || child.tagName === "video" || child.tagName === "br") {
-      appendCanonicalContent(child, output, assets, skipNode);
-      continue;
-    }
-    if (["div", "section", "ul", "ol", "li", "blockquote", "p", "h2", "h3", "h4", "h5", "h6"].includes(child.tagName)) {
-      appendCanonicalContent(child, output, assets, skipNode);
-    }
-  }
+  if (directInline.length) appendParagraph(directInline, output);
 }
 
 function readableTitleFrom(nodes: ChildNode[]) {
@@ -282,7 +315,9 @@ function firstHeading(parent: { childNodes: ChildNode[] }) {
 }
 
 function canonicalCard(title: string, nodes: ChildNode[], assets: ReadonlyMap<number, DetailPageMediaAsset>, skipTitle?: Element) {
-  const cardNodes: ChildNode[] = [createElement("h1", [], [createText(compactText(title) || readableTitleFrom(nodes))])];
+  const cardNodes: ChildNode[] = [
+    createElement("h1", skipTitle ? safeTemplateAttributes(skipTitle) : [], [createText(compactText(title) || readableTitleFrom(nodes))])
+  ];
   for (const node of nodes) {
     appendCanonicalContent(node, cardNodes, assets, skipTitle);
   }
@@ -303,19 +338,22 @@ function normalizeFragmentToCards(
 
   const output: ChildNode[] = [];
   let title = "";
+  let titleElement: Element | null = null;
   let nodes: ChildNode[] = [];
   let hasExplicitCard = false;
   const flush = () => {
     if (!nodes.length && !title) return;
-    output.push(...canonicalCard(title || readableTitleFrom(nodes), nodes, assets));
+    output.push(...canonicalCard(title || readableTitleFrom(nodes), nodes, assets, titleElement ?? undefined));
     nodes = [];
     title = "";
+    titleElement = null;
   };
 
   for (const child of fragment.childNodes) {
     if (isElement(child) && isHeading(child)) {
       flush();
       title = textContent(child);
+      titleElement = child;
       hasExplicitCard = true;
       continue;
     }

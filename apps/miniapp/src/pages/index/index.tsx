@@ -1,12 +1,13 @@
 import Taro from "@tarojs/taro";
 import { Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import type { ITouchEvent } from "@tarojs/components/types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AnnouncementDto, BannerDto, ClientHomeResponse, MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { ArticleCard } from "../../components/ArticleCard";
 import { CaseCard } from "../../components/CaseCard";
+import { MiniappPageHeader } from "../../components/MiniappPageHeader";
 import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
@@ -14,19 +15,6 @@ import { openMenu } from "../../utils/menu-navigation";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
-
-function useSafeTop() {
-  return useMemo(() => {
-    if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return 36;
-    try {
-      const rect = Taro.getMenuButtonBoundingClientRect?.();
-      if (rect?.top) return rect.top + 12;
-    } catch {
-      return 52;
-    }
-    return 52;
-  }, []);
-}
 
 const swipeThreshold = 8;
 const noticeMeasureDelayMs = 80;
@@ -71,17 +59,31 @@ function useSwipeClickGuard() {
   return { allowClick, onTouchEnd, onTouchMove, onTouchStart };
 }
 
-function getNoticeNodeWidth(selector: string): Promise<number> {
+function getBrowserNodeWidth(selector: string, includeScrollWidth: boolean) {
+  if (typeof document === "undefined") return 0;
+  const node = document.querySelector(selector) as HTMLElement | null;
+  if (!node) return 0;
+  const rectWidth = node.getBoundingClientRect().width;
+  return includeScrollWidth ? Math.max(rectWidth, node.scrollWidth) : rectWidth;
+}
+
+function getNoticeNodeWidth(selector: string, includeScrollWidth = false): Promise<number> {
   return new Promise((resolve) => {
+    const browserWidth = Taro.getEnv() === Taro.ENV_TYPE.WEB ? getBrowserNodeWidth(selector, includeScrollWidth) : 0;
+    if (browserWidth > 0) {
+      resolve(browserWidth);
+      return;
+    }
     try {
       const query = Taro.createSelectorQuery();
       query.select(selector).boundingClientRect();
       query.exec((rects) => {
         const rect = Array.isArray(rects) ? rects[0] : null;
-        resolve(typeof rect?.width === "number" ? rect.width : 0);
+        const rectWidth = typeof rect?.width === "number" ? rect.width : 0;
+        resolve(rectWidth || getBrowserNodeWidth(selector, includeScrollWidth));
       });
     } catch {
-      resolve(0);
+      resolve(getBrowserNodeWidth(selector, includeScrollWidth));
     }
   });
 }
@@ -145,7 +147,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
     const measureTimer = setTimeout(() => {
       void Promise.all([
         getNoticeNodeWidth(`#noticeContentViewport-${current}`),
-        getNoticeNodeWidth(`#noticeContentItem-${current}`)
+        getNoticeNodeWidth(`#noticeContentItem-${current}`, true)
       ]).then(([viewportWidth, contentWidth]) => {
         if (cancelled) return;
 
@@ -260,8 +262,8 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
     : [
         {
           id: 0,
-          title: "默认 Banner",
-          imageUrl: site.defaultBannerUrl || generatedAssets.bannerDefault,
+          title: "Banner 占位图",
+          imageUrl: site.placeholderBannerUrl || generatedAssets.placeholderBanner,
           linkType: "none",
           linkTarget: null,
           detailPageId: null,
@@ -347,7 +349,6 @@ export default function HomePage() {
   const [data, setData] = useState<ClientHomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const safeTop = useSafeTop();
   const clickGuard = useRepeatClickGuard();
 
   async function load() {
@@ -373,14 +374,7 @@ export default function HomePage() {
 
   return (
     <View className="page home-page" data-testid="miniapp-home">
-      <View className="home-header" style={{ paddingTop: `${safeTop}px` }}>
-        <Text className="home-title" data-testid="home-app-name">
-          {data.site.appName}
-        </Text>
-        <Text className="home-subtitle" data-testid="home-subtitle">
-          {data.site.subtitle}
-        </Text>
-      </View>
+      <MiniappPageHeader title={data.site.appName} subtitle={data.site.subtitle} titleTestId="home-app-name" subtitleTestId="home-subtitle" />
       <AnnouncementBar announcements={data.announcements} />
       <BannerSection banners={data.banners} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />

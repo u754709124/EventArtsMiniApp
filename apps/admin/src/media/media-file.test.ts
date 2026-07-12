@@ -7,14 +7,14 @@ const config = {
 };
 
 describe("client media validation", () => {
-  it("rejects wrong dimensions before a form upload", () => {
+  it("accepts non-recommended image dimensions before a form upload", () => {
     expect(
       validateMediaCandidate(
         { mimeType: "image/png", size: 1024, mediaType: "image", width: 100, height: 100 },
         config,
         "banner.image"
       )
-    ).toBe("Banner 图片尺寸必须为 1420x580");
+    ).toBeNull();
   });
 
   it("accepts parseable unrestricted video detail media", () => {

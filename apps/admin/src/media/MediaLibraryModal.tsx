@@ -30,7 +30,6 @@ export function MediaLibraryModal({
   onCancel: () => void;
   onSelect: (asset: MediaAssetDto) => void;
 }) {
-  const rule = fieldKey ? mediaFieldRules[fieldKey] : null;
   const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
   const allowedTypesKey = allowedTypes.join(",");
   const [mediaType, setMediaType] = useState<MediaType>(allowedTypes[0]);
@@ -55,8 +54,6 @@ export function MediaLibraryModal({
       const params = new URLSearchParams({ mediaType: effectiveMediaType, page: String(page), pageSize: "20" });
       if (q.trim()) params.set("q", q.trim());
       if (tag) params.set("tag", tag);
-      if (rule?.width) params.set("width", String(rule.width));
-      if (rule?.height) params.set("height", String(rule.height));
       const nextData = await request<MediaListResponse>(`/api/admin/media-assets?${params}`);
       if (sequence !== requestSequence.current) return;
       setData(nextData);
@@ -67,7 +64,7 @@ export function MediaLibraryModal({
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [effectiveMediaType, open, page, q, rule?.height, rule?.width, tag]);
+  }, [effectiveMediaType, open, page, q, tag]);
 
   useEffect(() => {
     if (!open) return;

@@ -96,7 +96,6 @@ function ArtistCard({ item, type }: { item: ArtistListItem; type: ArtistType }) 
           testid="artist-card-cover"
           src={getText(item.coverUrl)}
           fallback={generatedAssets.placeholderCase}
-          mode="aspectFill"
         />
         <View className="artist-card__badge">
           <View className="artist-card__crown" aria-hidden />

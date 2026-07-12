@@ -141,6 +141,30 @@
   margin-top: 10px;
 }
 
+.rich-text-editor .tiptap ul,
+.rich-text-editor .tiptap ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.rich-text-editor .tiptap li {
+  margin: 4px 0;
+}
+
+.rich-text-editor .tiptap blockquote {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-left: 4px solid #d8b17a;
+  background: #fff8ef;
+  color: #5f4b36;
+}
+
+.rich-text-editor .tiptap hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid #ead7c1;
+}
+
 .rich-text-editor .tiptap img[data-media-asset-id],
 .rich-text-editor .tiptap video[data-media-asset-id] {
   display: block;

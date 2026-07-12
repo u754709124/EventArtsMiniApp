@@ -371,7 +371,7 @@ describe("client home aggregation", () => {
 
   it("defaults menu showOnHome on create and preserves it on partial updates", async () => {
     const token = await login();
-    const icon = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "icon-contact.png" } });
+    const icon = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "placeholder-icon.png" } });
     const createDefault = await app.inject({
       method: "POST",
       url: "/api/admin/menu-items",
@@ -464,7 +464,7 @@ describe("client home aggregation", () => {
       payload: {
         text: existing.text,
         iconAssetId: existing.iconAssetId,
-        iconUrl: "/uploads/icon-host.png",
+        iconUrl: "/uploads/placeholder-icon.png",
         type: existing.type,
         configJson: JSON.parse(existing.configJson),
         showOnHome: existing.showOnHome,
@@ -668,6 +668,48 @@ describe("artist client and admin contracts", () => {
   });
 });
 
+describe("admin list reordering", () => {
+  it("persists a complete reorder sequence", async () => {
+    const token = await login();
+    const banners = await prisma.banner.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true } });
+    const ids = banners.map((banner) => banner.id).reverse();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/banners/reorder",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.ids).toEqual(ids);
+    const reordered = await prisma.banner.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, sortOrder: true } });
+    expect(reordered.map((banner) => banner.id)).toEqual(ids);
+    expect(reordered.map((banner) => banner.sortOrder)).toEqual(ids.map((_, index) => index + 1));
+  });
+
+  it("rejects incomplete and duplicate reorder sequences", async () => {
+    const token = await login();
+    const menus = await prisma.menuItem.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true } });
+    const incomplete = await app.inject({
+      method: "POST",
+      url: "/api/admin/menu-items/reorder",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: menus.slice(1).map((menu) => menu.id) }
+    });
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/api/admin/menu-items/reorder",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ids: [menus[0].id, menus[0].id] }
+    });
+
+    expect(incomplete.statusCode).toBe(400);
+    expect(incomplete.json().error).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(duplicate.statusCode).toBe(400);
+    expect(duplicate.json().error).toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+});
+
 describe("media upload and references", () => {
   it("rejects nested relation writes and only accepts whitelisted business fields", async () => {
     const token = await login();
@@ -809,18 +851,17 @@ describe("media upload and references", () => {
     expect(response.json().data.asset).toMatchObject({ mediaType: "video", width: 16, height: 8 });
   });
 
-  it("rejects form uploads with incorrect field dimensions", async () => {
+  it("accepts form uploads with recommended dimensions only", async () => {
     const token = await login();
     const file = await pngBuffer(100, 100);
     const response = await uploadMedia(token, file, {
-      resourceName: "错误尺寸 Banner",
-      filename: "bad.png",
+      resourceName: "非推荐尺寸 Banner",
+      filename: "flexible.png",
       fieldKey: "banner.image"
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("INVALID_MEDIA_DIMENSION");
-    expect(response.json().error.message).toContain("1420x580");
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.asset).toMatchObject({ width: 100, height: 100, mediaType: "image" });
   });
 
   it("accepts neutral resource uploads with names and tags", async () => {
@@ -1001,7 +1042,7 @@ describe("media upload and references", () => {
     const token = await login();
     const first = await uploadMedia(token, await pngBuffer(180, 180), { resourceName: "案例详情一" });
     const second = await uploadMedia(token, await pngBuffer(190, 190), { resourceName: "案例详情二" });
-    const cover = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "case-1.png" } });
+    const cover = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "placeholder-case.png" } });
     const detailPage = await app.inject({
       method: "POST",
       url: "/api/admin/detail-pages",
@@ -1050,9 +1091,9 @@ describe("media upload and references", () => {
     expect(blocked.statusCode).toBe(409);
   });
 
-  it("rejects business associations that do not satisfy field dimensions", async () => {
+  it("accepts business associations with non-recommended image dimensions", async () => {
     const token = await login();
-    const upload = await uploadMedia(token, await pngBuffer(200, 200), { resourceName: "不能用于Banner" });
+    const upload = await uploadMedia(token, await pngBuffer(200, 200), { resourceName: "可用于Banner" });
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/banners",
@@ -1067,8 +1108,8 @@ describe("media upload and references", () => {
       }
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("INVALID_MEDIA_DIMENSION");
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.imageAssetId).toBe(upload.json().data.asset.id);
   });
 
   it("prevents deleting media used by CMS content", async () => {

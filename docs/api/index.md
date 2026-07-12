@@ -152,11 +152,11 @@
 
 ## Media Field Rules
 
-| 字段                                    | 类型       | 尺寸                                                  |
+| 字段                                    | 类型       | 推荐尺寸 / 约束                                      |
 | --------------------------------------- | ---------- | ----------------------------------------------------- |
-| 默认 Banner、Banner 占位图、Banner 图片 | 图片       | 1420×580                                              |
-| 菜单图标、菜单占位图                    | 图片       | 176×176                                               |
-| 案例封面、案例封面占位图                | 图片       | 460×320                                               |
+| Banner 占位图、Banner 图片              | 图片       | 推荐 1420×580；尺寸不限但必须可解析                   |
+| 菜单图标、菜单占位图                    | 图片       | 推荐 176×176；尺寸不限但必须可解析                    |
+| 案例封面、案例封面占位图                | 图片       | 推荐 460×320；尺寸不限但必须可解析                    |
 | 文章封面                                | 图片       | 尺寸不限但必须可解析                                  |
 | 人员列表封面图                          | 图片       | 推荐 690×480；尺寸不限但必须可解析                    |
 | 案例详情媒体                            | 图片或视频 | 尺寸不限但必须可解析                                  |
@@ -261,4 +261,4 @@ Article admin create body:
 
 后台人员列表和创建/更新响应都会返回安全的 `tags: string[]`，同时保留已解析为数组的兼容 `tagsJson`；服务端只通过统一的标签序列化方法写入一次 JSON，避免双重编码。
 
-媒体错误码：`DUPLICATE_RESOURCE_NAME`、`MD5_MISMATCH`、`HASH_COLLISION`、`INVALID_MEDIA_TYPE`、`INVALID_MEDIA_METADATA`、`INVALID_MEDIA_DIMENSION`、`FILE_TOO_LARGE`、`MEDIA_IN_USE`、`MEDIA_RECOVERY_FAILED`。
+媒体错误码：`DUPLICATE_RESOURCE_NAME`、`MD5_MISMATCH`、`HASH_COLLISION`、`INVALID_MEDIA_TYPE`、`INVALID_MEDIA_METADATA`、`FILE_TOO_LARGE`、`MEDIA_IN_USE`、`MEDIA_RECOVERY_FAILED`。

@@ -2,6 +2,8 @@ import type { ApiResponse } from "@event-arts/shared";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const tokenKey = "eventarts.admin.token";
+let sessionExpiredHandler: (() => void) | null = null;
+let handlingSessionExpiry = false;
 
 export class ApiError extends Error {
   constructor(
@@ -18,11 +20,16 @@ export function getToken() {
 }
 
 export function setToken(token: string) {
+  handlingSessionExpiry = false;
   localStorage.setItem(tokenKey, token);
 }
 
 export function clearToken() {
   localStorage.removeItem(tokenKey);
+}
+
+export function setSessionExpiredHandler(handler: (() => void) | null) {
+  sessionExpiredHandler = handler;
 }
 
 function statusSuffix(response: Response) {
@@ -38,6 +45,24 @@ function isApiResponse<T>(value: unknown): value is ApiResponse<T> {
   if (value.success === true) return "data" in value;
   if (value.success !== false || !isRecord(value.error)) return false;
   return typeof value.error.code === "string" && typeof value.error.message === "string";
+}
+
+function isProtectedAdminPath(path: string) {
+  return path.startsWith("/api/admin/") && path !== "/api/admin/auth/login";
+}
+
+function handleSessionExpired(path: string, error: ApiError) {
+  if (error.status !== 401 || error.code !== "UNAUTHORIZED" || !isProtectedAdminPath(path)) return;
+  clearToken();
+  if (handlingSessionExpiry) return;
+  handlingSessionExpiry = true;
+  if (sessionExpiredHandler) {
+    sessionExpiredHandler();
+    return;
+  }
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
 }
 
 export async function request<T>(path: string, init: RequestInit = {}) {
@@ -70,6 +95,10 @@ export async function request<T>(path: string, init: RequestInit = {}) {
   }
 
   const body = parsed;
-  if (!body.success) throw new ApiError(body.error.message, body.error.code, response.status);
+  if (!body.success) {
+    const error = new ApiError(body.error.message, body.error.code, response.status);
+    handleSessionExpired(path, error);
+    throw error;
+  }
   return body.data;
 }

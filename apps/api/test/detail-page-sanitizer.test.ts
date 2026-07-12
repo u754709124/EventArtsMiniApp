@@ -60,6 +60,25 @@ describe("detail rich-text sanitizer", () => {
     expect(html).toContain("第三\n\n第四");
   });
 
+  it("preserves editor lists, quotes, dividers and text alignment", () => {
+    const html = sanitizeAndNormalizeRichText(
+      `<h1 style="text-align: center">格式</h1>
+       <p style="text-align: right">右对齐</p>
+       <ul><li><p>无序项</p></li></ul>
+       <ol><li><p>有序项</p></li></ol>
+       <blockquote><p>引用内容</p></blockquote>
+       <hr>`,
+      assets
+    );
+
+    expect(html).toMatch(/<h1 style="text-align:\s*center">格式<\/h1>/);
+    expect(html).toMatch(/<p style="text-align:\s*right">右对齐<\/p>/);
+    expect(html).toContain("<ul><li><p>无序项</p></li></ul>");
+    expect(html).toContain("<ol><li><p>有序项</p></li></ol>");
+    expect(html).toContain("<blockquote><p>引用内容</p></blockquote>");
+    expect(html).toContain("<hr>");
+  });
+
   it("rewrites image and video URLs from registered assets and normalizes their attributes", () => {
     const html = sanitizeAndNormalizeRichText(
       `<p>前文</p>

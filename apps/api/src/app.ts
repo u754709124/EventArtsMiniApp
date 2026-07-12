@@ -19,6 +19,7 @@ import {
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
   adminArticleListQuerySchema,
+  adminReorderRequestSchema,
   artistListQuerySchema,
   batchDeleteMediaRequestSchema,
   caseListQuerySchema,
@@ -150,6 +151,24 @@ function sendError(reply: FastifyReply, statusCode: number, code: string, messag
 function parseRouteId(params: unknown) {
   const id = Number((params as { id?: string }).id);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+async function reorderByIds(
+  prisma: AppPrismaClient,
+  ids: number[],
+  handlers: {
+    findAllIds: (tx: Prisma.TransactionClient) => Promise<Array<{ id: number }>>;
+    updateOrder: (tx: Prisma.TransactionClient, id: number, sortOrder: number) => Promise<unknown>;
+  }
+) {
+  await prisma.$transaction(async (tx) => {
+    const existing = await handlers.findAllIds(tx);
+    const existingIds = new Set(existing.map((item) => item.id));
+    if (existingIds.size !== ids.length || ids.some((id) => !existingIds.has(id))) {
+      throw new DetailPageDomainError("VALIDATION_ERROR", "排序记录不存在或不完整", 400);
+    }
+    await Promise.all(ids.map((id, index) => handlers.updateOrder(tx, id, index + 1)));
+  });
 }
 
 function parseJson(value: string | null | undefined) {
@@ -866,8 +885,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     const body = { ...parsed.data };
     delete body.id;
     delete body.updatedAt;
+    delete body.defaultBannerAssetId;
     const mediaFields = [
-      ["defaultBannerAssetId", "site.defaultBanner"],
       ["placeholderBannerAssetId", "site.placeholderBanner"],
       ["placeholderIconAssetId", "site.placeholderIcon"],
       ["placeholderCaseAssetId", "site.placeholderCase"]
@@ -892,14 +911,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/admin/media-assets", { preHandler: requireAdmin }, async (_request, reply) => {
     const parsed = mediaListQuerySchema.safeParse((_request as FastifyRequest<{ Querystring: Record<string, string> }>).query);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "资源筛选参数错误");
-    const { mediaType, q, tag, referenceStatus, width, height, page, pageSize } = parsed.data;
+    const { mediaType, q, tag, referenceStatus, page, pageSize } = parsed.data;
     const result = await queryMediaReferences(prisma, {
       mediaType,
       q,
       tagKey: tag ? normalizeResourceName(tag).key : undefined,
       referenceStatus,
-      width,
-      height,
       offset: (page - 1) * pageSize,
       limit: pageSize
     });
@@ -1148,10 +1165,27 @@ function registerCrud(
   prisma: AppPrismaClient,
   requireAdmin: (request: AdminRequest, reply: FastifyReply) => Promise<unknown>
 ) {
+  async function handleReorder(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    handlers: Parameters<typeof reorderByIds>[2]
+  ) {
+    const parsed = adminReorderRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "排序参数错误");
+    }
+    await reorderByIds(prisma, parsed.data.ids, handlers);
+    return reply.send(ok({ ids: parsed.data.ids }));
+  }
+
   app.get("/api/admin/announcements", { preHandler: requireAdmin }, async (_request, reply) => {
     const items = await prisma.announcement.findMany({ orderBy: { sortOrder: "asc" } });
     return reply.send(ok({ items: items.map(serializeAnnouncement), total: items.length }));
   });
+  app.post("/api/admin/announcements/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.announcement.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.announcement.update({ where: { id }, data: { sortOrder } })
+  }));
   app.get("/api/admin/announcements/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "公告 ID 错误");
@@ -1183,6 +1217,10 @@ function registerCrud(
     const items = await prisma.banner.findMany({ include: { imageAsset: true }, orderBy: { sortOrder: "asc" } });
     return reply.send(ok({ items: items.map(serializeBanner), total: items.length }));
   });
+  app.post("/api/admin/banners/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.banner.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.banner.update({ where: { id }, data: { sortOrder } })
+  }));
   app.get("/api/admin/banners/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "Banner ID 错误");
@@ -1226,6 +1264,10 @@ function registerCrud(
     const serialized = items.map(serializeMenuItem);
     return reply.send(ok({ items: serialized, total: serialized.length }));
   });
+  app.post("/api/admin/menu-items/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.menuItem.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.menuItem.update({ where: { id }, data: { sortOrder } })
+  }));
   app.get("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "菜单 ID 错误");
@@ -1311,6 +1353,11 @@ function registerCrud(
     const serialized = await Promise.all(items.map((item) => serializeAdminArticle(prisma, item)));
     return reply.send(ok({ items: serialized, total, page, pageSize }));
   });
+
+  app.post("/api/admin/articles/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.article.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.article.update({ where: { id }, data: { sortOrder } })
+  }));
 
   app.get("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
@@ -1413,6 +1460,10 @@ function registerCrud(
       total: items.length
     }));
   });
+  app.post("/api/admin/cases/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.activityCase.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.activityCase.update({ where: { id }, data: { sortOrder } })
+  }));
   app.get("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "案例 ID 错误");
@@ -1537,6 +1588,10 @@ function registerCrud(
     ));
     return reply.send(ok({ items: serialized, total: items.length }));
   });
+  app.post("/api/admin/artists/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.artist.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.artist.update({ where: { id }, data: { sortOrder } })
+  }));
   app.get("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = parseRouteId(request.params);
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "人员 ID 错误");

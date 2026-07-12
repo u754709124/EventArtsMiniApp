@@ -109,25 +109,28 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     publicBaseUrl: options.publicBaseUrl,
     createdBy: admin.id
   });
+  const placeholderBanner = assets.get("placeholder-banner.png")!;
+  const placeholderIcon = assets.get("placeholder-icon.png")!;
+  const placeholderCase = assets.get("placeholder-case.png")!;
 
   await prisma.siteConfig.upsert({
     where: { id: 1 },
     update: {
       appName: "喜缘主持・演艺服务",
       subtitle: "专业主持人・歌手・演艺团队",
-      defaultBannerAssetId: assets.get("banner-default.png")?.id,
-      placeholderBannerAssetId: assets.get("placeholder-banner.png")?.id,
-      placeholderIconAssetId: assets.get("placeholder-icon.png")?.id,
-      placeholderCaseAssetId: assets.get("placeholder-case.png")?.id
+      defaultBannerAssetId: null,
+      placeholderBannerAssetId: placeholderBanner.id,
+      placeholderIconAssetId: placeholderIcon.id,
+      placeholderCaseAssetId: placeholderCase.id
     },
     create: {
       id: 1,
       appName: "喜缘主持・演艺服务",
       subtitle: "专业主持人・歌手・演艺团队",
-      defaultBannerAssetId: assets.get("banner-default.png")?.id,
-      placeholderBannerAssetId: assets.get("placeholder-banner.png")?.id,
-      placeholderIconAssetId: assets.get("placeholder-icon.png")?.id,
-      placeholderCaseAssetId: assets.get("placeholder-case.png")?.id
+      defaultBannerAssetId: null,
+      placeholderBannerAssetId: placeholderBanner.id,
+      placeholderIconAssetId: placeholderIcon.id,
+      placeholderCaseAssetId: placeholderCase.id
     }
   });
 
@@ -275,7 +278,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
 
   const unlinkedBannerData = {
     title: "演艺团队档期开放",
-    imageAssetId: assets.get("placeholder-banner.png")!.id,
+    imageAssetId: placeholderBanner.id,
     linkType: "none",
     linkTarget: null,
     detailPageId: null,

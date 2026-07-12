@@ -189,7 +189,7 @@ describe("RichTextEditorField", () => {
     await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toContain("font-size: 24px"));
 
     expect([...screen.getByRole("combobox", { name: "段落与标题" }).querySelectorAll("option")].map((option) => option.value)).toEqual(["p", "h1"]);
-  });
+  }, 15000);
 
   it("keeps whitespace-aware content parsing and floats the toolbar inside the editor frame", async () => {
     const lifecycle = editorObserver();

@@ -1,4 +1,5 @@
 import { mediaFieldRules, type MediaFieldKey, type MediaType } from "@event-arts/shared";
+import SparkMD5 from "spark-md5";
 
 export type MediaCandidate = {
   mimeType: string;
@@ -36,9 +37,6 @@ export function validateMediaCandidate(
   if (!fieldKey) return null;
   const rule = mediaFieldRules[fieldKey];
   if (!rule.allowedTypes.includes(candidate.mediaType)) return `${rule.label}不支持该资源类型`;
-  if (rule.width && rule.height && (candidate.width !== rule.width || candidate.height !== rule.height)) {
-    return `${rule.label}尺寸必须为 ${rule.width}x${rule.height}`;
-  }
   return null;
 }
 
@@ -73,6 +71,20 @@ export async function probeMediaFile(file: File): Promise<MediaCandidate> {
 }
 
 export function calculateFileMd5(file: File, onProgress?: (progress: number) => void) {
+  const workerThreshold = 2 * 1024 * 1024;
+  if (file.size <= workerThreshold) {
+    return file.arrayBuffer().then((buffer) => {
+      const spark = new SparkMD5.ArrayBuffer();
+      try {
+        spark.append(buffer);
+        onProgress?.(100);
+        return spark.end();
+      } finally {
+        spark.destroy();
+      }
+    });
+  }
+
   return new Promise<string>((resolve, reject) => {
     const worker = new Worker(new URL("./md5.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<{ type: string; progress?: number; md5?: string; message?: string }>) => {

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
+import { MiniappPageHeader } from "../../components/MiniappPageHeader";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getMenuItems } from "../../services/api";
 import { menuSummaries, openMenu } from "../../utils/menu-navigation";
@@ -33,7 +34,7 @@ export default function CategoryPage() {
 
   return (
     <View className="page" data-testid="category-page">
-      <Text className="home-title">分类</Text>
+      <MiniappPageHeader title="分类" />
       {loading ? <LoadingState /> : failed ? (
         <View className="category-state" data-testid="category-error-state">
           <Text>分类加载失败</Text>

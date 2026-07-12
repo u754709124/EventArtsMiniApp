@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { Result } from "antd";
+import { Result, message } from "antd";
 import { UnsavedChangesProvider } from "../forms/unsaved-changes";
 import { AdminLayout } from "../layout/AdminLayout";
 import { CrudPage } from "../crud/CrudPage";
@@ -12,6 +12,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { Protected } from "../pages/Protected";
 import { SiteConfigPage } from "../pages/SiteConfigPage";
+import { setSessionExpiredHandler } from "../api";
 
 function NotFoundPage() {
   return <Result status="404" title="未找到页面" subTitle="请从左侧菜单选择要管理的内容。" />;
@@ -52,3 +53,10 @@ export const router = createBrowserRouter([
     ]
   }
 ]);
+
+setSessionExpiredHandler(() => {
+  if (window.location.pathname !== "/login") {
+    message.warning("登录已失效，请重新登录");
+  }
+  void router.navigate("/login", { replace: true });
+});

@@ -10,6 +10,26 @@ page {
   padding: 0 20rpx 140rpx;
 }
 
+.miniapp-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding-bottom: 12rpx;
+}
+
+.home-title {
+  color: #111;
+  font-size: 36rpx;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.home-subtitle {
+  color: #9a5a1f;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
 .card {
   width: 710rpx;
   border-radius: 18rpx;

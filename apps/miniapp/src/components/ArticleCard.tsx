@@ -29,7 +29,6 @@ export function ArticleCard({
         testid={`${variant === "home" ? "home" : "article-list"}-article-cover`}
         src={item.coverUrl}
         fallback={fallback || generatedAssets.placeholderCase}
-        mode="aspectFill"
       />
       <View className="article-card__body">
         <Text className="article-card__title">{item.title}</Text>

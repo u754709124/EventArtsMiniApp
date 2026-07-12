@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, clearToken, request, setToken } from "./api";
+import { ApiError, clearToken, getToken, request, setSessionExpiredHandler, setToken } from "./api";
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async () => response);
@@ -10,6 +10,7 @@ function stubFetch(response: Response) {
 }
 
 afterEach(() => {
+  setSessionExpiredHandler(null);
   clearToken();
   vi.unstubAllGlobals();
 });
@@ -47,6 +48,32 @@ describe("admin API client", () => {
       message: "用户名或密码错误",
       status: 401
     });
+  });
+
+  it("clears expired protected sessions without treating login failures as expiry", async () => {
+    const handler = vi.fn();
+    setToken("expired-token");
+    setSessionExpiredHandler(handler);
+    stubFetch(new Response(JSON.stringify({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "登录已失效" }
+    }), { status: 401 }));
+
+    await expect(request("/api/admin/dashboard/overview")).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      status: 401
+    });
+    expect(getToken()).toBeNull();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    stubFetch(new Response(JSON.stringify({
+      success: false,
+      error: { code: "INVALID_CREDENTIALS", message: "用户名或密码错误" }
+    }), { status: 401 }));
+    await expect(request("/api/admin/auth/login", { method: "POST" })).rejects.toMatchObject({
+      code: "INVALID_CREDENTIALS"
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it("turns empty responses into readable API errors", async () => {

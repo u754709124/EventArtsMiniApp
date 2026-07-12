@@ -97,9 +97,6 @@ export function SiteConfigPage() {
               </Form.Item>
             </FormSection>
             <FormSection title="默认素材">
-              <Form.Item label="默认 Banner 图" name="defaultBannerAssetId">
-                <MediaField testid="site-default-banner-select" fieldKey="site.defaultBanner" />
-              </Form.Item>
               <Form.Item label="Banner 占位图" name="placeholderBannerAssetId">
                 <MediaField testid="site-placeholder-banner-select" fieldKey="site.placeholderBanner" />
               </Form.Item>

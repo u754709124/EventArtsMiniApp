@@ -39,6 +39,7 @@ export type CrudConfig = {
   defaultValues?: AnyRecord;
   drawerWidth?: number;
   formMode: "drawer" | "page";
+  sortable?: boolean;
 };
 
 export function prepareCrudEditValues(record: AnyRecord): AnyRecord {
@@ -571,6 +572,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索概述或内容",
     searchFields: ["summary", "content"],
     formMode: "drawer",
+    sortable: true,
     columns: [
       { title: "概述", dataIndex: "summary", ellipsis: true },
       { title: "内容", dataIndex: "content", ellipsis: true },
@@ -603,6 +605,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索标题",
     searchFields: ["title"],
     formMode: "drawer",
+    sortable: true,
     columns: [
       { title: "标题", dataIndex: "title" },
       { title: "详情页", dataIndex: "detailPageId", render: (value) => value ? `#${value}` : "未绑定" },
@@ -634,6 +637,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索菜单文本或类型",
     searchFields: ["text", "type"],
     formMode: "drawer",
+    sortable: true,
     defaultValues: { showOnHome: true },
     normalize: normalizeMenuPayload,
     columns: [
@@ -686,6 +690,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索标题、分类、标签、地点",
     searchFields: ["title", "category", "tag", "location"],
     formMode: "page",
+    sortable: true,
     columns: [
       { title: "标题", dataIndex: "title" },
       { title: "分类", dataIndex: "category" },
@@ -711,6 +716,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索标题、分类、摘要",
     searchFields: ["title", "category", "summary"],
     formMode: "page",
+    sortable: true,
     toolbarFilters: (filters, setFilter) => (
       <>
         <ArticleCategoryFilter
@@ -763,6 +769,7 @@ export const configs: Record<string, CrudConfig> = {
     searchPlaceholder: "搜索姓名、类型、地点、标签",
     searchFields: ["name", "type", "location", "badge", "tags"],
     formMode: "page",
+    sortable: true,
     columns: [
       {
         title: "封面",

@@ -322,6 +322,30 @@ $detail-body-line-height: 1.72;
     margin-bottom: 0;
   }
 
+  ul,
+  ol {
+    margin: 12rpx 0;
+    padding-left: 42rpx;
+  }
+
+  li {
+    margin: 6rpx 0;
+  }
+
+  blockquote {
+    margin: 16rpx 0;
+    padding: 14rpx 18rpx;
+    border-left: 6rpx solid $detail-gold;
+    background: $detail-tag-background;
+    color: $detail-body;
+  }
+
+  hr {
+    margin: 20rpx 0;
+    border: 0;
+    border-top: 1rpx solid $detail-border;
+  }
+
   img {
     display: block;
     width: auto;

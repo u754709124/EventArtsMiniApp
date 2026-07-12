@@ -160,6 +160,20 @@ body {
   width: min(360px, 100vw - 64px);
 }
 
+.crud-drag-handle.ant-btn {
+  cursor: grab;
+  color: #8c6f58;
+  touch-action: none;
+}
+
+.crud-drag-handle.ant-btn:active {
+  cursor: grabbing;
+}
+
+.crud-drag-handle.ant-btn[disabled] {
+  cursor: not-allowed;
+}
+
 .form-section .ant-card-head {
   min-height: 48px;
 }

@@ -289,6 +289,29 @@
   margin-bottom: 0;
 }
 
+.detail-preview-rich-text :is(ul, ol) {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.detail-preview-rich-text li {
+  margin: 3px 0;
+}
+
+.detail-preview-rich-text blockquote {
+  margin: 8px 0;
+  padding: 7px 10px;
+  border-left: 3px solid var(--preview-gold);
+  background: #fff8ef;
+  color: var(--preview-body);
+}
+
+.detail-preview-rich-text hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--preview-border);
+}
+
 .detail-preview-rich-text :is(img, video) {
   display: block;
   width: auto;

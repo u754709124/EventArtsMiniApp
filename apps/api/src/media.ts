@@ -219,8 +219,6 @@ export type MediaReferenceQuery = {
   q?: string;
   tagKey?: string;
   referenceStatus?: "used" | "unused";
-  width?: number;
-  height?: number;
   offset?: number;
   limit?: number;
 };
@@ -231,14 +229,6 @@ export async function queryMediaReferences(prisma: AppPrismaClient, query: Media
   if (query.mediaType) {
     where.push("m.mediaType = ?");
     values.push(query.mediaType);
-  }
-  if (query.width) {
-    where.push("m.width = ?");
-    values.push(query.width);
-  }
-  if (query.height) {
-    where.push("m.height = ?");
-    values.push(query.height);
   }
   if (query.q) {
     where.push("(m.resourceName LIKE ? OR m.originalName LIKE ?)");
@@ -280,9 +270,6 @@ export function validateAssetForField(
   }
   if (!asset.width || !asset.height) {
     return { code: "INVALID_MEDIA_METADATA", message: `${rule.label}无法读取资源尺寸` };
-  }
-  if (rule.width && rule.height && (asset.width !== rule.width || asset.height !== rule.height)) {
-    return { code: "INVALID_MEDIA_DIMENSION", message: `${rule.label}尺寸必须为 ${rule.width}x${rule.height}` };
   }
   return null;
 }

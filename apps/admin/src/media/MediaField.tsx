@@ -137,7 +137,8 @@ export function MediaField({
   );
 
   const rule = mediaFieldRules[fieldKey];
-  const hint = `${rule.allowedTypes.map((type) => (type === "image" ? "图片" : "视频")).join("/")} · ${rule.width ? `${rule.width}×${rule.height}` : "尺寸不限"}`;
+  const typeHint = rule.allowedTypes.map((type) => (type === "image" ? "图片" : "视频")).join("/");
+  const sizeHint = rule.width && rule.height ? `推荐 ${rule.width}×${rule.height}` : "尺寸不限";
 
   return (
     <div data-testid={testid} className="media-field">
@@ -164,7 +165,7 @@ export function MediaField({
       ) : (
         addControl
       )}
-      <div className="media-field-hint">要求：{hint}</div>
+      <div className="media-field-hint">要求：{typeHint} · {sizeHint}</div>
       <MediaLibraryModal
         open={libraryOpen}
         fieldKey={fieldKey}

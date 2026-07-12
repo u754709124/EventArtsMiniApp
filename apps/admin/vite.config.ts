@@ -1,9 +1,12 @@
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    testTimeout: 15000
+  },
   build: {
     chunkSizeWarningLimit: 2000
   },

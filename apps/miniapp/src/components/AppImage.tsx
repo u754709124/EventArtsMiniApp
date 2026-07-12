@@ -5,7 +5,7 @@ type Props = {
   src: string;
   fallback: string;
   className?: string;
-  mode?: "aspectFill" | "aspectFit" | "widthFix";
+  mode?: "scaleToFill" | "aspectFill" | "aspectFit" | "widthFix";
   testid?: string;
   onError?: (source: string) => void;
   onLoad?: (source: string) => void;
@@ -15,7 +15,7 @@ export function AppImage({
   src,
   fallback,
   className,
-  mode = "aspectFill",
+  mode = "scaleToFill",
   testid,
   onError,
   onLoad
