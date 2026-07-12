@@ -7,6 +7,7 @@ import { PageHeader } from "../components/PageHeader";
 import { firstValidationField, statusColor, statusLabel, type AnyRecord } from "../forms/form-utils";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
 
 type ListResponse = { items: AnyRecord[]; total?: number };
@@ -41,6 +42,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
   const [form] = Form.useForm();
   const [dirty, setDirty] = useState(false);
   const hydrating = useRef(false);
+  const clickGuard = useRepeatClickGuard();
   useDirtyFormGuard(`${config.testid}-drawer`, drawerOpen && dirty, "抽屉表单存在未保存修改，确认离开？");
 
   const q = searchParams.get("q") ?? "";
@@ -202,10 +204,10 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       fixed: "right",
       render: (_, record) => (
         <Space>
-          <Button data-testid={`${config.testid}-edit`} onClick={() => void openEdit(record)}>
+          <Button data-testid={`${config.testid}-edit`} onClick={() => clickGuard(`${config.testid}:edit:${record.id}`, () => openEdit(record))}>
             编辑
           </Button>
-          <Button danger data-testid={`${config.testid}-delete`} onClick={() => void remove(record)}>
+          <Button danger data-testid={`${config.testid}-delete`} onClick={() => clickGuard(`${config.testid}:delete:${record.id}`, () => remove(record))}>
             删除
           </Button>
         </Space>
@@ -218,7 +220,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       <PageHeader
         title={config.title}
         breadcrumbs={[breadcrumbGroup, config.title]}
-        extra={<Button data-testid={`${config.testid}-create`} type="primary" onClick={openCreate}>新增</Button>}
+        extra={<Button data-testid={`${config.testid}-create`} type="primary" onClick={() => clickGuard(`${config.testid}:create`, openCreate)}>新增</Button>}
       />
       <Card className="list-card">
         <Space className="list-toolbar" wrap>
@@ -242,7 +244,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             style={{ width: 160 }}
           />
           {config.toolbarFilters?.({ category, isFeatured, q, status }, setFilter)}
-          <Button onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>清空筛选</Button>
+          <Button onClick={() => clickGuard(`${config.testid}:filters:clear`, () => setSearchParams(new URLSearchParams(), { replace: true }))}>清空筛选</Button>
         </Space>
         <Table
           data-testid={`${config.testid}-table`}
@@ -257,7 +259,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             pageSize,
             total: filteredItems.length,
             showSizeChanger: true,
-            onChange: (nextPage, nextPageSize) => setFilter({ page: String(nextPage), pageSize: String(nextPageSize) })
+            onChange: (nextPage, nextPageSize) => clickGuard(`${config.testid}:pagination:${nextPage}:${nextPageSize}`, () => setFilter({ page: String(nextPage), pageSize: String(nextPageSize) }))
           }}
           onRow={(record) => ({
             "data-testid": `${config.testid}-row-${record.id}`
@@ -274,10 +276,10 @@ export function CrudPage({ config }: { config: CrudConfig }) {
           onClose={closeDrawer}
           footer={
             <div className="drawer-footer">
-              <Button onClick={closeDrawer}>取消</Button>
+              <Button onClick={() => clickGuard(`${config.testid}:drawer:close`, closeDrawer)}>取消</Button>
               <Space>
-                <Button data-testid={`${config.testid}-save-continue`} loading={saving} disabled={saving} onClick={() => void submit("continue")}>保存并继续</Button>
-                <Button data-testid={`${config.testid}-save`} type="primary" loading={saving} disabled={saving} onClick={() => void submit("close")}>保存</Button>
+                <Button data-testid={`${config.testid}-save-continue`} loading={saving} disabled={saving} onClick={() => clickGuard(`${config.testid}:save:continue`, () => submit("continue"))}>保存并继续</Button>
+                <Button data-testid={`${config.testid}-save`} type="primary" loading={saving} disabled={saving} onClick={() => clickGuard(`${config.testid}:save:close`, () => submit("close"))}>保存</Button>
               </Space>
             </div>
           }

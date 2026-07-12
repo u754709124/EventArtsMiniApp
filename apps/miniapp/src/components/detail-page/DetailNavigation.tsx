@@ -1,6 +1,7 @@
 import Taro from "@tarojs/taro";
 import { Text, View } from "@tarojs/components";
 import { useMemo } from "react";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 
 type NavigationMetrics = { safeTop: number; headerHeight: number };
 
@@ -54,6 +55,7 @@ export function DetailNavigation({
   overlay?: boolean;
 }) {
   const metrics = useMemo(getDetailNavigationMetrics, []);
+  const clickGuard = useRepeatClickGuard();
   return (
     <View
       className={`detail-navigation ${overlay ? "detail-navigation--overlay" : ""}`}
@@ -65,7 +67,7 @@ export function DetailNavigation({
           aria-label="返回"
           className="detail-navigation__back"
           data-testid="detail-back-button"
-          onClick={() => navigateBackOrSwitchTab(fallbackTabUrl)}
+          onClick={() => clickGuard(`detail:back:${fallbackTabUrl}`, () => navigateBackOrSwitchTab(fallbackTabUrl))}
         >
           <View className="detail-navigation__back-icon" aria-hidden />
         </View>

@@ -3,6 +3,7 @@ import type { DetailPageRendererKey } from "@event-arts/shared";
 import { DetailNavigation } from "./DetailNavigation";
 import { DetailPageRenderer } from "./DetailPageRenderer";
 import { DetailPageSkeleton } from "./DetailPageSkeleton";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailHeroViewModel } from "./types";
 import type { DetailResourceState } from "./useDetailResource";
 
@@ -33,6 +34,7 @@ export function DetailRouteView<T extends DetailData>({
   loadingLayout?: DetailPageRendererKey;
   loadingTitle?: string;
 }) {
+  const clickGuard = useRepeatClickGuard();
   if (state.status === "loading") {
     return (
       <DetailPageSkeleton
@@ -59,7 +61,7 @@ export function DetailRouteView<T extends DetailData>({
         <Text className="detail-state__title">{title}</Text>
         <Text className="detail-state__description">{state.message || description}</Text>
         {(state.status === "error" || state.status === "configMissing") && (
-          <Text className="detail-state__button" data-testid="detail-retry" onClick={retry}>
+          <Text className="detail-state__button" data-testid="detail-retry" onClick={() => clickGuard("detail:retry", retry)}>
             重新加载
           </Text>
         )}

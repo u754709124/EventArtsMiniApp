@@ -6,12 +6,14 @@ import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordi
 import { CSS } from "@dnd-kit/utilities";
 import { mediaFieldRules, type MediaAssetDto, type MediaFieldKey } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { MediaLibraryModal } from "./MediaLibraryModal";
 import { MediaUploadAction } from "./MediaUploadAction";
 
 function MediaTile({ asset, testid, onRemove, sortable = false }: { asset: MediaAssetDto; testid: string; onRemove: () => void; sortable?: boolean }) {
   const sort = useSortable({ id: asset.id, disabled: !sortable });
   const [previewOpen, setPreviewOpen] = useState(false);
+  const clickGuard = useRepeatClickGuard();
   return (
     <>
     <div
@@ -29,7 +31,7 @@ function MediaTile({ asset, testid, onRemove, sortable = false }: { asset: Media
           role={asset.mediaType === "video" ? "button" : undefined}
           tabIndex={asset.mediaType === "video" ? 0 : undefined}
           aria-label={asset.mediaType === "video" ? `预览 ${asset.resourceName}` : undefined}
-          onClick={() => asset.mediaType === "video" && setPreviewOpen(true)}
+          onClick={() => asset.mediaType === "video" && clickGuard(`${testid}:preview`, () => setPreviewOpen(true))}
           onKeyDown={(event) => {
             if (asset.mediaType === "video" && (event.key === "Enter" || event.key === " ")) {
               event.preventDefault();
@@ -79,6 +81,7 @@ export function MediaField({
   const [assets, setAssets] = useState<MediaAssetDto[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const clickGuard = useRepeatClickGuard();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -124,7 +127,7 @@ export function MediaField({
       onOpenChange={setActionsOpen}
       content={
         <Space orientation="vertical">
-          <Button data-testid="media-action-library" onClick={() => { setActionsOpen(false); setLibraryOpen(true); }}>从资源库导入</Button>
+          <Button data-testid="media-action-library" onClick={() => clickGuard(`${testid}:library:open`, () => { setActionsOpen(false); setLibraryOpen(true); })}>从资源库导入</Button>
           <MediaUploadAction fieldKey={fieldKey} onAsset={add} />
         </Space>
       }
@@ -151,18 +154,23 @@ export function MediaField({
         >
           <SortableContext items={ids} strategy={rectSortingStrategy}>
             <div className="media-field-list">
-              {assets.map((asset) => <MediaTile key={asset.id} asset={asset} testid={`${testid}-${asset.id}-preview`} sortable onRemove={() => remove(asset.id)} />)}
+              {assets.map((asset) => <MediaTile key={asset.id} asset={asset} testid={`${testid}-${asset.id}-preview`} sortable onRemove={() => clickGuard(`${testid}:remove:${asset.id}`, () => remove(asset.id))} />)}
               {addControl}
             </div>
           </SortableContext>
         </DndContext>
       ) : assets[0] ? (
-        <MediaTile asset={assets[0]} testid={`${testid}-preview`} onRemove={() => remove(assets[0].id)} />
+        <MediaTile asset={assets[0]} testid={`${testid}-preview`} onRemove={() => clickGuard(`${testid}:remove:${assets[0].id}`, () => remove(assets[0].id))} />
       ) : (
         addControl
       )}
       <div className="media-field-hint">要求：{hint}</div>
-      <MediaLibraryModal open={libraryOpen} fieldKey={fieldKey} onCancel={() => setLibraryOpen(false)} onSelect={add} />
+      <MediaLibraryModal
+        open={libraryOpen}
+        fieldKey={fieldKey}
+        onCancel={() => clickGuard(`${testid}:library:cancel`, () => setLibraryOpen(false))}
+        onSelect={(asset) => clickGuard(`${testid}:library:select:${asset.id}`, () => add(asset))}
+      />
     </div>
   );
 }

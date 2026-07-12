@@ -5,6 +5,7 @@ import { detailPageTypeDefinitions, detailPageTypeValues, type DetailPageSummary
 import { useNavigate } from "react-router-dom";
 import { request } from "../api";
 import { PageHeader } from "../components/PageHeader";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 
 type DetailPageListResponse = {
   items: DetailPageSummaryDto[];
@@ -22,6 +23,7 @@ export function DetailPageList() {
   const [type, setType] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const clickGuard = useRepeatClickGuard();
 
   async function load() {
     setLoading(true);
@@ -65,7 +67,7 @@ export function DetailPageList() {
     {
       title: "详情页名称",
       dataIndex: "name",
-      render: (value, record) => <Button type="link" className="detail-page-name-link" onClick={() => navigate(`/detail-pages/${record.id}/edit`)}>{value}</Button>
+      render: (value, record) => <Button type="link" className="detail-page-name-link" onClick={() => clickGuard(`detail-page:open:${record.id}`, () => navigate(`/detail-pages/${record.id}/edit`))}>{value}</Button>
     },
     { title: "类型", dataIndex: "typeLabel", width: 150, render: (value) => <Tag>{value}</Tag> },
     { title: "BANNER", dataIndex: "bannerCount", width: 100 },
@@ -82,8 +84,8 @@ export function DetailPageList() {
       width: 190,
       render: (_, record) => (
         <Space>
-          <Button data-testid="detail-page-edit" onClick={() => navigate(`/detail-pages/${record.id}/edit`)}>编辑</Button>
-          <Button danger data-testid="detail-page-delete" disabled={record.referenceCount > 0} onClick={() => remove(record)}>删除</Button>
+          <Button data-testid="detail-page-edit" onClick={() => clickGuard(`detail-page:edit:${record.id}`, () => navigate(`/detail-pages/${record.id}/edit`))}>编辑</Button>
+          <Button danger data-testid="detail-page-delete" disabled={record.referenceCount > 0} onClick={() => clickGuard(`detail-page:delete:${record.id}`, () => remove(record))}>删除</Button>
         </Space>
       )
     }
@@ -94,7 +96,7 @@ export function DetailPageList() {
       <PageHeader
         title="详情页管理"
         breadcrumbs={["内容管理", "详情页管理"]}
-        extra={<Button data-testid="detail-page-create" type="primary" onClick={() => navigate("/detail-pages/new")}>新建详情页</Button>}
+        extra={<Button data-testid="detail-page-create" type="primary" onClick={() => clickGuard("detail-page:create", () => navigate("/detail-pages/new"))}>新建详情页</Button>}
       />
       <Card className="list-card">
       <Space className="detail-page-list-filters" wrap>
@@ -115,10 +117,10 @@ export function DetailPageList() {
           value={type}
           style={{ width: 180 }}
           options={detailPageTypeValues.map((value) => ({ value, label: detailPageTypeDefinitions[value].label }))}
-          onChange={(next) => {
+          onChange={(next) => clickGuard(`detail-page:type:${next ?? "all"}`, () => {
             setPage(1);
             setType(next);
-          }}
+          })}
         />
       </Space>
       <Table
@@ -133,10 +135,10 @@ export function DetailPageList() {
           pageSize,
           total,
           showSizeChanger: true,
-          onChange: (nextPage, nextPageSize) => {
+          onChange: (nextPage, nextPageSize) => clickGuard(`detail-page:page:${nextPage}:${nextPageSize}`, () => {
             setPage(nextPage);
             setPageSize(nextPageSize);
-          }
+          })
         }}
       />
       </Card>

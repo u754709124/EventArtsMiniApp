@@ -1124,11 +1124,37 @@ test("首页精选文章、文章菜单筛选、公共详情和无详情静态�
     const firstCardGeometry = await page.getByTestId("home-article-card").first().evaluate((node) => {
       const card = node.getBoundingClientRect();
       const image = node.querySelector('[data-testid="home-article-cover"]')?.getBoundingClientRect();
-      return { cardWidth: card.width, imageWidth: image?.width ?? 0, imageHeight: image?.height ?? 0 };
+      const title = node.querySelector(".article-card__title")?.getBoundingClientRect();
+      const summary = node.querySelector(".article-card__summary")?.getBoundingClientRect();
+      const time = node.querySelector(".article-card__time-row")?.getBoundingClientRect();
+      const timeIcon = node.querySelector('[data-testid="home-article-time-icon"]')?.getBoundingClientRect();
+      return {
+        cardWidth: card.width,
+        cardHeight: card.height,
+        imageWidth: image?.width ?? 0,
+        imageHeight: image?.height ?? 0,
+        titleHeight: title?.height ?? 0,
+        summaryHeight: summary?.height ?? 0,
+        timeTop: time ? time.top - card.top : 0,
+        timeIconWidth: timeIcon?.width ?? 0,
+        timeIconHeight: timeIcon?.height ?? 0
+      };
     });
-    expect(firstCardGeometry.cardWidth).toBeGreaterThan(350);
-    expect(firstCardGeometry.imageWidth).toBeGreaterThan(90);
-    expect(firstCardGeometry.imageHeight).toBeGreaterThan(65);
+    expect(firstCardGeometry.cardWidth).toBeGreaterThan(398);
+    expect(firstCardGeometry.cardWidth).toBeLessThan(410);
+    expect(firstCardGeometry.cardHeight).toBeGreaterThan(102);
+    expect(firstCardGeometry.cardHeight).toBeLessThan(112);
+    expect(firstCardGeometry.imageWidth).toBeGreaterThan(138);
+    expect(firstCardGeometry.imageWidth).toBeLessThan(145);
+    expect(firstCardGeometry.imageHeight).toBeGreaterThan(86);
+    expect(firstCardGeometry.imageHeight).toBeLessThan(91);
+    expect(firstCardGeometry.titleHeight).toBeLessThan(22);
+    expect(firstCardGeometry.summaryHeight).toBeGreaterThan(31);
+    expect(firstCardGeometry.timeTop).toBeGreaterThan(80);
+    expect(firstCardGeometry.timeIconWidth).toBeGreaterThan(10);
+    expect(firstCardGeometry.timeIconWidth).toBeLessThan(14);
+    expect(firstCardGeometry.timeIconHeight).toBeGreaterThan(10);
+    expect(firstCardGeometry.timeIconHeight).toBeLessThan(14);
 
     await tap(page, page.getByTestId("home-article-more"));
     await expect(page.getByTestId("article-list-page")).toBeVisible();

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Button, Form, Input, Modal, Progress, Select, message } from "antd";
 import { type MediaAssetDto, type MediaFieldKey, type MediaType, type MediaUploadConfigDto } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { prepareMediaFile, validateMediaCandidate, type PreparedMediaFile } from "./media-file";
 import { resolveAllowedMediaTypes } from "./MediaLibraryModal";
 
@@ -41,8 +42,10 @@ export function MediaUploadAction({
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
+  const clickGuard = useRepeatClickGuard();
 
   async function choose(file: File) {
+    if (busy) return;
     setBusy(true);
     setProgress(0);
     try {
@@ -82,7 +85,7 @@ export function MediaUploadAction({
   }
 
   async function upload() {
-    if (!draft || !resourceName.trim()) return;
+    if (busy || !draft || !resourceName.trim()) return;
     setBusy(true);
     try {
       const availability = await request<{ available: boolean }>("/api/admin/media-assets/check-name", {
@@ -121,9 +124,9 @@ export function MediaUploadAction({
         type="file"
         hidden
         accept={accept}
-        onChange={(event) => event.target.files?.[0] && void choose(event.target.files[0])}
+        onChange={(event) => event.target.files?.[0] && clickGuard(`${testid}:choose`, () => choose(event.target.files![0]))}
       />
-      <Button data-testid={testid} loading={busy} onClick={() => inputRef.current?.click()}>{label}</Button>
+      <Button data-testid={testid} loading={busy} disabled={busy} onClick={() => clickGuard(`${testid}:open`, () => inputRef.current?.click())}>{label}</Button>
       {busy && progress > 0 && progress < 100 && <Progress percent={progress} size="small" />}
       <Modal
         title="上传资源"
@@ -132,7 +135,7 @@ export function MediaUploadAction({
         cancelText="取消"
         okButtonProps={{ "data-testid": `${testid}-confirm`, disabled: missingResourceName }}
         confirmLoading={busy}
-        onOk={() => void upload()}
+        onOk={() => clickGuard(`${testid}:upload`, upload)}
         onCancel={() => setDraft(null)}
       >
         <Form layout="vertical">

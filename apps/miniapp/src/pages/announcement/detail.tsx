@@ -3,9 +3,11 @@ import Taro, { useLoad } from "@tarojs/taro";
 import { useState } from "react";
 import type { AnnouncementDto } from "@event-arts/shared";
 import { request } from "../../services/api";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 
 export default function AnnouncementDetail() {
   const [item, setItem] = useState<AnnouncementDto | null>(null);
+  const clickGuard = useRepeatClickGuard();
   useLoad((query) => {
     void request<AnnouncementDto>(`/api/client/announcements/${query.id}`).then(setItem);
   });
@@ -13,7 +15,7 @@ export default function AnnouncementDetail() {
     <View className="page" data-testid="announcement-detail-page">
       <Text className="home-title">{item?.summary || "公告详情"}</Text>
       <Text>{item?.content || "暂无公告内容"}</Text>
-      <Text className="primary-button" onClick={() => Taro.navigateBack()}>
+      <Text className="primary-button" onClick={() => clickGuard("announcement:back", () => Taro.navigateBack())}>
         返回
       </Text>
     </View>

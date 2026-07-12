@@ -1,5 +1,6 @@
 import Taro from "@tarojs/taro";
 import type { MenuItemDto, MenuType } from "@event-arts/shared";
+import { runGuardedAction } from "./repeat-click-guard";
 
 export const menuLabels: Record<MenuType, string> = {
   host: "主持人",
@@ -84,14 +85,16 @@ export function openMenu(menu: MenuItemDto | MenuType | string) {
   const menuType = (isMenuItemLike(menu) ? menu.type : menu) as MenuType;
   const url = menuRoutes[menuType];
   if (!url) return;
-  if (menuType === "activity_case") {
-    setPendingCaseMenuFilter(menu);
-    ignoreNavigationError(Taro.switchTab({ url }));
-    return;
-  }
-  if (menuType === "article") {
-    ignoreNavigationError(Taro.navigateTo({ url: articleMenuUrl(menu) }));
-    return;
-  }
-  ignoreNavigationError(Taro.navigateTo({ url }));
+  runGuardedAction(`menu:navigate:${menuType}:${url}`, () => {
+    if (menuType === "activity_case") {
+      setPendingCaseMenuFilter(menu);
+      ignoreNavigationError(Taro.switchTab({ url }));
+      return;
+    }
+    if (menuType === "article") {
+      ignoreNavigationError(Taro.navigateTo({ url: articleMenuUrl(menu) }));
+      return;
+    }
+    ignoreNavigationError(Taro.navigateTo({ url }));
+  });
 }

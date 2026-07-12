@@ -9,6 +9,7 @@ import {
   type MediaAssetDto
 } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { DetailBannerField, detailBannerFormRules } from "./DetailBannerField";
 import { DetailPagePreview } from "./DetailPagePreview";
 import { DetailPageTypeSelect } from "./DetailPageTypeSelect";
@@ -48,6 +49,7 @@ export function DetailPageConfigFields({
   const bannerAssetIds = Form.useWatch(["detailPage", "bannerAssetIds"], form) as number[] | undefined;
   const hydratedDto = useRef<unknown>(undefined);
   const [templateLoading, setTemplateLoading] = useState(false);
+  const clickGuard = useRepeatClickGuard();
 
   useEffect(() => {
     if (initialDetailPage === undefined || hydratedDto.current === initialDetailPage) return;
@@ -177,7 +179,7 @@ export function DetailPageConfigFields({
               data-testid="detail-page-template"
               disabled={disabled}
               loading={templateLoading}
-              onClick={requestTemplate}
+              onClick={() => clickGuard("detail-page:template", requestTemplate)}
             >
               应用{template.label}
             </Button>

@@ -8,6 +8,7 @@ import { firstValidationField, type AnyRecord } from "../forms/form-utils";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { MediaField } from "../media/MediaField";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 
 export function SiteConfigPage() {
   const [form] = Form.useForm();
@@ -16,6 +17,7 @@ export function SiteConfigPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const hydrating = useRef(true);
+  const clickGuard = useRepeatClickGuard();
   useDirtyFormGuard("site-config", dirty);
 
   async function load() {
@@ -75,7 +77,7 @@ export function SiteConfigPage() {
           showIcon
           message="首页配置加载失败"
           description={error}
-          action={<Button onClick={() => void load()}>重试</Button>}
+          action={<Button onClick={() => clickGuard("site-config:retry", load)}>重试</Button>}
         />
       ) : (
         <Skeleton loading={loading} active>

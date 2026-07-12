@@ -1,4 +1,4 @@
-import { Text, View } from "@tarojs/components";
+import { Image, Text, View } from "@tarojs/components";
 import type { ArticleListItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../assets";
 import { navigateToDetailPage } from "../utils/detail-page-navigation";
@@ -35,7 +35,13 @@ export function ArticleCard({
         <Text className="article-card__title">{item.title}</Text>
         <Text className="article-card__summary">{item.summary}</Text>
         <View className="article-card__time-row">
-          <View className="article-card__clock" aria-hidden />
+          <Image
+            className="article-card__clock"
+            data-testid={`${variant === "home" ? "home" : "article-list"}-article-time-icon`}
+            aria-hidden
+            src={generatedAssets.iconTime}
+            mode="aspectFit"
+          />
           <Text className="article-card__time">{formatArticleDisplayTime(item.publishedAt)}</Text>
         </View>
       </View>

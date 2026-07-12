@@ -3,6 +3,7 @@ import { useLoad } from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { ApiRequestError, requestWithTask } from "../../services/api";
 import { redirectToDetailPage } from "../../utils/detail-page-navigation";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import { DetailNavigation } from "./DetailNavigation";
 import { DetailPageSkeleton } from "./DetailPageSkeleton";
 import { createDetailRequestGate } from "./request-race";
@@ -30,6 +31,7 @@ export function LegacyDetailRedirectPage<T extends LegacyDetailRecord>({
   const [state, setState] = useState<LegacyRedirectState>({ status: "loading" });
   const gate = useRef(createDetailRequestGate());
   const currentId = useRef<number | null>(null);
+  const clickGuard = useRepeatClickGuard();
 
   function load(rawId: string | number | undefined) {
     const id = Number(rawId);
@@ -92,7 +94,7 @@ export function LegacyDetailRedirectPage<T extends LegacyDetailRecord>({
         <Text className="detail-state__title">{title}</Text>
         <Text className="detail-state__description">{state.message || description}</Text>
         {state.status === "error" && (
-          <Text className="detail-state__button" data-testid="detail-retry" onClick={retry}>
+          <Text className="detail-state__button" data-testid="detail-retry" onClick={() => clickGuard("legacy-detail:retry", retry)}>
             重新加载
           </Text>
         )}

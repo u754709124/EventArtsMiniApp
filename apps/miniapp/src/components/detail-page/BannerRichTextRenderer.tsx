@@ -7,6 +7,7 @@ import { DetailNavigation } from "./DetailNavigation";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailRendererProps } from "./types";
 
 export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailRendererProps) {
@@ -14,6 +15,7 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
   const [current, setCurrent] = useState(0);
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
   const [bannerRetryKey, setBannerRetryKey] = useState(0);
+  const clickGuard = useRepeatClickGuard();
   const multiple = banners.length > 1;
   const fixedForE2E =
     process.env.NODE_ENV === "test" ||
@@ -79,10 +81,10 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl }: DetailR
             <Text
               className="detail-state__button"
               data-testid="detail-banner-media-retry"
-              onClick={() => {
+              onClick={() => clickGuard("detail:banner-media:retry", () => {
                 setFailedBannerIds([]);
                 setBannerRetryKey((value) => value + 1);
-              }}
+              })}
             >
               重新加载图片
             </Text>

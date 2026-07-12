@@ -6,10 +6,12 @@ import { previewRichTextImage } from "./media-health";
 import { collectDetailCardImageUrls } from "./model";
 import { DetailVideoBlock } from "./DetailVideoBlock";
 import { useDetailImageHealth } from "./useDetailImageHealth";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 
 export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
   const imageUrls = useMemo(() => collectDetailCardImageUrls(cards), [cards]);
   const imageHealth = useDetailImageHealth(imageUrls);
+  const clickGuard = useRepeatClickGuard();
 
   function previewImage(event: unknown) {
     void previewRichTextImage(event, imageUrls, (options) => Taro.previewImage(options)).catch(
@@ -30,9 +32,9 @@ export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
           <Text
             className="detail-state__button"
             data-testid="detail-rich-image-retry"
-            onClick={() => {
+            onClick={() => clickGuard("detail:rich-image:retry", () => {
               if (!imageHealth.checking) imageHealth.retry();
-            }}
+            })}
           >
             {imageHealth.checking ? "正在重新检查" : "重新加载图片"}
           </Text>
@@ -47,7 +49,7 @@ export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
                 className="detail-rich-text"
                 data-testid="detail-rich-text-block"
                 nodes={block.html}
-                onClick={previewImage}
+                onClick={(event) => clickGuard("detail:rich-image:preview", () => previewImage(event))}
               />
             ) : (
               <DetailVideoBlock key={`video-${block.assetId}-${cardIndex}-${blockIndex}`} block={block} />

@@ -4,6 +4,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
 import { request } from "../api";
 import { PageHeader } from "../components/PageHeader";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { MediaUploadAction } from "./MediaUploadAction";
 
 type ListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
@@ -31,6 +32,7 @@ export function MediaPage() {
   const [editTags, setEditTags] = useState<string[]>([]);
   const [unused, setUnused] = useState<MediaAssetDto[] | null>(null);
   const [selectedUnused, setSelectedUnused] = useState<number[]>([]);
+  const clickGuard = useRepeatClickGuard();
   const editDirty = Boolean(editing && (editName !== editing.resourceName || !sameTags(editTags, editing.tags)));
 
   const loadTags = useCallback(() => {
@@ -159,8 +161,8 @@ export function MediaPage() {
       fixed: "right",
       render: (_, asset) => (
         <Space>
-          <Button onClick={() => { setEditing(asset); setEditName(asset.resourceName); setEditTags(asset.tags); }}>编辑</Button>
-          <Button danger disabled={asset.inUse} data-testid={`media-delete-${asset.id}`} onClick={() => void remove(asset)}>删除</Button>
+          <Button onClick={() => clickGuard(`media:edit:${asset.id}`, () => { setEditing(asset); setEditName(asset.resourceName); setEditTags(asset.tags); })}>编辑</Button>
+          <Button danger disabled={asset.inUse} data-testid={`media-delete-${asset.id}`} onClick={() => clickGuard(`media:delete:${asset.id}`, () => remove(asset))}>删除</Button>
         </Space>
       )
     }
@@ -174,14 +176,14 @@ export function MediaPage() {
         extra={
         <Space>
           <MediaUploadAction testid="media-upload-button" label="上传资源" onAsset={() => void load(1)} />
-          <Button data-testid="media-clean-unused" onClick={() => void scanUnused()}>清理未使用资源</Button>
+          <Button data-testid="media-clean-unused" onClick={() => clickGuard("media:scan-unused", scanUnused)}>清理未使用资源</Button>
         </Space>
         }
       />
       <Card className="list-card">
       <Tabs
         activeKey={mediaType}
-        onChange={(key) => setMediaType(key as MediaType)}
+        onChange={(key) => clickGuard(`media:type:${key}`, () => setMediaType(key as MediaType))}
         items={[{ key: "image", label: "图片" }, { key: "video", label: "视频" }]}
       />
       <Space className="toolbar" wrap>
@@ -191,7 +193,7 @@ export function MediaPage() {
           allowClear
           placeholder="全部标签"
           value={tag}
-          onChange={setTag}
+          onChange={(value) => clickGuard(`media:tag:${value ?? "all"}`, () => setTag(value))}
           options={tags.map((item) => ({ value: item.label, label: `${item.label} (${item.count})` }))}
           style={{ width: 180 }}
         />
@@ -200,7 +202,7 @@ export function MediaPage() {
           allowClear
           placeholder="全部使用状态"
           value={referenceStatus}
-          onChange={setReferenceStatus}
+          onChange={(value) => clickGuard(`media:reference:${value ?? "all"}`, () => setReferenceStatus(value))}
           options={[{ value: "used", label: "已使用" }, { value: "unused", label: "未使用" }]}
           style={{ width: 180 }}
         />
@@ -212,11 +214,11 @@ export function MediaPage() {
         dataSource={data.items}
         columns={columns}
         scroll={{ x: "max-content" }}
-        pagination={{ current: data.page, pageSize: data.pageSize, total: data.total, showSizeChanger: false, onChange: (page) => void load(page) }}
+        pagination={{ current: data.page, pageSize: data.pageSize, total: data.total, showSizeChanger: false, onChange: (page) => clickGuard(`media:page:${page}`, () => load(page)) }}
         locale={{ emptyText: <Empty description="暂无资源" /> }}
       />
 
-      <Modal title="编辑资源信息" open={Boolean(editing)} okText="保存" onOk={() => void saveMetadata()} onCancel={closeMetadataEditor}>
+      <Modal title="编辑资源信息" open={Boolean(editing)} okText="保存" onOk={() => clickGuard("media:metadata:save", saveMetadata)} onCancel={() => clickGuard("media:metadata:close", closeMetadataEditor)}>
         <p>资源名</p>
         <Input value={editName} onChange={(event) => setEditName(event.target.value)} />
         <p>标签</p>
@@ -229,8 +231,8 @@ export function MediaPage() {
         open={unused !== null}
         okText="删除所选资源"
         okButtonProps={{ danger: true, disabled: !selectedUnused.length }}
-        onOk={() => void cleanUnused()}
-        onCancel={() => setUnused(null)}
+        onOk={() => clickGuard("media:clean-unused", cleanUnused)}
+        onCancel={() => clickGuard("media:clean-unused:cancel", () => setUnused(null))}
         width={760}
       >
         <div data-testid="media-clean-modal">

@@ -8,6 +8,7 @@ import { FormSection } from "../components/FormSection";
 import { firstValidationField, type AnyRecord } from "../forms/form-utils";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
 
 export function RecordFormPage({ config }: { config: CrudConfig }) {
@@ -25,6 +26,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
   const hydrating = useRef(true);
   const dirtyGuardKey = `${config.testid}-page-form`;
   const dirtyGuard = useDirtyFormGuard(dirtyGuardKey, dirty, "当前表单存在未保存修改，确认离开？");
+  const clickGuard = useRepeatClickGuard();
 
   const listSearch = typeof location.state === "object" && location.state && "listSearch" in location.state
     ? String((location.state as { listSearch?: unknown }).listSearch ?? "")
@@ -133,7 +135,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
           showIcon
           message="记录加载失败"
           description={error}
-          action={<Button onClick={() => void load()}>重试</Button>}
+          action={<Button onClick={() => clickGuard(`${config.testid}:form:retry`, load)}>重试</Button>}
         />
       ) : (
         <Skeleton loading={loading} active>

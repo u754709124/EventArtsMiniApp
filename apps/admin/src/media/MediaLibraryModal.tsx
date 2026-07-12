@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Button, Empty, Input, Modal, Pagination, Select, Space, Spin, Tabs, Tag, message } from "antd";
 import { mediaFieldRules, mediaTypeValues, type MediaAssetDto, type MediaFieldKey, type MediaType } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 
 type MediaListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
 
@@ -41,6 +42,7 @@ export function MediaLibraryModal({
   const [data, setData] = useState<MediaListResponse>({ items: [], total: 0, page: 1, pageSize: 20 });
   const [loading, setLoading] = useState(false);
   const requestSequence = useRef(0);
+  const clickGuard = useRepeatClickGuard();
 
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
@@ -86,16 +88,16 @@ export function MediaLibraryModal({
       open={open}
       footer={null}
       width={860}
-      onCancel={onCancel}
+      onCancel={() => clickGuard("media-library:cancel", onCancel)}
     >
       <div data-testid="media-library-modal">
       {allowedTypes.length > 1 && (
         <Tabs
           activeKey={effectiveMediaType}
-          onChange={(key) => {
+          onChange={(key) => clickGuard(`media-library:type:${key}`, () => {
             setMediaType(key as MediaType);
             setPage(1);
-          }}
+          })}
           items={allowedTypes.map((type) => ({ key: type, label: type === "image" ? "图片" : "视频" }))}
         />
       )}
@@ -104,20 +106,20 @@ export function MediaLibraryModal({
           aria-label="搜索资源"
           placeholder="搜索资源名或原始文件名"
           allowClear
-          onSearch={(value) => {
+          onSearch={(value) => clickGuard(`media-library:search:${value}`, () => {
             setQ(value);
             setPage(1);
-          }}
+          })}
         />
         <Select
           aria-label="标签筛选"
           allowClear
           placeholder="全部标签"
           value={tag}
-          onChange={(value) => {
+          onChange={(value) => clickGuard(`media-library:tag:${value ?? "all"}`, () => {
             setTag(value);
             setPage(1);
-          }}
+          })}
           options={tags.map((item) => ({ value: item.label, label: `${item.label} (${item.count})` }))}
           style={{ width: 180 }}
         />
@@ -130,7 +132,7 @@ export function MediaLibraryModal({
                 key={asset.id}
                 className="media-library-option"
                 aria-label={`选择 ${asset.resourceName}`}
-                onClick={() => onSelect(asset)}
+                onClick={() => clickGuard(`media-library:select:${asset.id}`, () => onSelect(asset))}
               >
                 {asset.mediaType === "image" ? (
                   <img src={asset.url} alt="" />
@@ -148,7 +150,7 @@ export function MediaLibraryModal({
         )}
       </Spin>
       {data.total > data.pageSize && (
-        <Pagination current={page} pageSize={data.pageSize} total={data.total} showSizeChanger={false} onChange={setPage} />
+        <Pagination current={page} pageSize={data.pageSize} total={data.total} showSizeChanger={false} onChange={(nextPage) => clickGuard(`media-library:page:${nextPage}`, () => setPage(nextPage))} />
       )}
       </div>
     </Modal>

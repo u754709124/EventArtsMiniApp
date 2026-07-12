@@ -8,6 +8,7 @@ import { request } from "../api";
 import { FormActionBar } from "../components/FormActionBar";
 import { PageHeader } from "../components/PageHeader";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { DetailBannerField, detailBannerFormRules } from "./DetailBannerField";
 import { DetailPageLivePreview } from "./DetailPageLivePreview";
 import { DetailPageTypeSelect } from "./DetailPageTypeSelect";
@@ -63,6 +64,7 @@ export function DetailPageDesigner() {
   const returnToken = searchParams.get("returnToken");
   const dirtyGuardKey = "detail-page-designer";
   const dirtyGuard = useDirtyFormGuard(dirtyGuardKey, dirty, "详情页设计器存在未保存修改，确认离开？");
+  const clickGuard = useRepeatClickGuard();
 
   useEffect(() => {
     hydrating.current = true;
@@ -273,7 +275,7 @@ export function DetailPageDesigner() {
             ) : (
               <Space wrap>
                 {references.map((reference) => (
-                  <Button key={`${reference.sourceType}-${reference.sourceId}`} onClick={() => window.open(referencePath(reference), "_blank", "noopener")}>
+                  <Button key={`${reference.sourceType}-${reference.sourceId}`} onClick={() => clickGuard(`detail-reference:${reference.sourceType}:${reference.sourceId}`, () => window.open(referencePath(reference), "_blank", "noopener"))}>
                     <Tag>{reference.sourceType}</Tag> #{reference.sourceId} {reference.sourceName}
                   </Button>
                 ))}

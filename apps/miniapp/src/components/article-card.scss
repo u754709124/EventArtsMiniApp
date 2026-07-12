@@ -13,6 +13,11 @@
 
 .article-card--home {
   min-height: 188rpx;
+  padding: 16rpx;
+  gap: 20rpx;
+  border-color: #ebe1d8;
+  border-radius: 12rpx;
+  box-shadow: 0 6rpx 18rpx rgba(65, 43, 25, 0.08);
 }
 
 .article-card--clickable {
@@ -27,6 +32,13 @@
   overflow: hidden;
 }
 
+.article-card--home .article-card__cover {
+  width: 248rpx;
+  height: 156rpx;
+  flex-basis: 248rpx;
+  border-radius: 8rpx;
+}
+
 .article-card--list .article-card__cover {
   width: 220rpx;
   height: 168rpx;
@@ -38,6 +50,11 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.article-card--home .article-card__body {
+  padding-top: 14rpx;
+  padding-bottom: 2rpx;
 }
 
 .article-card__title {
@@ -55,6 +72,17 @@
   word-break: break-all;
 }
 
+.article-card--home .article-card__title {
+  display: block;
+  height: 34rpx;
+  color: #181b20;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 34rpx;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 .article-card__summary {
   display: -webkit-box;
   width: 100%;
@@ -70,6 +98,14 @@
   word-break: break-all;
 }
 
+.article-card--home .article-card__summary {
+  height: 58rpx;
+  margin-top: 10rpx;
+  color: #777b82;
+  font-size: 24rpx;
+  line-height: 29rpx;
+}
+
 .article-card__time-row {
   height: 28rpx;
   margin-top: auto;
@@ -79,33 +115,17 @@
   color: #9b8a7d;
 }
 
+.article-card--home .article-card__time-row {
+  height: 28rpx;
+  gap: 10rpx;
+  color: #838890;
+}
+
 .article-card__clock {
-  position: relative;
-  box-sizing: border-box;
   width: 22rpx;
   height: 22rpx;
   flex: 0 0 22rpx;
-  border: 2rpx solid #b69a82;
-  border-radius: 50%;
-}
-
-.article-card__clock::before,
-.article-card__clock::after {
-  content: "";
-  position: absolute;
-  left: 9rpx;
-  top: 4rpx;
-  width: 2rpx;
-  height: 7rpx;
-  border-radius: 2rpx;
-  background: #b69a82;
-  transform-origin: bottom center;
-}
-
-.article-card__clock::after {
-  top: 9rpx;
-  height: 5rpx;
-  transform: rotate(90deg);
+  display: block;
 }
 
 .article-card__time {
@@ -116,4 +136,10 @@
   line-height: 28rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.article-card--home .article-card__time {
+  color: #838890;
+  font-size: 22rpx;
+  line-height: 28rpx;
 }

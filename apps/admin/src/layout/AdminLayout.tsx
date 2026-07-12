@@ -7,6 +7,7 @@ import { clearToken } from "../api";
 import { adminMenuConfig, isMenuGroup } from "../navigation/menu-config";
 import { defaultOpenKeys, matchAdminRoute, validOpenKeys } from "../navigation/route-matching";
 import { useUnsavedChanges } from "../forms/unsaved-changes";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 
 const collapsedKey = "event-arts-admin-sider-collapsed";
 const openKeysKey = "event-arts-admin-menu-open-keys";
@@ -31,6 +32,7 @@ export function AdminLayout() {
   const routeMatch = matchAdminRoute(location.pathname);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [openKeys, setOpenKeys] = useState(() => readOpenKeys().length ? readOpenKeys() : defaultOpenKeys());
+  const clickGuard = useRepeatClickGuard();
 
   useEffect(() => {
     localStorage.setItem(collapsedKey, String(collapsed));
@@ -87,9 +89,11 @@ export function AdminLayout() {
             localStorage.setItem(openKeysKey, JSON.stringify(next));
           }}
           onClick={({ key }) => {
-            const target = adminMenuConfig.flatMap((item) => isMenuGroup(item) ? item.children : [item]).find((item) => item.key === key);
-            if (!target || target.path === location.pathname) return;
-            navigate(target.path);
+            clickGuard(`admin-menu:${key}`, () => {
+              const target = adminMenuConfig.flatMap((item) => isMenuGroup(item) ? item.children : [item]).find((item) => item.key === key);
+              if (!target || target.path === location.pathname) return;
+              navigate(target.path);
+            });
           }}
         />
         <Button
@@ -107,7 +111,7 @@ export function AdminLayout() {
         <Layout.Header className="admin-header">
           <div className="admin-header__account">
             <span>管理员</span>
-            <Button data-testid="logout-button" icon={<LogoutOutlined />} onClick={logout}>
+            <Button data-testid="logout-button" icon={<LogoutOutlined />} onClick={() => clickGuard("admin:logout", logout)}>
               退出登录
             </Button>
           </div>

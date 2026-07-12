@@ -3,6 +3,7 @@ import { Button, Select, Space, Tooltip, message } from "antd";
 import { ExportOutlined, PlusOutlined } from "@ant-design/icons";
 import type { DetailPageOptionDto } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import "./detail-page-reference.css";
 
 type OptionsResponse = { items: DetailPageOptionDto[] };
@@ -24,6 +25,7 @@ export function DetailPageReferenceField({ value, onChange }: DetailPageReferenc
   const returnToken = useRef(`detail-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const loadSequence = useRef(0);
   const valueKey = value ?? null;
+  const clickGuard = useRepeatClickGuard();
 
   async function load(q = "") {
     const sequence = loadSequence.current + 1;
@@ -111,7 +113,7 @@ export function DetailPageReferenceField({ value, onChange }: DetailPageReferenc
         onFocus={() => void load()}
         onChange={(next) => onChange?.(next ?? null)}
       />
-      <Button data-testid="detail-page-reference-create" icon={<PlusOutlined />} onClick={openNew}>
+      <Button data-testid="detail-page-reference-create" icon={<PlusOutlined />} onClick={() => clickGuard("detail-page-reference:create", openNew)}>
         新建
       </Button>
       <Tooltip title="编辑已选详情页">
@@ -119,7 +121,7 @@ export function DetailPageReferenceField({ value, onChange }: DetailPageReferenc
           data-testid="detail-page-reference-jump"
           icon={<ExportOutlined />}
           disabled={!valueKey}
-          onClick={openSelected}
+          onClick={() => clickGuard(`detail-page-reference:open:${valueKey ?? "none"}`, openSelected)}
         >
           跳转页面
         </Button>

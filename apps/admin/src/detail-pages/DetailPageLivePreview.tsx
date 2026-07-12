@@ -3,6 +3,7 @@ import { Button, Spin } from "antd";
 import type { DetailPageConfigDto, DetailPageInput } from "@event-arts/shared";
 import { request } from "../api";
 import { DetailPageMobilePreview } from "./DetailPageMobilePreview";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import "./detail-page-designer.css";
 
 export function DetailPageLivePreview({
@@ -16,6 +17,7 @@ export function DetailPageLivePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestVersion = useRef(0);
+  const clickGuard = useRepeatClickGuard();
 
   function loadPreview() {
     const version = ++requestVersion.current;
@@ -66,7 +68,7 @@ export function DetailPageLivePreview({
         <div className="detail-live-preview-error" role="alert">
           <strong>预览失败</strong>
           <p>{error}</p>
-          <Button size="small" onClick={loadPreview}>重试</Button>
+          <Button size="small" onClick={() => clickGuard("detail-live-preview:retry", loadPreview)}>重试</Button>
         </div>
       )}
     </div>

@@ -2,10 +2,12 @@ import { Text, Video, View } from "@tarojs/components";
 import { useState } from "react";
 import type { ExtractDetailPageVideoBlock } from "./internal-types";
 import { getVideoAspectRatioPadding } from "./video-layout";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 
 export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock }) {
   const [failed, setFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const clickGuard = useRepeatClickGuard();
 
   if (failed) {
     return (
@@ -13,10 +15,10 @@ export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock
         <Text>视频加载失败，请检查网络后重试</Text>
         <Text
           className="detail-state__button"
-          onClick={() => {
+          onClick={() => clickGuard("detail:video:retry", () => {
             setFailed(false);
             setRetryKey((value) => value + 1);
-          }}
+          })}
         >
           重新加载
         </Text>

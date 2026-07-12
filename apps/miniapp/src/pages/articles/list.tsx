@@ -6,6 +6,7 @@ import { ArticleCard } from "../../components/ArticleCard";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getArticles } from "../../services/api";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
 function safeDecode(value: string) {
@@ -73,6 +74,7 @@ export default function ArticleList() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [failed, setFailed] = useState(false);
   const requestToken = useRef(0);
+  const clickGuard = useRepeatClickGuard();
 
   useLoad((query) => {
     setReady(false);
@@ -144,7 +146,7 @@ export default function ArticleList() {
     <View className="page article-list-page" data-testid="article-list-page">
       <View className="article-list-nav" style={{ paddingTop: `${metrics.safeTop}px` }}>
         <View className="article-list-nav__content" style={{ height: `${metrics.headerHeight}px` }}>
-          <View className="article-list-nav__back" data-testid="article-back-button" onClick={goBack}>
+          <View className="article-list-nav__back" data-testid="article-back-button" onClick={() => clickGuard("article:back", goBack)}>
             <View className="article-list-nav__back-icon" aria-hidden />
           </View>
           <Text className="article-list-nav__title" data-testid="article-list-title">{title}</Text>
@@ -154,7 +156,7 @@ export default function ArticleList() {
         <Text
           className={`article-category-tab ${category === "" ? "article-category-tab--active" : ""}`}
           data-testid="article-category-all"
-          onClick={() => selectCategory("")}
+          onClick={() => clickGuard("article:category:all", () => selectCategory(""))}
         >
           全部
         </Text>
@@ -163,7 +165,7 @@ export default function ArticleList() {
             key={item}
             className={`article-category-tab ${category === item ? "article-category-tab--active" : ""}`}
             data-testid={`article-category-${item}`}
-            onClick={() => selectCategory(item)}
+            onClick={() => clickGuard(`article:category:${item}`, () => selectCategory(item))}
           >
             {item}
           </Text>
@@ -174,7 +176,7 @@ export default function ArticleList() {
       ) : failed ? (
         <View className="article-list-state" data-testid="article-list-error-state">
           <Text>文章加载失败</Text>
-          <Text className="primary-button" data-testid="article-list-reload" onClick={() => load(1, true)}>重新加载</Text>
+          <Text className="primary-button" data-testid="article-list-reload" onClick={() => clickGuard("article:reload", () => load(1, true))}>重新加载</Text>
         </View>
       ) : items.length === 0 ? (
         <EmptyState text={category ? "该分类暂无文章" : "暂无文章"} />
@@ -190,7 +192,7 @@ export default function ArticleList() {
               className="article-load-more"
               data-testid="article-load-more"
               onClick={() => {
-                if (!loadingMore) void load(page + 1, false);
+                if (!loadingMore) clickGuard("article:load-more", () => load(page + 1, false));
               }}
             >
               {loadingMore ? "加载中..." : "加载更多"}

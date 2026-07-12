@@ -4,6 +4,7 @@ import type { DetailPageConfigDto } from "@event-arts/shared";
 import { request } from "../api";
 import { DetailPageMobilePreview } from "./DetailPageMobilePreview";
 import type { DetailPagePreviewProps } from "./types";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import "./detail-page-preview.css";
 
 export function DetailPagePreview({ getDraft, disabled = false }: DetailPagePreviewProps) {
@@ -12,6 +13,7 @@ export function DetailPagePreview({ getDraft, disabled = false }: DetailPagePrev
   const [error, setError] = useState<string | null>(null);
   const [dto, setDto] = useState<DetailPageConfigDto | null>(null);
   const requestVersion = useRef(0);
+  const clickGuard = useRepeatClickGuard();
 
   async function loadPreview() {
     const version = ++requestVersion.current;
@@ -51,7 +53,7 @@ export function DetailPagePreview({ getDraft, disabled = false }: DetailPagePrev
         data-testid="detail-page-preview"
         className="detail-page-preview-trigger"
         disabled={disabled}
-        onClick={show}
+        onClick={() => clickGuard("detail-page-preview:show", show)}
       >
         移动端预览
       </Button>
@@ -61,8 +63,8 @@ export function DetailPagePreview({ getDraft, disabled = false }: DetailPagePrev
         width={455}
         rootClassName="detail-page-preview-modal"
         destroyOnHidden
-        onCancel={close}
-        footer={<Button aria-label="关闭预览" onClick={close}>关闭</Button>}
+        onCancel={() => clickGuard("detail-page-preview:close", close)}
+        footer={<Button aria-label="关闭预览" onClick={() => clickGuard("detail-page-preview:close", close)}>关闭</Button>}
       >
         <div className="detail-preview-stage">
           {loading && (
@@ -75,7 +77,7 @@ export function DetailPagePreview({ getDraft, disabled = false }: DetailPagePrev
             <div className="detail-preview-error" role="alert">
               <strong>预览生成失败</strong>
               <p>{error}</p>
-              <Button onClick={() => void loadPreview()}>重新生成预览</Button>
+              <Button onClick={() => clickGuard("detail-page-preview:retry", loadPreview)}>重新生成预览</Button>
             </div>
           )}
           {!loading && dto && <DetailPageMobilePreview dto={dto} />}

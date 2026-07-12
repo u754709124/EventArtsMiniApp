@@ -27,6 +27,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { MediaAssetDto } from "@event-arts/shared";
 import { request } from "../api";
+import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { MediaPickerModal } from "./MediaPickerModal";
 import "./detail-pages.css";
 
@@ -177,6 +178,7 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
   const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const clickGuard = useRepeatClickGuard();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -283,8 +285,8 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
                     index={index}
                     count={ids.length}
                     disabled={disabled}
-                    onMove={(offset) => move(id, offset)}
-                    onRemove={() => onChange?.(ids.filter((item) => item !== id))}
+                    onMove={(offset) => clickGuard(`detail-banner:move:${id}:${offset}`, () => move(id, offset))}
+                    onRemove={() => clickGuard(`detail-banner:remove:${id}`, () => onChange?.(ids.filter((item) => item !== id)))}
                   />
                 ) : failedIds.has(id) ? (
                   <FailedBannerTile
@@ -293,8 +295,8 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
                     index={index}
                     disabled={disabled}
                     retrying={retryingIds.has(id)}
-                    onRetry={() => void retry(id)}
-                    onRemove={() => onChange?.(ids.filter((item) => item !== id))}
+                    onRetry={() => clickGuard(`detail-banner:retry:${id}`, () => retry(id))}
+                    onRemove={() => clickGuard(`detail-banner:remove:${id}`, () => onChange?.(ids.filter((item) => item !== id)))}
                   />
                 ) : null;
               })}
@@ -308,7 +310,7 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
         className="detail-banner-add"
         icon={<PlusOutlined />}
         disabled={disabled || atMaximum}
-        onClick={() => setPickerOpen(true)}
+        onClick={() => clickGuard("detail-banner:picker:open", () => setPickerOpen(true))}
       >
         从资源库选择或上传
       </Button>
@@ -320,8 +322,8 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
         fieldKey="detail.banner"
         allowedTypes={["image"]}
         testid="detail-banner-picker"
-        onCancel={() => setPickerOpen(false)}
-        onSelect={select}
+        onCancel={() => clickGuard("detail-banner:picker:cancel", () => setPickerOpen(false))}
+        onSelect={(asset) => clickGuard(`detail-banner:select:${asset.id}`, () => select(asset))}
       />
     </div>
   );

@@ -6,12 +6,14 @@ import { AppImage } from "../../components/AppImage";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getMenuItems } from "../../services/api";
 import { menuSummaries, openMenu } from "../../utils/menu-navigation";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./index.scss";
 
 export default function CategoryPage() {
   const [menus, setMenus] = useState<MenuItemDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const clickGuard = useRepeatClickGuard();
 
   async function load() {
     setLoading(true);
@@ -35,7 +37,7 @@ export default function CategoryPage() {
       {loading ? <LoadingState /> : failed ? (
         <View className="category-state" data-testid="category-error-state">
           <Text>分类加载失败</Text>
-          <Text className="primary-button" data-testid="category-reload" onClick={load}>重新加载</Text>
+          <Text className="primary-button" data-testid="category-reload" onClick={() => clickGuard("category:reload", load)}>重新加载</Text>
         </View>
       ) : menus.length === 0 ? (
         <EmptyState text="暂无分类" />
@@ -47,7 +49,7 @@ export default function CategoryPage() {
               className="category-artist-entry"
               data-testid={`category-menu-${menu.id}`}
               data-menu-type={menu.type}
-              onClick={() => openMenu(menu)}
+              onClick={() => clickGuard(`category:menu:${menu.id}`, () => openMenu(menu))}
             >
               <AppImage className="category-artist-entry__icon" src={menu.iconUrl} fallback={generatedAssets.placeholderIcon} />
               <View className="category-artist-entry__content" data-testid={`category-artist-${menu.type}`}>

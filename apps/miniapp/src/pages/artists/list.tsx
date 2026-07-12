@@ -7,6 +7,7 @@ import { AppImage } from "../../components/AppImage";
 import { request } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
 type ArtistListItem = ArtistListItemDto;
@@ -235,6 +236,7 @@ export default function ArtistList() {
   const metrics = useMemo(getNavigationMetrics, []);
   const copy = artistCopy[type as ArtistType];
   const title = artistTypeLabels[type as ArtistType];
+  const clickGuard = useRepeatClickGuard();
 
   useLoad((query) => {
     const nextType = normalizeArtistType(query.type);
@@ -308,7 +310,7 @@ export default function ArtistList() {
     <View className="artists-page" data-testid={`artist-list-page-${type}`}>
       <View className="artists-nav" style={{ paddingTop: `${metrics.safeTop}px` }}>
         <View className="artists-nav__content" style={{ height: `${metrics.headerHeight}px` }}>
-          <View className="artists-nav__back" data-testid="artist-back-button" onClick={goBack}>
+          <View className="artists-nav__back" data-testid="artist-back-button" onClick={() => clickGuard("artist:back", goBack)}>
             <View className="artists-nav__back-icon" aria-hidden />
           </View>
           <Text className="artists-nav__title" data-testid="artist-list-title">
@@ -330,7 +332,7 @@ export default function ArtistList() {
             onInput={(event) => setKeywordInput(event.detail.value)}
           />
         </View>
-        <View className="artist-filter-button" data-testid="artist-filter-button" onClick={openFilter}>
+        <View className="artist-filter-button" data-testid="artist-filter-button" onClick={() => clickGuard("artist:filter:open", openFilter)}>
           <View className="artist-filter-button__icon" aria-hidden />
           <Text>筛选</Text>
         </View>
@@ -343,7 +345,7 @@ export default function ArtistList() {
           <View className="artist-state" data-testid="artist-list-error">
             <Text className="artist-state__title">页面加载失败</Text>
             <Text className="artist-state__desc">请稍后重试</Text>
-            <Text className="artist-state__action" data-testid="artist-list-retry" onClick={() => setReloadKey((value: number) => value + 1)}>
+            <Text className="artist-state__action" data-testid="artist-list-retry" onClick={() => clickGuard("artist:retry", () => setReloadKey((value: number) => value + 1))}>
               重新加载
             </Text>
           </View>
@@ -368,9 +370,9 @@ export default function ArtistList() {
           tag={draftTag}
           onLocationChange={setDraftLocation}
           onTagChange={setDraftTag}
-          onClose={() => setFilterOpen(false)}
-          onReset={resetFilter}
-          onConfirm={confirmFilter}
+          onClose={() => clickGuard("artist:filter:close", () => setFilterOpen(false))}
+          onReset={() => clickGuard("artist:filter:reset", resetFilter)}
+          onConfirm={() => clickGuard("artist:filter:confirm", confirmFilter)}
         />
       )}
     </View>

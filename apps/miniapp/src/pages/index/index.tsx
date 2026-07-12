@@ -11,6 +11,7 @@ import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { openMenu } from "../../utils/menu-navigation";
+import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
 
@@ -102,6 +103,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
   const [marquee, setMarquee] = useState<NoticeMarqueeState | null>(null);
   const marqueeRunId = useRef(0);
   const swipeGuard = useSwipeClickGuard();
+  const clickGuard = useRepeatClickGuard();
   const multiple = announcements.length > 1;
   const currentAnnouncement = announcements[current] ?? announcements[0];
   const marqueeReady = Boolean(marquee && marquee.phase !== "measuring");
@@ -221,7 +223,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
                 onTouchCancel={swipeGuard.onTouchEnd}
                 onClick={clickable ? () => {
                   if (!swipeGuard.allowClick()) return;
-                  navigateToDetailPage(announcement.detailPageId);
+                  clickGuard(`home:announcement:${announcement.id}`, () => navigateToDetailPage(announcement.detailPageId));
                 } : undefined}
               >
                 <Image className="notice__icon" src={generatedAssets.iconBullet} mode="aspectFit" />
@@ -252,6 +254,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
 function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHomeResponse["site"] }) {
   const [current, setCurrent] = useState(0);
   const swipeGuard = useSwipeClickGuard();
+  const clickGuard = useRepeatClickGuard();
   const list = banners.length
     ? banners
     : [
@@ -299,7 +302,7 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
                 onTouchEnd={swipeGuard.onTouchEnd}
                 onTouchCancel={swipeGuard.onTouchEnd}
                 onClick={clickable ? () => {
-                  if (swipeGuard.allowClick()) navigateToDetailPage(banner.detailPageId);
+                  if (swipeGuard.allowClick()) clickGuard(`home:banner:${banner.id}`, () => navigateToDetailPage(banner.detailPageId));
                 } : undefined}
               >
                 <AppImage
@@ -318,6 +321,7 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
 }
 
 function MenuSection({ menus, site }: { menus: MenuItemDto[]; site: ClientHomeResponse["site"] }) {
+  const clickGuard = useRepeatClickGuard();
   return (
     <View className="menu-card card" data-testid="home-menu">
       {menus.length === 0 ? (
@@ -328,7 +332,7 @@ function MenuSection({ menus, site }: { menus: MenuItemDto[]; site: ClientHomeRe
             key={menu.id}
             className="menu-item"
             data-testid={`home-menu-${menu.type}`}
-            onClick={() => openMenu(menu)}
+            onClick={() => clickGuard(`home:menu:${menu.id}`, () => openMenu(menu))}
           >
             <AppImage className="menu-item__icon" src={menu.iconUrl} fallback={site.placeholderIconUrl || generatedAssets.placeholderIcon} />
             <Text>{menu.text}</Text>
@@ -344,6 +348,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const safeTop = useSafeTop();
+  const clickGuard = useRepeatClickGuard();
 
   async function load() {
     setLoading(true);
@@ -379,9 +384,9 @@ export default function HomePage() {
       <AnnouncementBar announcements={data.announcements} />
       <BannerSection banners={data.banners} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />
-      <View className="section-heading">
+      <View className="section-heading section-heading--cases">
         <Text className="section-heading__title">精选案例</Text>
-        <Text className="section-heading__more" onClick={() => openMenu("activity_case")}>
+        <Text className="section-heading__more" onClick={() => clickGuard("home:more:activity_case", () => openMenu("activity_case"))}>
           更多案例 ›
         </Text>
       </View>
@@ -396,7 +401,7 @@ export default function HomePage() {
       )}
       <View className="section-heading section-heading--articles">
         <Text className="section-heading__title">精选文章</Text>
-        <Text className="section-heading__more" data-testid="home-article-more" onClick={() => openMenu("article")}>
+        <Text className="section-heading__more" data-testid="home-article-more" onClick={() => clickGuard("home:more:article", () => openMenu("article"))}>
           更多文章 ›
         </Text>
       </View>
