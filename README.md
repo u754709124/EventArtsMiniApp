@@ -181,7 +181,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 
 ## 对象存储预留
 
-一期默认使用本地存储，数据库字段已保留 `storageType` 和稳定 `url`。生产迁移对象存储时建议保持 API 返回 URL 不变，或通过 CDN/对象存储域名更新 `PUBLIC_BASE_URL`。
+一期默认使用本地存储，数据库字段已保留 `storageType` 和稳定 `url`。本地资源入库保存 `/uploads/<filename>` 相对路径；API 响应会按当前 `PUBLIC_BASE_URL` 生成公网绝对 URL，并兼容旧库里保存的本地绝对 URL。生产迁移对象存储时建议保持 API 返回 URL 不变，或通过 CDN/对象存储域名更新 `PUBLIC_BASE_URL`。
 
 ## 生产注意事项
 

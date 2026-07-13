@@ -231,6 +231,35 @@ describe("standalone detail page API integration", () => {
     expect(await prisma.detailPageConfig.count()).toBe(configCount);
   });
 
+  it("stores detail rich text media as relative paths and serves them with the configured public base", async () => {
+    const auth = await token();
+    const content = await createAsset(190, "image");
+    await prisma.mediaAsset.update({
+      where: { id: content.id },
+      data: { url: `http://127.0.0.1:9999/uploads/${content.filename}` }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: richDetailPagePayload("旧资源图文详情", content.id)
+    });
+    const detailPage = response.json().data;
+    const stored = await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: detailPage.id } });
+    const expectedPublicUrl = `http://127.0.0.1:3001/uploads/${content.filename}`;
+
+    expect(response.statusCode).toBe(200);
+    expect(detailPage.richTextHtml).toContain(expectedPublicUrl);
+    expect(detailPage.richTextHtml).not.toContain("127.0.0.1:9999");
+    expect(stored.richTextHtml).toContain(`src="/uploads/${content.filename}"`);
+
+    const client = await clientInject({ method: "GET", url: `/api/client/detail-pages/${detailPage.id}` });
+    expect(client.statusCode).toBe(200);
+    expect(client.json().data.richTextHtml).toContain(expectedPublicUrl);
+    expect(client.json().data.richTextHtml).not.toContain("127.0.0.1:9999");
+  });
+
   it("creates a reusable detail page, links an artist, serves the public detail, and protects deletion", async () => {
     const auth = await token();
     const avatar = await createAsset(101, "image");

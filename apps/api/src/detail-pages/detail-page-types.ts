@@ -2,10 +2,12 @@ import type { MediaType } from "@event-arts/shared";
 
 export type DetailPageMediaAsset = {
   id: number;
+  filename?: string;
   mediaType: MediaType | string;
   url: string;
   width: number | null;
   height: number | null;
+  storageType?: string | null;
 };
 
 export class DetailPageDomainError extends Error {

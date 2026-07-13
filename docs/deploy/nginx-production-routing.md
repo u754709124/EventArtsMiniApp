@@ -151,6 +151,7 @@ curl -I https://your-domain.example/uploads/<known-file>
 - `/api/...` 到 API upstream 的路径仍包含 `/api`。
 - 匿名 `GET /api/client/home` 返回 `401/CLIENT_AUTH_REQUIRED`；用真实小程序 `wx.login` code 调用 `POST /api/client/auth/wechat` 成功后，带返回的 client bearer token 再访问 `/api/client/home`。
 - `/uploads/...` 到 API upstream 的路径仍包含 `/uploads`。
+- API 响应中的本地媒体 URL 使用当前 `PUBLIC_BASE_URL` 生成，例如 `https://your-domain.example/uploads/...`；SQLite 中本地资源仍保存 `/uploads/...` 相对路径。
 
 仓库内验证命令：
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { normalizeResourceName } from "@event-arts/shared";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
+import { localMediaStoredUrl } from "./media-url";
 
 sharp.cache(false);
 sharp.concurrency(1);
@@ -118,7 +119,7 @@ export async function registerSeedAssets(
       mimeType: spec.mimeType,
       mediaType: spec.mediaType,
       legacyUsage: "legacy",
-      url: `${options.publicBaseUrl}/uploads/${storageFilename}`,
+      url: localMediaStoredUrl(storageFilename),
       width: dimensions.width,
       height: dimensions.height,
       size: buffer.length,

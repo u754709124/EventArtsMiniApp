@@ -237,6 +237,21 @@ describe("client home aggregation", () => {
     expect(body.data.featuredArticles.map((article: { featuredSortOrder: number }) => article.featuredSortOrder)).toEqual([1, 2]);
   });
 
+  it("normalizes legacy local media URLs with the configured public base", async () => {
+    const asset = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "placeholder-icon.png" } });
+    await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { url: `http://127.0.0.1:9999/uploads/${asset.filename}` }
+    });
+
+    const response = await clientInject({ method: "GET", url: "/api/client/home" });
+    const data = response.json().data;
+
+    expect(response.statusCode).toBe(200);
+    expect(data.site.placeholderIconUrl).toBe(`http://127.0.0.1:3001/uploads/${asset.filename}`);
+    expect(JSON.stringify(data)).not.toContain("127.0.0.1:9999");
+  });
+
   it("hides disabled announcements, banners, and menu items from home", async () => {
     await prisma.announcement.updateMany({ data: { status: "disabled" } });
     await prisma.banner.updateMany({ data: { status: "disabled" } });
@@ -915,6 +930,10 @@ describe("media upload and references", () => {
         referenceCount: 0
       }
     });
+    const asset = response.json().data.asset;
+    const stored = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: asset.id } });
+    expect(stored.url).toBe(`/uploads/${stored.filename}`);
+    expect(asset.url).toBe(`http://127.0.0.1:3001/uploads/${stored.filename}`);
   });
 
   it("recomputes MD5 and rejects a mismatched client hash", async () => {

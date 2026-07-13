@@ -96,6 +96,7 @@ import {
   toMediaAssetDto,
   validateAssetForField
 } from "./media";
+import { resolveMediaAssetUrl, withResolvedMediaAssetUrl, type MediaUrlAsset } from "./media-url";
 import { hashPassword, verifyPassword } from "./security";
 import type { ApiConfig, ApiCorsConfig } from "./config";
 import { BackupServiceError, backupArchiveMaxBytes, createBackupService, type BackupServiceHooks } from "./backup";
@@ -432,14 +433,22 @@ function toIsoDateTime(date: Date) {
   return date.toISOString();
 }
 
+function mediaUrl(publicBaseUrl: string, asset: MediaUrlAsset | null | undefined) {
+  return asset ? resolveMediaAssetUrl(publicBaseUrl, asset) : "";
+}
+
+function publicMediaAsset<T extends MediaUrlAsset>(publicBaseUrl: string, asset: T | null): T | null {
+  return asset ? withResolvedMediaAssetUrl(publicBaseUrl, asset) : null;
+}
+
 function serializeCaseMedia(item: {
   sortOrder: number;
-  mediaAsset: { id: number; mediaType: string; url: string; width: number | null; height: number | null };
-}): CaseMediaDto {
+  mediaAsset: { id: number; mediaType: string; width: number | null; height: number | null } & MediaUrlAsset;
+}, publicBaseUrl: string): CaseMediaDto {
   return {
     id: item.mediaAsset.id,
     mediaType: item.mediaAsset.mediaType as "image" | "video",
-    url: item.mediaAsset.url,
+    url: mediaUrl(publicBaseUrl, item.mediaAsset),
     width: item.mediaAsset.width ?? 0,
     height: item.mediaAsset.height ?? 0,
     sortOrder: item.sortOrder
@@ -448,8 +457,8 @@ function serializeCaseMedia(item: {
 
 type ArtistWithCover = Prisma.ArtistGetPayload<{ include: { avatarAsset: true } }>;
 
-export function serializeArtist(item: ArtistWithCover) {
-  const coverUrl = item.avatarAsset?.url ?? null;
+export function serializeArtist(item: ArtistWithCover, publicBaseUrl: string) {
+  const coverUrl = item.avatarAsset ? mediaUrl(publicBaseUrl, item.avatarAsset) : null;
   const detailPageId = item.detailPageId ?? null;
   return {
     id: item.id,
@@ -469,11 +478,12 @@ export function serializeArtist(item: ArtistWithCover) {
   };
 }
 
-function serializeAdminArtist(item: ArtistWithCover, detailPage: DetailPageConfigDto | null) {
-  const artist = serializeArtist(item);
+function serializeAdminArtist(item: ArtistWithCover, detailPage: DetailPageConfigDto | null, publicBaseUrl: string) {
+  const artist = serializeArtist(item, publicBaseUrl);
   return {
     ...item,
     ...artist,
+    avatarAsset: publicMediaAsset(publicBaseUrl, item.avatarAsset),
     detail: detailPage?.richTextHtml ?? item.detail,
     detailPageSummary: detailPage ? { id: detailPage.id, name: detailPage.name, type: detailPage.type, typeLabel: detailPage.typeLabel } : null,
     detailPageType: detailPage?.type ?? null,
@@ -485,7 +495,7 @@ function serializeAdminArtist(item: ArtistWithCover, detailPage: DetailPageConfi
   };
 }
 
-async function legacyCaseMediaFromDetailPage(prisma: AppPrismaClient, detailPage: DetailPageConfigDto) {
+async function legacyCaseMediaFromDetailPage(prisma: AppPrismaClient, detailPage: DetailPageConfigDto, publicBaseUrl: string) {
   const references = extractRichTextMedia(detailPage.richTextHtml);
   const assets = references.length
     ? await prisma.mediaAsset.findMany({ where: { id: { in: references.map((item) => item.assetId) } } })
@@ -497,7 +507,7 @@ async function legacyCaseMediaFromDetailPage(prisma: AppPrismaClient, detailPage
     return [{
       id: asset.id,
       mediaType: asset.mediaType as "image" | "video",
-      url: asset.url,
+      url: mediaUrl(publicBaseUrl, asset),
       width: asset.width ?? 0,
       height: asset.height ?? 0,
       sortOrder
@@ -520,10 +530,10 @@ function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-async function assetUrl(prisma: AppPrismaClient, id: number | null | undefined) {
+async function assetUrl(prisma: AppPrismaClient, id: number | null | undefined, publicBaseUrl: string) {
   if (!id) return "";
   const asset = await prisma.mediaAsset.findUnique({ where: { id } });
-  return asset?.url ?? "";
+  return mediaUrl(publicBaseUrl, asset);
 }
 
 async function mediaProblemForId(prisma: AppPrismaClient, id: unknown, fieldKey: MediaFieldKey) {
@@ -561,7 +571,7 @@ function serializeAnnouncement(item: {
 function serializeBanner(item: {
   id: number;
   title: string;
-  imageAsset?: { url: string } | null;
+  imageAsset?: MediaUrlAsset | null;
   imageAssetId: number;
   linkType: string;
   linkTarget: string | null;
@@ -569,11 +579,12 @@ function serializeBanner(item: {
   switchDurationMs: number;
   sortOrder: number;
   status: string;
-}) {
+}, publicBaseUrl: string) {
   const detailPageId = item.detailPageId ?? null;
   return {
     ...item,
-    imageUrl: item.imageAsset?.url ?? "",
+    imageAsset: publicMediaAsset(publicBaseUrl, item.imageAsset ?? null),
+    imageUrl: mediaUrl(publicBaseUrl, item.imageAsset),
     detailPageId,
     hasDetailPage: detailPageId !== null,
     linkType: item.linkType,
@@ -586,18 +597,18 @@ function serializeMenuItem(item: {
   id: number;
   text: string;
   iconAssetId: number;
-  iconAsset?: { url: string } | null;
+  iconAsset?: MediaUrlAsset | null;
   type: string;
   configJson: string;
   showOnHome: boolean;
   sortOrder: number;
   status: string;
-}) {
+}, publicBaseUrl: string) {
   return {
     id: item.id,
     text: item.text,
     iconAssetId: item.iconAssetId,
-    iconUrl: item.iconAsset?.url ?? "",
+    iconUrl: mediaUrl(publicBaseUrl, item.iconAsset),
     type: item.type,
     configJson: parseMenuConfigForType(item.type, parseJson(item.configJson)),
     showOnHome: Boolean(item.showOnHome),
@@ -640,13 +651,13 @@ function articleWhere(query: { q?: string; category?: string; status?: "enabled"
   return where;
 }
 
-function serializeArticleListItem(item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>) {
+function serializeArticleListItem(item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>, publicBaseUrl: string) {
   const detailPageId = item.detailPageId ?? null;
   return {
     id: item.id,
     title: item.title,
     category: item.category,
-    coverUrl: item.coverAsset.url,
+    coverUrl: mediaUrl(publicBaseUrl, item.coverAsset),
     summary: item.summary,
     publishedAt: toIsoDateTime(item.publishedAt),
     detailPageId,
@@ -658,12 +669,16 @@ function serializeArticleListItem(item: Prisma.ArticleGetPayload<{ include: { co
   };
 }
 
-async function serializeAdminArticle(prisma: AppPrismaClient, item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>) {
-  const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+async function serializeAdminArticle(
+  prisma: AppPrismaClient,
+  item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>,
+  publicBaseUrl: string
+) {
+  const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null;
   return {
-    ...serializeArticleListItem(item),
+    ...serializeArticleListItem(item, publicBaseUrl),
     coverAssetId: item.coverAssetId,
-    coverAsset: item.coverAsset,
+    coverAsset: publicMediaAsset(publicBaseUrl, item.coverAsset),
     detailPageSummary: detailPage ? { id: detailPage.id, name: detailPage.name, type: detailPage.type, typeLabel: detailPage.typeLabel } : null,
     detailPageType: detailPage?.type ?? null,
     detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
@@ -682,7 +697,7 @@ function articleDataFromBody<T extends { publishedAt?: string | Date }>(body: T)
 
 function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
   include: { coverAsset: true; media: { include: { mediaAsset: true } } };
-}>) {
+}>, publicBaseUrl: string) {
   const detailPageId = item.detailPageId ?? null;
   return {
     id: item.id,
@@ -699,8 +714,8 @@ function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
     featuredSortOrder: item.featuredSortOrder,
     sortOrder: item.sortOrder,
     status: item.status as "enabled" | "disabled",
-    coverUrl: item.coverAsset.url,
-    media: item.media.map(serializeCaseMedia)
+    coverUrl: mediaUrl(publicBaseUrl, item.coverAsset),
+    media: item.media.map((media) => serializeCaseMedia(media, publicBaseUrl))
   };
 }
 
@@ -1105,6 +1120,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       const asset = assetById.get(row.id);
       if (!asset) throw new Error(`missing media asset ${row.id}`);
       return toMediaAssetDto(prisma, asset, {
+        publicBaseUrl: options.publicBaseUrl,
         referenceCount: row.referenceCount,
         createdByName: asset.createdBy ? creatorNames.get(asset.createdBy) ?? null : null
       });
@@ -1691,16 +1707,16 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         site: {
           appName: site?.appName ?? "",
           subtitle: site?.subtitle ?? "",
-          defaultBannerUrl: await assetUrl(prisma, site?.defaultBannerAssetId),
-          placeholderBannerUrl: await assetUrl(prisma, site?.placeholderBannerAssetId),
-          placeholderIconUrl: await assetUrl(prisma, site?.placeholderIconAssetId),
-          placeholderCaseUrl: await assetUrl(prisma, site?.placeholderCaseAssetId)
+          defaultBannerUrl: await assetUrl(prisma, site?.defaultBannerAssetId, options.publicBaseUrl),
+          placeholderBannerUrl: await assetUrl(prisma, site?.placeholderBannerAssetId, options.publicBaseUrl),
+          placeholderIconUrl: await assetUrl(prisma, site?.placeholderIconAssetId, options.publicBaseUrl),
+          placeholderCaseUrl: await assetUrl(prisma, site?.placeholderCaseAssetId, options.publicBaseUrl)
         },
         announcements: announcements.map(serializeAnnouncement),
-        banners: banners.map(serializeBanner),
-        menus: menus.map(serializeMenuItem),
-        featuredCases: featuredCases.map(serializeCaseListItem),
-        featuredArticles: featuredArticles.map(serializeArticleListItem)
+        banners: banners.map((item) => serializeBanner(item, options.publicBaseUrl)),
+        menus: menus.map((item) => serializeMenuItem(item, options.publicBaseUrl)),
+        featuredCases: featuredCases.map((item) => serializeCaseListItem(item, options.publicBaseUrl)),
+        featuredArticles: featuredArticles.map((item) => serializeArticleListItem(item, options.publicBaseUrl))
       })
     );
   });
@@ -1711,7 +1727,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       include: { iconAsset: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
     });
-    return reply.send(ok(items.map(serializeMenuItem)));
+    return reply.send(ok(items.map((item) => serializeMenuItem(item, options.publicBaseUrl))));
   });
 
   app.post("/api/client/track/page-view", async (request, reply) => {
@@ -1751,7 +1767,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/client/detail-pages/:id", async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (!Number.isInteger(id) || id <= 0) return sendError(reply, 400, "VALIDATION_ERROR", "详情页 ID 无效");
-    return reply.send(ok(await getRequiredDetailPageById(prisma, id)));
+    return reply.send(ok(await getRequiredDetailPageById(prisma, id, false, options.publicBaseUrl)));
   });
 
   app.get("/api/client/cases", async (request, reply) => {
@@ -1767,7 +1783,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       orderBy: { sortOrder: "asc" }
     });
     return reply.send(
-      ok(items.filter((item) => matchesCaseQuery(item, parsed.data.q)).map(serializeCaseListItem))
+      ok(items.filter((item) => matchesCaseQuery(item, parsed.data.q)).map((item) => serializeCaseListItem(item, options.publicBaseUrl)))
     );
   });
 
@@ -1778,9 +1794,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
     });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "案例不存在");
-    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, options.publicBaseUrl) : null;
     return reply.send(ok({
-          ...serializeCaseListItem(item),
+          ...serializeCaseListItem(item, options.publicBaseUrl),
           id: item.id,
           title: item.title,
           category: item.category,
@@ -1794,8 +1810,10 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           featuredSortOrder: item.featuredSortOrder,
           sortOrder: item.sortOrder,
           status: item.status,
-          coverUrl: item.coverAsset.url,
-          media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
+          coverUrl: mediaUrl(options.publicBaseUrl, item.coverAsset),
+          media: detailPage
+            ? await legacyCaseMediaFromDetailPage(prisma, detailPage, options.publicBaseUrl)
+            : item.media.map((media) => serializeCaseMedia(media, options.publicBaseUrl))
         }));
   });
 
@@ -1820,7 +1838,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       })
     ]);
     return reply.send(ok({
-      items: items.map(serializeArticleListItem),
+      items: items.map((item) => serializeArticleListItem(item, options.publicBaseUrl)),
       total,
       page,
       pageSize,
@@ -1846,21 +1864,21 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       return [item.name, item.location, item.badge, item.summary, ...tags]
         .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
     });
-    return reply.send(ok(filtered.map(serializeArtist)));
+    return reply.send(ok(filtered.map((item) => serializeArtist(item, options.publicBaseUrl))));
   });
 
   app.get("/api/client/artists/:id", async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const item = await prisma.artist.findFirst({ where: { id, status: "enabled" }, include: { avatarAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "人员不存在");
-    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
-    return reply.send(ok({ ...serializeArtist(item), detail: detailPage?.richTextHtml ?? item.detail, detailPage }));
+    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, options.publicBaseUrl) : null;
+    return reply.send(ok({ ...serializeArtist(item, options.publicBaseUrl), detail: detailPage?.richTextHtml ?? item.detail, detailPage }));
   });
 
   app.get("/api/admin/detail-pages", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = detailPageListQuerySchema.safeParse(request.query);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "详情页列表参数错误");
-    return reply.send(ok(await listDetailPages(prisma, parsed.data)));
+    return reply.send(ok(await listDetailPages(prisma, parsed.data, options.publicBaseUrl)));
   });
 
   app.get("/api/admin/detail-pages/options", { preHandler: requireAdmin }, async (request, reply) => {
@@ -1872,13 +1890,13 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/admin/detail-pages/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (!Number.isInteger(id) || id <= 0) return sendError(reply, 400, "VALIDATION_ERROR", "详情页 ID 无效");
-    return reply.send(ok(await getRequiredDetailPageById(prisma, id, true)));
+    return reply.send(ok(await getRequiredDetailPageById(prisma, id, true, options.publicBaseUrl)));
   });
 
   app.post("/api/admin/detail-pages", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = DetailPageInputSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "详情页参数错误");
-    return reply.send(ok(await createDetailPage(prisma, parsed.data)));
+    return reply.send(ok(await createDetailPage(prisma, parsed.data, options.publicBaseUrl)));
   });
 
   app.put("/api/admin/detail-pages/:id", { preHandler: requireAdmin }, async (request, reply) => {
@@ -1886,7 +1904,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     if (!Number.isInteger(id) || id <= 0) return sendError(reply, 400, "VALIDATION_ERROR", "详情页 ID 无效");
     const parsed = DetailPageInputSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "详情页参数错误");
-    return reply.send(ok(await updateDetailPage(prisma, id, parsed.data)));
+    return reply.send(ok(await updateDetailPage(prisma, id, parsed.data, options.publicBaseUrl)));
   });
 
   app.delete("/api/admin/detail-pages/:id", { preHandler: requireAdmin }, async (request, reply) => {
@@ -1899,14 +1917,14 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/admin/detail-pages/:id/references", { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (!Number.isInteger(id) || id <= 0) return sendError(reply, 400, "VALIDATION_ERROR", "详情页 ID 无效");
-    await getRequiredDetailPageById(prisma, id);
+    await getRequiredDetailPageById(prisma, id, false, options.publicBaseUrl);
     return reply.send(ok({ items: await getDetailPageReferences(prisma, id) }));
   });
 
   app.post("/api/admin/detail-pages/preview", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = detailPagePreviewSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "详情页预览参数错误");
-    return reply.send(ok(await previewDetailPage(prisma, parsed.data.detailPage)));
+    return reply.send(ok(await previewDetailPage(prisma, parsed.data.detailPage, options.publicBaseUrl)));
   });
 
   app.get("/api/admin/site-config", { preHandler: requireAdmin }, async (_request, reply) => {
@@ -1973,7 +1991,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     const id = Number((request.params as { id: string }).id);
     const asset = await prisma.mediaAsset.findUnique({ where: { id }, include: { tags: true } });
     if (!asset) return sendError(reply, 404, "NOT_FOUND", "资源不存在");
-    return reply.send(ok(await toMediaAssetDto(prisma, asset)));
+    return reply.send(ok(await toMediaAssetDto(prisma, asset, { publicBaseUrl: options.publicBaseUrl })));
   });
 
   app.post("/api/admin/media-assets/lookup", { preHandler: requireAdmin }, async (request, reply) => {
@@ -1982,7 +2000,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     const asset = await prisma.mediaAsset.findUnique({ where: { md5: parsed.data.md5.toLowerCase() }, include: { tags: true } });
     if (!asset) return reply.send(ok({ asset: null }));
     if (asset.size !== parsed.data.size) return sendError(reply, 409, "HASH_COLLISION", "MD5 相同但文件大小不一致");
-    return reply.send(ok({ asset: await toMediaAssetDto(prisma, asset) }));
+    return reply.send(ok({ asset: await toMediaAssetDto(prisma, asset, { publicBaseUrl: options.publicBaseUrl }) }));
   });
 
   app.post("/api/admin/media-assets/check-name", { preHandler: requireAdmin }, async (request, reply) => {
@@ -2066,7 +2084,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       const existing = await prisma.mediaAsset.findUnique({ where: { md5: upload.md5 }, include: { tags: true } });
       if (existing) {
         if (existing.size !== upload.size) return sendError(reply, 409, "HASH_COLLISION", "MD5 相同但文件大小不一致");
-        return reply.send(ok({ asset: await toMediaAssetDto(prisma, existing), reused: true }));
+        return reply.send(ok({ asset: await toMediaAssetDto(prisma, existing, { publicBaseUrl: options.publicBaseUrl }), reused: true }));
       }
       const duplicateName = await prisma.mediaAsset.findUnique({ where: { resourceNameKey: name.key } });
       if (duplicateName) return sendError(reply, 409, "DUPLICATE_RESOURCE_NAME", "资源名称已存在，请更换");
@@ -2084,19 +2102,18 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           tags,
           upload,
           filename: storedFilename,
-          publicBaseUrl: options.publicBaseUrl,
           mediaType: inspected.mediaType,
           width: inspected.width,
           height: inspected.height,
           createdBy: request.admin?.id
         });
         committed = true;
-        return reply.send(ok({ asset: await toMediaAssetDto(prisma, asset), reused: false }));
+        return reply.send(ok({ asset: await toMediaAssetDto(prisma, asset, { publicBaseUrl: options.publicBaseUrl }), reused: false }));
       } catch (error) {
         const concurrent = await prisma.mediaAsset.findUnique({ where: { md5: upload.md5 }, include: { tags: true } });
         if (concurrent && concurrent.size === upload.size) {
           await discardStoredFile();
-          return reply.send(ok({ asset: await toMediaAssetDto(prisma, concurrent), reused: true }));
+          return reply.send(ok({ asset: await toMediaAssetDto(prisma, concurrent, { publicBaseUrl: options.publicBaseUrl }), reused: true }));
         }
         if ((error as { code?: string }).code === "P2002") {
           await discardStoredFile();
@@ -2136,7 +2153,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           include: { tags: true }
         });
       });
-      return reply.send(ok(await toMediaAssetDto(prisma, asset)));
+      return reply.send(ok(await toMediaAssetDto(prisma, asset, { publicBaseUrl: options.publicBaseUrl })));
     } catch (error) {
       if ((error as { code?: string }).code === "P2002") {
         return sendError(reply, 409, "DUPLICATE_RESOURCE_NAME", "资源名称已存在，请更换");
@@ -2194,7 +2211,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok({ deletedIds, skipped, failed }));
   });
 
-  registerCrud(app, prisma, requireAdmin);
+  registerCrud(app, prisma, requireAdmin, options.publicBaseUrl);
 
   return app;
 }
@@ -2202,7 +2219,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
 function registerCrud(
   app: FastifyInstance,
   prisma: AppPrismaClient,
-  requireAdmin: (request: AdminRequest, reply: FastifyReply) => Promise<unknown>
+  requireAdmin: (request: AdminRequest, reply: FastifyReply) => Promise<unknown>,
+  publicBaseUrl: string
 ) {
   async function handleReorder(
     request: FastifyRequest,
@@ -2254,7 +2272,7 @@ function registerCrud(
 
   app.get("/api/admin/banners", { preHandler: requireAdmin }, async (_request, reply) => {
     const items = await prisma.banner.findMany({ include: { imageAsset: true }, orderBy: { sortOrder: "asc" } });
-    return reply.send(ok({ items: items.map(serializeBanner), total: items.length }));
+    return reply.send(ok({ items: items.map((item) => serializeBanner(item, publicBaseUrl)), total: items.length }));
   });
   app.post("/api/admin/banners/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
     findAllIds: (tx) => tx.banner.findMany({ select: { id: true } }),
@@ -2265,7 +2283,7 @@ function registerCrud(
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "Banner ID 错误");
     const item = await prisma.banner.findUnique({ where: { id }, include: { imageAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "Banner 不存在");
-    return reply.send(ok(serializeBanner(item)));
+    return reply.send(ok(serializeBanner(item, publicBaseUrl)));
   });
   app.post("/api/admin/banners", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = bannerCreateSchema.safeParse(request.body);
@@ -2274,7 +2292,7 @@ function registerCrud(
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     await validateDetailPageReference(prisma, parsed.data.detailPageId);
     const item = await prisma.banner.create({ data: parsed.data, include: { imageAsset: true } });
-    return reply.send(ok(serializeBanner(item)));
+    return reply.send(ok(serializeBanner(item, publicBaseUrl)));
   });
   app.put("/api/admin/banners/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = bannerUpdateSchema.safeParse(request.body);
@@ -2291,7 +2309,7 @@ function registerCrud(
       data: body,
       include: { imageAsset: true }
     });
-    return reply.send(ok(serializeBanner(item)));
+    return reply.send(ok(serializeBanner(item, publicBaseUrl)));
   });
   app.delete("/api/admin/banners/:id", { preHandler: requireAdmin }, async (request, reply) => {
     await prisma.banner.delete({ where: { id: Number((request.params as { id: string }).id) } });
@@ -2300,7 +2318,7 @@ function registerCrud(
 
   app.get("/api/admin/menu-items", { preHandler: requireAdmin }, async (_request, reply) => {
     const items = await prisma.menuItem.findMany({ include: { iconAsset: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
-    const serialized = items.map(serializeMenuItem);
+    const serialized = items.map((item) => serializeMenuItem(item, publicBaseUrl));
     return reply.send(ok({ items: serialized, total: serialized.length }));
   });
   app.post("/api/admin/menu-items/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
@@ -2312,7 +2330,7 @@ function registerCrud(
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "菜单 ID 错误");
     const item = await prisma.menuItem.findUnique({ where: { id }, include: { iconAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "菜单不存在");
-    return reply.send(ok(serializeMenuItem(item)));
+    return reply.send(ok(serializeMenuItem(item, publicBaseUrl)));
   });
   app.post("/api/admin/menu-items", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = MenuItemCreateRequestSchema.safeParse(request.body);
@@ -2325,7 +2343,7 @@ function registerCrud(
       data: { ...body, configJson: JSON.stringify(configJson) },
       include: { iconAsset: true }
     });
-    return reply.send(ok(serializeMenuItem(item)));
+    return reply.send(ok(serializeMenuItem(item, publicBaseUrl)));
   });
   app.put("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = MenuItemUpdateRequestSchema.safeParse(request.body);
@@ -2346,7 +2364,7 @@ function registerCrud(
       data: data as never,
       include: { iconAsset: true }
     });
-    return reply.send(ok(serializeMenuItem(item)));
+    return reply.send(ok(serializeMenuItem(item, publicBaseUrl)));
   });
   app.delete("/api/admin/menu-items/:id", { preHandler: requireAdmin }, async (request, reply) => {
     await prisma.menuItem.delete({ where: { id: Number((request.params as { id: string }).id) } });
@@ -2389,7 +2407,7 @@ function registerCrud(
       }),
       prisma.article.count({ where })
     ]);
-    const serialized = await Promise.all(items.map((item) => serializeAdminArticle(prisma, item)));
+    const serialized = await Promise.all(items.map((item) => serializeAdminArticle(prisma, item, publicBaseUrl)));
     return reply.send(ok({ items: serialized, total, page, pageSize }));
   });
 
@@ -2403,7 +2421,7 @@ function registerCrud(
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "文章 ID 错误");
     const item = await prisma.article.findUnique({ where: { id }, include: { coverAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "文章不存在");
-    return reply.send(ok(await serializeAdminArticle(prisma, item)));
+    return reply.send(ok(await serializeAdminArticle(prisma, item, publicBaseUrl)));
   });
 
   app.post("/api/admin/articles", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
@@ -2423,7 +2441,7 @@ function registerCrud(
       });
       return article;
     });
-    return reply.send(ok(await serializeAdminArticle(prisma, created)));
+    return reply.send(ok(await serializeAdminArticle(prisma, created, publicBaseUrl)));
   });
 
   app.put("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
@@ -2447,7 +2465,7 @@ function registerCrud(
       });
       return article;
     });
-    return reply.send(ok(await serializeAdminArticle(prisma, updated)));
+    return reply.send(ok(await serializeAdminArticle(prisma, updated, publicBaseUrl)));
   });
 
   app.delete("/api/admin/articles/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
@@ -2467,15 +2485,15 @@ function registerCrud(
       orderBy: { sortOrder: "asc" }
     });
     const serialized = await Promise.all(items.map(async (item) => {
-      const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+      const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null;
       return {
-        ...serializeCaseListItem(item),
+        ...serializeCaseListItem(item, publicBaseUrl),
         id: item.id,
         title: item.title,
         category: item.category,
         tag: item.tag,
         coverAssetId: item.coverAssetId,
-        coverAsset: item.coverAsset,
+        coverAsset: publicMediaAsset(publicBaseUrl, item.coverAsset),
         summary: item.summary,
         eventDate: toIsoDate(item.eventDate),
         location: item.location,
@@ -2491,7 +2509,9 @@ function registerCrud(
         sortOrder: item.sortOrder,
         status: item.status,
         detailMediaAssetIds: detailPage ? extractRichTextMedia(detailPage.richTextHtml).map((media) => media.assetId) : [],
-        media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
+        media: detailPage
+          ? await legacyCaseMediaFromDetailPage(prisma, detailPage, publicBaseUrl)
+          : item.media.map((media) => serializeCaseMedia(media, publicBaseUrl))
       };
     }));
     return reply.send(ok({
@@ -2511,15 +2531,15 @@ function registerCrud(
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
     });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "案例不存在");
-    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null;
+    const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null;
     return reply.send(ok({
-      ...serializeCaseListItem(item),
+      ...serializeCaseListItem(item, publicBaseUrl),
       id: item.id,
       title: item.title,
       category: item.category,
       tag: item.tag,
       coverAssetId: item.coverAssetId,
-      coverAsset: item.coverAsset,
+      coverAsset: publicMediaAsset(publicBaseUrl, item.coverAsset),
       summary: item.summary,
       eventDate: toIsoDate(item.eventDate),
       location: item.location,
@@ -2535,7 +2555,9 @@ function registerCrud(
       sortOrder: item.sortOrder,
       status: item.status,
       detailMediaAssetIds: detailPage ? extractRichTextMedia(detailPage.richTextHtml).map((media) => media.assetId) : [],
-      media: detailPage ? await legacyCaseMediaFromDetailPage(prisma, detailPage) : item.media.map(serializeCaseMedia)
+      media: detailPage
+        ? await legacyCaseMediaFromDetailPage(prisma, detailPage, publicBaseUrl)
+        : item.media.map((media) => serializeCaseMedia(media, publicBaseUrl))
     }));
   });
   app.post("/api/admin/cases", { preHandler: requireAdmin }, async (request, reply) => {
@@ -2555,9 +2577,9 @@ function registerCrud(
       },
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
     });
-    const config = created.detailPageId ? await getDetailPageById(prisma, created.detailPageId) : null;
+    const config = created.detailPageId ? await getDetailPageById(prisma, created.detailPageId, false, publicBaseUrl) : null;
     return reply.send(ok({
-      ...serializeCaseListItem(created),
+      ...serializeCaseListItem(created, publicBaseUrl),
       detail: config?.richTextHtml ?? created.detail,
       detailPageSummary: config ? { id: config.id, name: config.name, type: config.type, typeLabel: config.typeLabel } : null,
       detailPageType: config?.type ?? null,
@@ -2566,7 +2588,7 @@ function registerCrud(
       detailMediaCount: config ? extractRichTextMedia(config.richTextHtml).length : 0,
       hasRichText: Boolean(config?.richTextHtml),
       detailMediaAssetIds: config ? extractRichTextMedia(config.richTextHtml).map((item) => item.assetId) : [],
-      media: config ? await legacyCaseMediaFromDetailPage(prisma, config) : []
+      media: config ? await legacyCaseMediaFromDetailPage(prisma, config, publicBaseUrl) : []
     }));
   });
   app.put("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
@@ -2592,9 +2614,9 @@ function registerCrud(
       data: updateData,
       include: { coverAsset: true, media: { include: { mediaAsset: true }, orderBy: { sortOrder: "asc" } } }
     });
-    const config = updated.detailPageId ? await getDetailPageById(prisma, updated.detailPageId) : null;
+    const config = updated.detailPageId ? await getDetailPageById(prisma, updated.detailPageId, false, publicBaseUrl) : null;
     return reply.send(ok({
-      ...serializeCaseListItem(updated),
+      ...serializeCaseListItem(updated, publicBaseUrl),
       detail: config?.richTextHtml ?? updated.detail,
       detailPageSummary: config ? { id: config.id, name: config.name, type: config.type, typeLabel: config.typeLabel } : null,
       detailPageType: config?.type ?? null,
@@ -2603,7 +2625,9 @@ function registerCrud(
       detailMediaCount: config ? extractRichTextMedia(config.richTextHtml).length : 0,
       hasRichText: Boolean(config?.richTextHtml),
       detailMediaAssetIds: config ? extractRichTextMedia(config.richTextHtml).map((item) => item.assetId) : [],
-      media: config ? await legacyCaseMediaFromDetailPage(prisma, config) : updated.media.map(serializeCaseMedia)
+      media: config
+        ? await legacyCaseMediaFromDetailPage(prisma, config, publicBaseUrl)
+        : updated.media.map((media) => serializeCaseMedia(media, publicBaseUrl))
     }));
   });
   app.delete("/api/admin/cases/:id", { preHandler: requireAdmin }, async (request, reply) => {
@@ -2623,7 +2647,11 @@ function registerCrud(
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
     });
     const serialized = await Promise.all(items.map(async (item) =>
-      serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)
+      serializeAdminArtist(
+        item,
+        item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null,
+        publicBaseUrl
+      )
     ));
     return reply.send(ok({ items: serialized, total: items.length }));
   });
@@ -2636,7 +2664,11 @@ function registerCrud(
     if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "人员 ID 错误");
     const item = await prisma.artist.findUnique({ where: { id }, include: { avatarAsset: true } });
     if (!item) return sendError(reply, 404, "NOT_FOUND", "人员不存在");
-    return reply.send(ok(serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)));
+    return reply.send(ok(serializeAdminArtist(
+      item,
+      item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null,
+      publicBaseUrl
+    )));
   });
   app.post("/api/admin/artists", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistCreateRequestSchema.safeParse(request.body);
@@ -2650,7 +2682,11 @@ function registerCrud(
       data: { ...artistData, detail: "", tagsJson: serializeArtistTags(tags) },
       include: { avatarAsset: true }
     });
-    return reply.send(ok(serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)));
+    return reply.send(ok(serializeAdminArtist(
+      item,
+      item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null,
+      publicBaseUrl
+    )));
   });
   app.put("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistUpdateRequestSchema.safeParse(request.body);
@@ -2670,7 +2706,11 @@ function registerCrud(
       data: { ...artistData, ...(tags !== undefined ? { tagsJson: serializeArtistTags(tags) } : {}) },
       include: { avatarAsset: true }
     });
-    return reply.send(ok(serializeAdminArtist(item, item.detailPageId ? await getDetailPageById(prisma, item.detailPageId) : null)));
+    return reply.send(ok(serializeAdminArtist(
+      item,
+      item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null,
+      publicBaseUrl
+    )));
   });
   app.delete("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);

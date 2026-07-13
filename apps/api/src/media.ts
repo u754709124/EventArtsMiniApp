@@ -21,6 +21,7 @@ import ffprobe from "@ffprobe-installer/ffprobe";
 import type { Prisma } from "@prisma/client";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
+import { localMediaStoredUrl, resolveMediaAssetUrl } from "./media-url";
 
 export const imageMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 export const videoMimeTypes = ["video/mp4"] as const;
@@ -162,7 +163,7 @@ type AssetWithTags = Prisma.MediaAssetGetPayload<{ include: { tags: true } }>;
 export async function toMediaAssetDto(
   prisma: AppPrismaClient,
   asset: AssetWithTags,
-  known: { referenceCount?: number; createdByName?: string | null } = {}
+  known: { publicBaseUrl: string; referenceCount?: number; createdByName?: string | null }
 ): Promise<MediaAssetDto> {
   const [referenceSources, creator] = await Promise.all([
     mediaReferenceSources(prisma, asset.id),
@@ -178,7 +179,7 @@ export async function toMediaAssetDto(
     md5: asset.md5,
     mimeType: asset.mimeType,
     mediaType: asset.mediaType as MediaType,
-    url: asset.url,
+    url: resolveMediaAssetUrl(known.publicBaseUrl, asset),
     width: asset.width,
     height: asset.height,
     size: asset.size,
@@ -413,7 +414,6 @@ export async function createMediaAsset(
     tags: string[];
     upload: PersistedUpload;
     filename: string;
-    publicBaseUrl: string;
     mediaType: MediaType;
     width: number;
     height: number;
@@ -432,7 +432,7 @@ export async function createMediaAsset(
       mimeType: input.upload.mimeType,
       mediaType: input.mediaType,
       legacyUsage: "legacy",
-      url: `${input.publicBaseUrl}/uploads/${input.filename}`,
+      url: localMediaStoredUrl(input.filename),
       width: input.width,
       height: input.height,
       size: input.upload.size,

@@ -27,6 +27,7 @@ import {
   DetailPageValidationError,
   type DetailPageMediaAsset
 } from "./detail-page-types";
+import { resolveStoredMediaAssetUrl, withResolvedMediaAssetUrl } from "../media-url";
 
 export type DetailPageDb = AppPrismaClient | Prisma.TransactionClient;
 
@@ -93,9 +94,25 @@ async function assetsByIds(db: DetailPageDb, ids: number[]) {
   if (!uniqueIds.length) return new Map<number, DetailPageMediaAsset>();
   const assets = await db.mediaAsset.findMany({
     where: { id: { in: uniqueIds } },
-    select: { id: true, mediaType: true, url: true, width: true, height: true }
+    select: { id: true, filename: true, mediaType: true, url: true, width: true, height: true, storageType: true }
   });
-  return new Map(assets.map((asset) => [asset.id, asset]));
+  return new Map(assets.map((asset) => [asset.id, {
+    ...asset,
+    url: resolveStoredMediaAssetUrl(asset)
+  }]));
+}
+
+function publicDetailPageAssets(
+  assets: Map<number, DetailPageMediaAsset>,
+  publicBaseUrl?: string
+) {
+  if (!publicBaseUrl) return assets;
+  return new Map([...assets].map(([id, asset]) => [
+    id,
+    asset.filename
+      ? withResolvedMediaAssetUrl(publicBaseUrl, asset as DetailPageMediaAsset & { filename: string })
+      : asset
+  ]));
 }
 
 async function prepareDetailPage(db: DetailPageDb, input: DetailPageInput): Promise<PreparedDetailPage> {
@@ -213,7 +230,8 @@ export async function detailPageReferenceCount(db: DetailPageDb, id: number) {
 
 export async function listDetailPages(
   db: DetailPageDb,
-  query: { q?: string; type?: string; page?: number; pageSize?: number } = {}
+  query: { q?: string; type?: string; page?: number; pageSize?: number } = {},
+  publicBaseUrl?: string
 ) {
   const page = query.page && query.page > 0 ? query.page : 1;
   const pageSize = query.pageSize && query.pageSize > 0 ? Math.min(query.pageSize, 100) : 20;
@@ -238,7 +256,7 @@ export async function listDetailPages(
     db.detailPageConfig.count({ where })
   ]);
   const items: DetailPageSummaryDto[] = await Promise.all(records.map(async (record) => {
-    const dto = serializeDetailPageConfig(record);
+    const dto = serializeDetailPageConfig(record, publicBaseUrl);
     return {
       id: record.id,
       name: record.name,
@@ -283,15 +301,25 @@ export async function listDetailPageOptions(
   });
 }
 
-export async function getDetailPageById(db: DetailPageDb, id: number, includeReferences = false) {
+export async function getDetailPageById(
+  db: DetailPageDb,
+  id: number,
+  includeReferences = false,
+  publicBaseUrl?: string
+) {
   const record = await db.detailPageConfig.findUnique({ where: { id }, include: detailPageConfigInclude });
   if (!record) return null;
-  const dto = serializeDetailPageConfig(record);
+  const dto = serializeDetailPageConfig(record, publicBaseUrl);
   return includeReferences ? { ...dto, references: await getDetailPageReferences(db, id) } : dto;
 }
 
-export async function getRequiredDetailPageById(db: DetailPageDb, id: number, includeReferences = false) {
-  const dto = await getDetailPageById(db, id, includeReferences);
+export async function getRequiredDetailPageById(
+  db: DetailPageDb,
+  id: number,
+  includeReferences = false,
+  publicBaseUrl?: string
+) {
+  const dto = await getDetailPageById(db, id, includeReferences, publicBaseUrl);
   if (!dto) throw new DetailPageDomainError("DETAIL_PAGE_NOT_FOUND", "详情页不存在", 404);
   return dto;
 }
@@ -306,7 +334,7 @@ export async function validateDetailPageReference(db: DetailPageDb, detailPageId
   return detailPageId;
 }
 
-export async function createDetailPage(db: DetailPageDb, input: DetailPageInput) {
+export async function createDetailPage(db: DetailPageDb, input: DetailPageInput, publicBaseUrl?: string) {
   return withDetailPageTransaction(db, async (tx) => {
     const prepared = await prepareDetailPage(tx, input);
     const record = await tx.detailPageConfig.create({
@@ -318,11 +346,11 @@ export async function createDetailPage(db: DetailPageDb, input: DetailPageInput)
     });
     await syncBannerRelations(tx, record.id, prepared.bannerAssetIds);
     await syncContentRelations(tx, record.id, prepared.contentMedia.map((item) => item.assetId));
-    return getRequiredDetailPageById(tx, record.id, true);
+    return getRequiredDetailPageById(tx, record.id, true, publicBaseUrl);
   });
 }
 
-export async function updateDetailPage(db: DetailPageDb, id: number, input: DetailPageInput) {
+export async function updateDetailPage(db: DetailPageDb, id: number, input: DetailPageInput, publicBaseUrl?: string) {
   return withDetailPageTransaction(db, async (tx) => {
     const exists = await tx.detailPageConfig.count({ where: { id } });
     if (!exists) throw new DetailPageDomainError("DETAIL_PAGE_NOT_FOUND", "详情页不存在", 404);
@@ -333,7 +361,7 @@ export async function updateDetailPage(db: DetailPageDb, id: number, input: Deta
     });
     await syncBannerRelations(tx, id, prepared.bannerAssetIds);
     await syncContentRelations(tx, id, prepared.contentMedia.map((item) => item.assetId));
-    return getRequiredDetailPageById(tx, id, true);
+    return getRequiredDetailPageById(tx, id, true, publicBaseUrl);
   });
 }
 
@@ -360,9 +388,10 @@ export async function deleteDetailPage(db: DetailPageDb, id: number) {
   }
 }
 
-export async function previewDetailPage(db: DetailPageDb, input: DetailPageInput) {
+export async function previewDetailPage(db: DetailPageDb, input: DetailPageInput, publicBaseUrl?: string) {
   const prepared = await prepareDetailPage(db, input);
   const type = prepared.parsed.type;
+  const assets = publicDetailPageAssets(prepared.assets, publicBaseUrl);
   return buildDetailPageDto({
     id: 0,
     name: prepared.parsed.name,
@@ -373,10 +402,10 @@ export async function previewDetailPage(db: DetailPageDb, input: DetailPageInput
     richTextHtml: prepared.richTextHtml,
     banners: prepared.bannerAssetIds.map((id, sortOrder) => ({
       id,
-      asset: prepared.assets.get(id)!,
+      asset: assets.get(id)!,
       sortOrder
     })),
-    contentAssets: prepared.assets
+    contentAssets: assets
   });
 }
 

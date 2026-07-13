@@ -7,7 +7,9 @@ import {
   type DetailPageType
 } from "@event-arts/shared";
 import { buildDetailPageCards } from "./detail-page-parser";
+import { sanitizeAndNormalizeRichText } from "./detail-page-sanitizer";
 import { DetailPageDomainError, type DetailPageMediaAsset } from "./detail-page-types";
+import { withResolvedMediaAssetUrl } from "../media-url";
 
 export const detailPageConfigInclude = {
   banners: { include: { mediaAsset: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
@@ -41,6 +43,9 @@ export function buildDetailPageDto(input: {
   updatedAt?: Date | string;
 }): DetailPageConfigDto {
   const definition = detailPageTypeDefinitions[input.type];
+  const richTextHtml = input.richTextHtml
+    ? sanitizeAndNormalizeRichText(input.richTextHtml, input.contentAssets)
+    : "";
   const banners = input.type === "rich_text"
     ? []
     : input.banners.map((banner) => {
@@ -56,7 +61,7 @@ export function buildDetailPageDto(input: {
           sortOrder: banner.sortOrder
         };
       });
-  const cards = input.richTextHtml ? buildDetailPageCards(input.richTextHtml, input.contentAssets) : [];
+  const cards = richTextHtml ? buildDetailPageCards(richTextHtml, input.contentAssets) : [];
   return {
     id: input.id,
     name: input.name,
@@ -69,7 +74,7 @@ export function buildDetailPageDto(input: {
       : input.hero,
     heroSubtitle: input.type === "rich_text" ? "" : input.hero.subtitle || input.heroSubtitle,
     banners,
-    richTextHtml: input.richTextHtml,
+    richTextHtml,
     cards,
     blocks: cards.flatMap((card) => card.blocks),
     ...(input.references ? { references: input.references } : {}),
@@ -104,10 +109,19 @@ function parseMetaItems(value: string | null | undefined) {
   }
 }
 
-export function serializeDetailPageConfig(record: DetailPageConfigRecord) {
+function resolveDetailPageAsset(asset: DetailPageMediaAsset, publicBaseUrl?: string): DetailPageMediaAsset {
+  return publicBaseUrl && asset.filename
+    ? withResolvedMediaAssetUrl(publicBaseUrl, asset as DetailPageMediaAsset & { filename: string })
+    : asset;
+}
+
+export function serializeDetailPageConfig(record: DetailPageConfigRecord, publicBaseUrl?: string) {
   const type = assertDetailPageType(record.pageType);
   const contentAssets = new Map<number, DetailPageMediaAsset>(
-    record.contentMedia.map((relation) => [relation.mediaAsset.id, relation.mediaAsset])
+    record.contentMedia.map((relation) => [
+      relation.mediaAsset.id,
+      resolveDetailPageAsset(relation.mediaAsset, publicBaseUrl)
+    ])
   );
   return buildDetailPageDto({
     id: record.id,
@@ -127,7 +141,7 @@ export function serializeDetailPageConfig(record: DetailPageConfigRecord) {
     richTextHtml: record.richTextHtml,
     banners: record.banners.map((relation) => ({
       id: relation.id,
-      asset: relation.mediaAsset,
+      asset: resolveDetailPageAsset(relation.mediaAsset, publicBaseUrl),
       sortOrder: relation.sortOrder
     })),
     contentAssets,
