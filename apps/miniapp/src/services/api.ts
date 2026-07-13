@@ -14,6 +14,8 @@ const baseUrl = __TARO_API_BASE_URL__;
 const clientAuthExchangePath = "/api/client/auth/wechat";
 const clientSessionStorageKey = "event-arts:client-session:v1";
 const clientSessionExpirySkewMs = 15_000;
+const clientLoginRateLimitDefaultCooldownSeconds = 5;
+const clientLoginRateLimitMaxCooldownSeconds = 900;
 
 type ClientSession = {
   token: string;
@@ -33,7 +35,8 @@ export class ApiRequestError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public readonly statusCode?: number
+    public readonly statusCode?: number,
+    public readonly retryAfterSeconds?: number
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -48,6 +51,7 @@ export type AbortableRequest<T> = {
 let cachedClientSession: ClientSession | null = null;
 let clientLoginExchangePromise: Promise<ClientSession> | null = null;
 let h5ClientLoginCodeAdapter: H5ClientLoginCodeAdapter | null = null;
+let clientLoginCooldownUntilMs = 0;
 
 export function configureH5ClientLoginCodeAdapter(adapter: H5ClientLoginCodeAdapter | null) {
   h5ClientLoginCodeAdapter = adapter;
@@ -80,6 +84,65 @@ function isClientApiRequest(url: string) {
 
 function isClientAuthExchangeRequest(url: string) {
   return getPathname(url) === clientAuthExchangePath;
+}
+
+function headerValue(headers: unknown, headerName: string) {
+  if (!headers || typeof headers !== "object") return undefined;
+  const normalizedHeaderName = headerName.toLowerCase();
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() !== normalizedHeaderName) continue;
+    if (Array.isArray(value)) return value[0];
+    return value;
+  }
+  return undefined;
+}
+
+function parseRetryAfterSeconds(value: unknown) {
+  const rawValue = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(rawValue)) return undefined;
+  const seconds = Number(rawValue);
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) return undefined;
+  return Math.min(seconds, clientLoginRateLimitMaxCooldownSeconds);
+}
+
+function retryAfterSecondsFromResponse<T>(response: Taro.request.SuccessCallbackResult<ApiResponse<T>>) {
+  if (response.statusCode !== 429) return undefined;
+  return parseRetryAfterSeconds(headerValue((response as { header?: unknown }).header, "Retry-After"));
+}
+
+function clientLoginCooldownSeconds(retryAfterSeconds?: number) {
+  return Math.min(
+    retryAfterSeconds ?? clientLoginRateLimitDefaultCooldownSeconds,
+    clientLoginRateLimitMaxCooldownSeconds
+  );
+}
+
+function setClientLoginCooldown(retryAfterSeconds?: number) {
+  clientLoginCooldownUntilMs = Date.now() + clientLoginCooldownSeconds(retryAfterSeconds) * 1000;
+}
+
+function clearClientLoginCooldown() {
+  clientLoginCooldownUntilMs = 0;
+}
+
+function getClientLoginCooldownRemainingSeconds() {
+  const remainingMs = clientLoginCooldownUntilMs - Date.now();
+  if (remainingMs <= 0) {
+    clearClientLoginCooldown();
+    return 0;
+  }
+  return Math.ceil(remainingMs / 1000);
+}
+
+function throwIfClientLoginCooldownActive() {
+  const retryAfterSeconds = getClientLoginCooldownRemainingSeconds();
+  if (retryAfterSeconds <= 0) return;
+  throw new ApiRequestError(
+    "RATE_LIMITED",
+    "登录请求过于频繁，请稍后再试",
+    429,
+    retryAfterSeconds
+  );
 }
 
 function isProductionRuntime() {
@@ -188,7 +251,7 @@ function parseApiResponse<T>(response: Taro.request.SuccessCallbackResult<ApiRes
     const error = body?.success === false
       ? body.error
       : { code: "INVALID_RESPONSE", message: "接口响应格式错误" };
-    throw new ApiRequestError(error.code, error.message, response.statusCode);
+    throw new ApiRequestError(error.code, error.message, response.statusCode, retryAfterSecondsFromResponse(response));
   }
   return body.data;
 }
@@ -206,13 +269,21 @@ function rawRequest<T>(url: string, options: Partial<Taro.request.Option> = {}) 
 
 async function exchangeClientSession() {
   const code = await getWechatLoginCode();
-  const response = await rawRequest<ClientWechatLoginResponse>(clientAuthExchangePath, {
-    method: "POST",
-    data: { code }
-  });
-  const session = normalizeClientSession(response);
-  saveClientSession(session);
-  return session;
+  try {
+    const response = await rawRequest<ClientWechatLoginResponse>(clientAuthExchangePath, {
+      method: "POST",
+      data: { code }
+    });
+    const session = normalizeClientSession(response);
+    clearClientLoginCooldown();
+    saveClientSession(session);
+    return session;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.statusCode === 429 && error.code === "RATE_LIMITED") {
+      setClientLoginCooldown(error.retryAfterSeconds);
+    }
+    throw error;
+  }
 }
 
 async function getClientSession(options: { forceRefresh?: boolean } = {}) {
@@ -223,6 +294,7 @@ async function getClientSession(options: { forceRefresh?: boolean } = {}) {
     clearClientSession();
   }
 
+  throwIfClientLoginCooldownActive();
   if (!clientLoginExchangePromise) {
     clientLoginExchangePromise = exchangeClientSession().finally(() => {
       clientLoginExchangePromise = null;

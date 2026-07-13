@@ -89,13 +89,13 @@ pnpm build:weapp
 
 微信小程序端构建完成后，将 `apps/miniapp/dist` 导入微信开发者工具。
 
-生产小程序包内的 API 地址是构建时写入的常量。上传前必须在根目录 `.env` 设置 `TARO_APP_API_BASE_URL=https://your-domain.example`，或直接执行：
+生产小程序包内的 API 地址是构建时写入的常量。上传前必须在根目录 `.env` 设置真实的 `TARO_APP_API_BASE_URL`，或直接执行：
 
 ```bash
-TARO_APP_API_BASE_URL=https://your-domain.example pnpm build:weapp
+TARO_APP_API_BASE_URL="$REAL_WEAPP_API_ORIGIN" pnpm build:weapp
 ```
 
-修改该地址后必须重新构建并重新上传小程序，否则旧包仍会请求之前编译进去的地址。
+`REAL_WEAPP_API_ORIGIN` 必须替换为已经部署、可公网访问、已配置到微信后台 request 合法域名的 HTTPS origin。`weapp` 构建默认会拒绝 `127.0.0.1`、`localhost`、`.test`、`example.*` 等本地或占位地址；仅本地临时调试可设置 `ALLOW_UNSAFE_MINIAPP_API_BASE_URL=true` 跳过。修改该地址后必须重新构建并重新上传小程序，否则旧包仍会请求之前编译进去的地址。
 
 Admin 生产构建资源固定使用 `/admin/` base。构建后可用以下命令启动只监听回环地址的静态服务：
 
@@ -190,7 +190,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 - 上线前运行 `pnpm security:release-gate`；任一自动化 P0/P1 门禁失败都不得发布。
 - 推荐以 Nginx 作为唯一公网入口：`/admin/` 代理到 Admin 静态服务，`/api/` 和 `/uploads/` 代理到 API。
 - 生产 API/Admin 只能绑定 `127.0.0.1`、`localhost`、`::1` 等 loopback；禁止通过 `API_HOST=0.0.0.0` 或 `ADMIN_HOST=0.0.0.0` 暴露服务。容器、多主机或多实例部署必须先创建 Planner revision 重新定义网络边界。
-- 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`TARO_APP_API_BASE_URL`；同源 Nginx 部署下 `VITE_API_BASE_URL` 留空。
+- 设置生产 `DATABASE_URL`、`PUBLIC_BASE_URL`、`TARO_APP_API_BASE_URL`；同源 Nginx 部署下 `VITE_API_BASE_URL` 留空。`TARO_APP_API_BASE_URL` 必须是真实 HTTPS origin，不能是 `127.0.0.1`、`localhost`、`.test` 或 `example.*` 占位地址。
 - `PUBLIC_BASE_URL` 必须是公网 origin，例如 `https://your-domain.example`，不要追加 `/api`。
 - 生产 `/api/client/**` 除 `POST /api/client/auth/wechat` 外都需要微信小程序客户端会话；小程序端通过 `wx.login` 取得 code 后换取短期 client bearer token。CORS、Origin、Referer、User-Agent 或自定义 Header 不能作为“只有小程序可访问”的身份边界。
 - 生产必须配置真实 `WECHAT_MINIAPP_APP_ID`、`WECHAT_MINIAPP_APP_SECRET` 和 `WECHAT_AUTH_VERIFIER_MODE=wechat`；缺失、占位或 fake verifier 会让 API 启动失败。
@@ -198,7 +198,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
 - 后台“账号安全 / 备份与恢复”支持创建全量备份、查看列表、删除、导入 `.tar`/`.tar.gz` 外部备份并执行 `RESTORE_FULL_BACKUP` 二次确认恢复。恢复成功会撤销所有管理员会话。
 - 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
-- 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名；上线前用真实小程序复核 `wx.login -> /api/client/auth/wechat -> /api/client/home`。
+- 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名；上线前用真实小程序复核 `wx.login -> /api/client/auth/wechat -> /api/client/home`。如果真机报 `ERR_CONNECTION_CLOSED`，先确认小程序包内编译进去的 `TARO_APP_API_BASE_URL` 是真实可访问域名，而不是验证或文档里的占位地址。
 - 部署前运行 `pnpm deploy:smoke`、`pnpm test:deploy` 和 `pnpm security:release-gate` 检查配置层面的 loopback upstream 和 P0/P1 自动化安全契约；真实 TLS、防火墙、安全组、磁盘容量、异地备份、调度器和灾难演练仍必须在目标环境人工验证。
 - 使用 `pnpm build:weapp` 后在微信开发者工具中复核页面、TabBar、上传资源访问和接口域名。
 

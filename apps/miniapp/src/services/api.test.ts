@@ -28,6 +28,7 @@ type RequestOptions = {
   header?: Record<string, string>;
   timeout?: number;
 };
+type ResponseHeaders = Record<string, string | number | string[] | undefined>;
 type ApiBody<T = unknown> =
   | { success: true; data: T; message?: string }
   | { success: false; error: { code: string; message: string } };
@@ -45,11 +46,11 @@ function successBody<T>(data: T): ApiBody<T> {
   return { success: true, data, message: "ok" };
 }
 
-function createRequestTask(body: ApiBody, statusCode = 200) {
+function createRequestTask(body: ApiBody, statusCode = 200, header: ResponseHeaders = {}) {
   let rejectTask: (error: unknown) => void = () => undefined;
   const task = new Promise((resolve, reject) => {
     rejectTask = reject;
-    queueMicrotask(() => resolve({ data: body, statusCode }));
+    queueMicrotask(() => resolve({ data: body, statusCode, header }));
   }) as Promise<unknown> & { abort: ReturnType<typeof vi.fn> };
   task.abort = vi.fn(() => rejectTask(new Error("aborted")));
   return task;
@@ -65,8 +66,8 @@ function createDeferredRequestTask() {
   task.abort = vi.fn(() => rejectTask(new Error("aborted")));
   return {
     task,
-    resolve(body: ApiBody, statusCode = 200) {
-      resolveTask({ data: body, statusCode });
+    resolve(body: ApiBody, statusCode = 200, header: ResponseHeaders = {}) {
+      resolveTask({ data: body, statusCode, header });
     }
   };
 }
@@ -78,6 +79,13 @@ function clientLoginResponse(token: string) {
     expiresInSeconds: 1_800,
     expiresAt: futureIso()
   });
+}
+
+function rateLimitedBody(): ApiBody {
+  return {
+    success: false,
+    error: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后再试" }
+  };
 }
 
 function requestPath(options: RequestOptions) {
@@ -110,6 +118,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   process.env.NODE_ENV = originalNodeEnv;
   vi.unstubAllGlobals();
 });

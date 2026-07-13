@@ -16,6 +16,7 @@ apps/miniapp/dist/
 apps/miniapp/.swc/
 playwright-report/
 test-results/
+output/
 uploads/*
 !uploads/.gitkeep
 var/

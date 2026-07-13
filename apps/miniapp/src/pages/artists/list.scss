@@ -168,7 +168,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 .artist-card,
 .artist-skeleton {
   width: 345rpx;
-  height: 460rpx;
+  height: 452rpx;
   overflow: hidden;
   flex: 0 0 345rpx;
   border: 1rpx solid $card-border;
@@ -176,6 +176,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   background: #fff;
   box-shadow: $card-shadow;
   box-sizing: border-box;
+  letter-spacing: 0;
 }
 
 .artist-card--clickable {
@@ -260,15 +261,15 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 }
 
 .artist-card__body {
-  height: 220rpx;
-  padding: 18rpx 16rpx 14rpx;
+  height: 212rpx;
+  padding: 16rpx 16rpx 12rpx;
   overflow: hidden;
   box-sizing: border-box;
 }
 
 .artist-card__meta {
   display: flex;
-  height: 42rpx;
+  height: 40rpx;
   align-items: center;
   justify-content: space-between;
 }
@@ -289,9 +290,9 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   overflow: hidden;
   color: $primary-text;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 500;
-  line-height: 42rpx;
+  line-height: 40rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -300,8 +301,8 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   margin-left: 12rpx;
   flex: 0 0 auto;
   color: $accent-orange;
-  font-size: 22rpx;
-  line-height: 38rpx;
+  font-size: 21rpx;
+  line-height: 36rpx;
   white-space: nowrap;
 }
 
@@ -337,16 +338,16 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   overflow: hidden;
   color: #64605a;
-  font-size: 22rpx;
-  line-height: 34rpx;
+  font-size: 21rpx;
+  line-height: 32rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .artist-card__tags {
   display: flex;
-  height: 40rpx;
-  margin-top: 10rpx;
+  height: 36rpx;
+  margin-top: 8rpx;
   gap: 8rpx;
   overflow: hidden;
   align-items: center;
@@ -361,8 +362,8 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   border-radius: 8rpx;
   background: $tag-background;
   color: $tag-text;
-  font-size: 19rpx;
-  line-height: 34rpx;
+  font-size: 18rpx;
+  line-height: 30rpx;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -371,13 +372,13 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 
 .artist-card__summary {
   display: -webkit-box;
-  height: 72rpx;
-  margin-top: 14rpx;
+  height: 68rpx;
+  margin-top: 10rpx;
   overflow: hidden;
   color: #6e6862;
-  font-size: 23rpx;
-  line-height: 36rpx;
-  text-align: justify;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  text-align: left;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

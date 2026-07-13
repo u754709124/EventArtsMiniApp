@@ -36,12 +36,12 @@ WECHAT_AUTH_VERIFIER_MODE=wechat
 CLIENT_SESSION_TTL_SECONDS=1800
 WECHAT_CODE2SESSION_TIMEOUT_MS=3000
 VITE_API_BASE_URL=
-TARO_APP_API_BASE_URL=https://your-domain.example
+TARO_APP_API_BASE_URL=<replace-with-real-wechat-api-https-origin>
 ```
 
 关键约束：
 
-- `PUBLIC_BASE_URL` 是公网 origin，例如 `https://your-domain.example`，不要追加 `/api`。
+- `PUBLIC_BASE_URL` 是真实公网 HTTPS origin，不要追加 `/api`。
 - `CORS_ALLOWED_ORIGINS` 必须是显式 HTTPS origin 列表；生产不允许 `*`、任意 origin 反射或非 HTTPS origin。无 `Origin` 的服务端请求是否放行由 `CORS_ALLOW_REQUESTS_WITHOUT_ORIGIN` 明确控制。
 - 同源 Nginx 部署下 `VITE_API_BASE_URL` 留空或不注入，让 Admin 请求 `/api/...`。
 - `API_HOST` 和 `ADMIN_HOST` 默认 `127.0.0.1`。`NODE_ENV=production` 时 API 与 Admin 会在监听端口前拒绝非 loopback host，包括 `0.0.0.0`、`::`、公网 IPv4/IPv6 和普通公网主机名。
@@ -54,7 +54,7 @@ TARO_APP_API_BASE_URL=https://your-domain.example
 
 生产 `/api/client/**` 的身份边界是微信小程序 `wx.login` 临时 code 经服务端 `code2Session` 校验后签发的短期客户端会话。唯一匿名例外是 `POST /api/client/auth/wechat`；除此之外，客户端 API 都必须携带 `Authorization: Bearer <client-session-token>`。CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 和 IP 白名单不能替代该会话。
 
-小程序构建时 `TARO_APP_API_BASE_URL` 必须指向已配置到微信后台 request 合法域名的 HTTPS origin。服务端只保存 token hash、openid/unionid hash 和过期/撤销字段；`session_key`、AppSecret、openid/unionid 和 raw token 不返回前端。
+小程序构建时 `TARO_APP_API_BASE_URL` 必须指向已配置到微信后台 request 合法域名的真实 HTTPS origin。`weapp` 构建默认会拒绝 `127.0.0.1`、`localhost`、`.test`、`example.*` 等本地或占位地址；仅本地临时调试可设置 `ALLOW_UNSAFE_MINIAPP_API_BASE_URL=true` 跳过。服务端只保存 token hash、openid/unionid hash 和过期/撤销字段；`session_key`、AppSecret、openid/unionid 和 raw token 不返回前端。
 
 ## 应用层限流与可信代理
 
@@ -88,12 +88,12 @@ printf '%s\n' "$BOOTSTRAP_PASSWORD" | pnpm admin:bootstrap -- --username <admin-
 unset BOOTSTRAP_PASSWORD
 pnpm --filter api build
 pnpm --filter admin build
-TARO_APP_API_BASE_URL=https://your-domain.example pnpm --filter miniapp build:weapp
+TARO_APP_API_BASE_URL="$REAL_WEAPP_API_ORIGIN" pnpm --filter miniapp build:weapp
 ```
 
 `pnpm db:seed` 只用于非生产演示内容初始化；`NODE_ENV=production` 时会在写入数据库或 `uploads` 前失败。
 
-微信小程序包内的 API Base URL 是构建时常量，不会在上传后读取服务器 `.env`。生产上传前必须确认 `TARO_APP_API_BASE_URL` 指向公网 HTTPS origin；可以写入仓库根目录 `.env`，也可以像上面的命令一样在构建命令前显式传入。改完 `.env` 后必须重新执行 `pnpm --filter miniapp build:weapp` 并重新上传小程序。
+微信小程序包内的 API Base URL 是构建时常量，不会在上传后读取服务器 `.env`。生产上传前必须确认 `REAL_WEAPP_API_ORIGIN` 或 `.env` 中的 `TARO_APP_API_BASE_URL` 指向真实公网 HTTPS origin，且这个 origin 已加入微信小程序后台 request 合法域名；可以写入仓库根目录 `.env`，也可以像上面的命令一样在构建命令前显式传入。改完 `.env` 后必须重新执行 `pnpm --filter miniapp build:weapp` 并重新上传小程序。
 
 启动 API：
 
