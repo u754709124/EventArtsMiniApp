@@ -88,10 +88,12 @@ printf '%s\n' "$BOOTSTRAP_PASSWORD" | pnpm admin:bootstrap -- --username <admin-
 unset BOOTSTRAP_PASSWORD
 pnpm --filter api build
 pnpm --filter admin build
-pnpm --filter miniapp build:weapp
+TARO_APP_API_BASE_URL=https://your-domain.example pnpm --filter miniapp build:weapp
 ```
 
 `pnpm db:seed` 只用于非生产演示内容初始化；`NODE_ENV=production` 时会在写入数据库或 `uploads` 前失败。
+
+微信小程序包内的 API Base URL 是构建时常量，不会在上传后读取服务器 `.env`。生产上传前必须确认 `TARO_APP_API_BASE_URL` 指向公网 HTTPS origin；可以写入仓库根目录 `.env`，也可以像上面的命令一样在构建命令前显式传入。改完 `.env` 后必须重新执行 `pnpm --filter miniapp build:weapp` 并重新上传小程序。
 
 启动 API：
 

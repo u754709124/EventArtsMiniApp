@@ -89,6 +89,14 @@ pnpm build:weapp
 
 微信小程序端构建完成后，将 `apps/miniapp/dist` 导入微信开发者工具。
 
+生产小程序包内的 API 地址是构建时写入的常量。上传前必须在根目录 `.env` 设置 `TARO_APP_API_BASE_URL=https://your-domain.example`，或直接执行：
+
+```bash
+TARO_APP_API_BASE_URL=https://your-domain.example pnpm build:weapp
+```
+
+修改该地址后必须重新构建并重新上传小程序，否则旧包仍会请求之前编译进去的地址。
+
 Admin 生产构建资源固定使用 `/admin/` base。构建后可用以下命令启动只监听回环地址的静态服务：
 
 ```bash
