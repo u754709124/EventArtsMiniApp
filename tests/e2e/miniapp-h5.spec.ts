@@ -929,6 +929,7 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
   );
   expect(dimensions[0].width).toBeCloseTo(dimensions[1].width, 1);
   expect(dimensions[0].height).toBeCloseTo(dimensions[1].height, 1);
+  await expect(cards.first().locator(".artist-card__tag")).toHaveCount(3);
 
   const searchInput = page.getByTestId("artist-search-input").locator("input");
   await searchInput.fill("林然");

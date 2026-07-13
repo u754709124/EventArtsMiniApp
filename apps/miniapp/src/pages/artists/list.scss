@@ -101,12 +101,12 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   flex: 1;
   color: #5c5853;
-  font-size: 20rpx;
+  font-size: 22rpx;
 }
 
 .artist-search__placeholder {
   color: #aaa7a3;
-  font-size: 20rpx;
+  font-size: 22rpx;
 }
 
 .artist-filter-button {
@@ -120,7 +120,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   border-radius: 30rpx;
   background: $filter-background;
   color: #332b24;
-  font-size: 22rpx;
+  font-size: 24rpx;
   box-sizing: border-box;
 }
 
@@ -168,7 +168,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 .artist-card,
 .artist-skeleton {
   width: 345rpx;
-  height: 436rpx;
+  height: 460rpx;
   overflow: hidden;
   flex: 0 0 345rpx;
   border: 1rpx solid $card-border;
@@ -252,7 +252,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 .artist-card__badge-text {
   overflow: hidden;
   color: #63472f;
-  font-size: 16rpx;
+  font-size: 18rpx;
   font-weight: 600;
   line-height: 34rpx;
   text-overflow: ellipsis;
@@ -260,15 +260,15 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 }
 
 .artist-card__body {
-  height: 196rpx;
-  padding: 18rpx 16rpx 12rpx;
+  height: 220rpx;
+  padding: 18rpx 16rpx 14rpx;
   overflow: hidden;
   box-sizing: border-box;
 }
 
 .artist-card__meta {
   display: flex;
-  height: 38rpx;
+  height: 42rpx;
   align-items: center;
   justify-content: space-between;
 }
@@ -289,9 +289,9 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   overflow: hidden;
   color: $primary-text;
-  font-size: 28rpx;
+  font-size: 32rpx;
   font-weight: 500;
-  line-height: 38rpx;
+  line-height: 42rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -300,13 +300,13 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   margin-left: 12rpx;
   flex: 0 0 auto;
   color: $accent-orange;
-  font-size: 20rpx;
+  font-size: 22rpx;
   line-height: 38rpx;
   white-space: nowrap;
 }
 
 .artist-card__location-group {
-  max-width: 108rpx;
+  max-width: 116rpx;
   flex: 0 1 auto;
 }
 
@@ -337,17 +337,17 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   overflow: hidden;
   color: #64605a;
-  font-size: 20rpx;
-  line-height: 32rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .artist-card__tags {
   display: flex;
-  height: 36rpx;
-  margin-top: 8rpx;
-  gap: 7rpx;
+  height: 40rpx;
+  margin-top: 10rpx;
+  gap: 8rpx;
   overflow: hidden;
   align-items: center;
 }
@@ -356,13 +356,13 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   min-width: 0;
   overflow: hidden;
   flex: 1 1 0;
-  padding: 0 4rpx;
+  padding: 0 6rpx;
   border: 1rpx solid #f2e2d2;
   border-radius: 8rpx;
   background: $tag-background;
   color: $tag-text;
-  font-size: 14rpx;
-  line-height: 30rpx;
+  font-size: 19rpx;
+  line-height: 34rpx;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -371,12 +371,12 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 
 .artist-card__summary {
   display: -webkit-box;
-  height: 60rpx;
-  margin-top: 16rpx;
+  height: 72rpx;
+  margin-top: 14rpx;
   overflow: hidden;
   color: #6e6862;
-  font-size: 18rpx;
-  line-height: 30rpx;
+  font-size: 23rpx;
+  line-height: 36rpx;
   text-align: justify;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;

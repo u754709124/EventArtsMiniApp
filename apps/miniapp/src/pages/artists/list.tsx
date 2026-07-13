@@ -82,7 +82,7 @@ function getNavigationMetrics() {
 }
 
 function ArtistCard({ item, type }: { item: ArtistListItem; type: ArtistType }) {
-  const tags = getTags(item).slice(0, 4);
+  const tags = getTags(item).slice(0, 3);
   const clickable = Boolean(item.detailPageId);
   return (
     <View
