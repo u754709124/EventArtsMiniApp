@@ -1,12 +1,20 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DetailPageConfigDto } from "@event-arts/shared";
 import { request } from "../api";
+import { DetailPageMobilePreview } from "./DetailPageMobilePreview";
 import { DetailPagePreview } from "./DetailPagePreview";
 
 vi.mock("../api", () => ({ request: vi.fn() }));
+
+const previewCss = readFileSync(
+  resolve(process.cwd(), "src/detail-pages/detail-page-preview.css"),
+  "utf8"
+);
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -38,9 +46,9 @@ const bannerDto: DetailPageConfigDto = {
     title: "主持人林然",
     typeLabel: "主持人",
     subtitle: "温暖而专业",
-    badge: "",
-    tags: [],
-    location: "",
+    badge: "金牌主持",
+    tags: ["10年经验", "婚礼主持", "高端晚宴", "控场力强"],
+    location: "杭州",
     metaItems: []
   },
   heroSubtitle: "温暖而专业",
@@ -60,7 +68,85 @@ const bannerDto: DetailPageConfigDto = {
   ]
 };
 
+const longActivityCaseDto: DetailPageConfigDto = {
+  ...bannerDto,
+  id: 2,
+  name: "浪漫粉色系户外婚礼暨品牌答谢晚宴详情",
+  hero: {
+    title: "浪漫粉色系户外婚礼暨品牌答谢晚宴",
+    typeLabel: "企业品牌活动统筹与婚礼主持",
+    subtitle: "专业策划・精彩呈现・全流程现场执行",
+    badge: "品牌婚礼案例",
+    tags: ["户外草坪", "浪漫仪式", "品牌答谢", "现场统筹"],
+    location: "杭州・西湖区",
+    metaItems: [{ label: "日期", value: "2024-05-18" }]
+  }
+};
+
 describe("DetailPagePreview", () => {
+  it("mirrors flow-based miniapp geometry and rich-text heading semantics at 375px", () => {
+    const richHtml = [
+      '<h1 style="padding-left:99px">单行标题</h1>',
+      "<h1>多行标题<br>第二行</h1>",
+      '<p><img src="/uploads/wide.webp" style="width:900px"></p>'
+    ].join("");
+    const dtoWithRichHtml = (dto: DetailPageConfigDto): DetailPageConfigDto => ({
+      ...dto,
+      cards: [{ blocks: [{ type: "richText", html: richHtml }] }],
+      blocks: [{ type: "richText", html: richHtml }]
+    });
+    const { container, rerender } = render(
+      <DetailPageMobilePreview dto={dtoWithRichHtml(bannerDto)} />
+    );
+    const hero = container.querySelector(".detail-preview-hero")!;
+    const navigation = container.querySelector(".detail-preview-nav--overlay")!;
+    const heroCopy = container.querySelector(".detail-preview-hero-copy")!;
+    const headings = [...container.querySelectorAll(".detail-preview-rich-text h1")];
+    const markers = [...container.querySelectorAll("[data-detail-heading-marker='true']")];
+    const contents = [...container.querySelectorAll("[data-detail-heading-content='true']")];
+    const image = container.querySelector(".detail-preview-rich-text img") as HTMLImageElement;
+
+    expect(navigation.parentElement).toBe(hero);
+    expect(heroCopy).toBeTruthy();
+    expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*min-height:\s*212px/su);
+    expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*padding:\s*72px 115px 33px 22px/su);
+    expect(previewCss).not.toMatch(/\.detail-preview-hero\s*\{[^}]*\n\s*height:\s*212px/su);
+    expect(previewCss).toMatch(/\.detail-preview-nav--overlay\s*\{[^}]*height:\s*64px[^}]*padding-top:\s*20px/su);
+    expect(previewCss).toMatch(/\.detail-preview-banner\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0/su);
+    expect(previewCss).toMatch(/\.detail-preview-hero-copy\s*\{[^}]*position:\s*relative/su);
+    expect(previewCss).toMatch(/\.detail-preview-rich-text h1\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*font-size:\s*14px/su);
+    expect(headings).toHaveLength(2);
+    expect(markers).toHaveLength(2);
+    expect(contents).toHaveLength(2);
+    headings.forEach((heading) => {
+      expect((heading as HTMLElement).style.display).toBe("flex");
+      expect((heading as HTMLElement).style.alignItems).toBe("center");
+    });
+    markers.forEach((marker) => {
+      expect((marker as HTMLElement).style.height).toBe("1em");
+      expect((marker as HTMLElement).style.maxHeight).toBe("1em");
+      expect((marker as HTMLElement).style.alignSelf).toBe("center");
+      expect((marker as HTMLElement).style.verticalAlign).toBe("");
+      expect((marker as HTMLElement).style.marginLeft).toBe("");
+    });
+    contents.forEach((content) => {
+      const style = (content as HTMLElement).style;
+      expect(style.flexGrow).toBe("1");
+      expect(style.flexShrink).toBe("1");
+      expect(style.flexBasis).toBe("0%");
+    });
+    expect(image.style.width).toBe("100%");
+    expect(image.style.maxWidth).toBe("100%");
+    expect(image.style.height).toBe("auto");
+
+    rerender(<DetailPageMobilePreview dto={dtoWithRichHtml(longActivityCaseDto)} />);
+    expect(screen.getByText(longActivityCaseDto.hero.title)).toBeTruthy();
+    expect(screen.getByText(longActivityCaseDto.hero.typeLabel)).toBeTruthy();
+    expect(screen.getAllByTestId("detail-preview-hero-tag")).toHaveLength(4);
+    expect(screen.getByTestId("detail-preview-hero-location").textContent).toBe("杭州・西湖区");
+    expect(screen.getByTestId("detail-preview-hero-meta-item").textContent).toBe("日期：2024-05-18");
+  });
+
   it("posts the current unsaved normalized draft and renders the sanitized banner mobile structure", async () => {
     let resolveRequest!: (value: DetailPageConfigDto) => void;
     vi.mocked(request).mockImplementation(() => new Promise((resolve) => {

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  enhanceDetailRichTextForPresentation,
   resolveDetailPagePresentation,
   type DetailPageCardDto,
   type DetailPageContentBlockDto,
@@ -38,8 +39,22 @@ function PreviewBlock({
   return (
     <section
       className="detail-preview-rich-text"
-      dangerouslySetInnerHTML={{ __html: block.html }}
+      dangerouslySetInnerHTML={{ __html: enhanceDetailRichTextForPresentation(block.html) }}
     />
+  );
+}
+
+function PreviewNavigation({ overlay, title }: { overlay?: boolean; title: string }) {
+  return (
+    <header
+      className={`detail-preview-nav${overlay ? " detail-preview-nav--overlay" : ""}`}
+      aria-label="移动端导航预览"
+      data-testid="detail-preview-navigation"
+    >
+      <span className="detail-preview-back" aria-hidden="true"><i /></span>
+      <strong>{title}</strong>
+      <span aria-hidden="true" />
+    </header>
   );
 }
 
@@ -80,13 +95,9 @@ export function DetailPageMobilePreview({
       className={`detail-mobile-preview detail-mobile-preview-${dto.type}`}
       data-testid={testId}
     >
-      <header className="detail-preview-nav" aria-label="移动端导航预览">
-        <span aria-hidden="true">‹</span>
-        <strong>{bannerMode ? "详情预览" : model.hero.title || "详情页"}</strong>
-        <span aria-hidden="true" />
-      </header>
+      {!showBanner && <PreviewNavigation title={model.hero.title || "详情页"} />}
       {showBanner && (
-        <section className="detail-preview-hero">
+        <section className="detail-preview-hero" data-testid="detail-preview-hero">
           {model.banners.map((banner, index) => (
             <img
               key={banner.id}
@@ -96,8 +107,9 @@ export function DetailPageMobilePreview({
             />
           ))}
           <div className="detail-preview-hero-shade" aria-hidden="true" />
-          <div className="detail-preview-hero-copy">
-            <div className="detail-preview-hero-heading">
+          <PreviewNavigation overlay title="" />
+          <div className="detail-preview-hero-copy" data-testid="detail-preview-hero-copy">
+            <div className="detail-preview-hero-heading" data-testid="detail-preview-hero-heading">
               <h2>{model.hero.title}</h2>
               {model.hero.typeLabel && <span>{model.hero.typeLabel}</span>}
             </div>
@@ -106,15 +118,22 @@ export function DetailPageMobilePreview({
             {model.hero.tags.length > 0 && (
               <div className="detail-preview-hero-tags">
                 {model.hero.tags.slice(0, 4).map((tag) => (
-                  <em key={tag}>{tag}</em>
+                  <em key={tag} data-testid="detail-preview-hero-tag">{tag}</em>
                 ))}
               </div>
             )}
             {(model.hero.location || model.hero.metaItems.length > 0) && (
               <div className="detail-preview-hero-meta">
-                {model.hero.location && <span>{model.hero.location}</span>}
+                {model.hero.location && (
+                  <span data-testid="detail-preview-hero-location">{model.hero.location}</span>
+                )}
                 {model.hero.metaItems.map((item) => (
-                  <span key={`${item.label}-${item.value}`}>{item.label}：{item.value}</span>
+                  <span
+                    key={`${item.label}-${item.value}`}
+                    data-testid="detail-preview-hero-meta-item"
+                  >
+                    {item.label}：{item.value}
+                  </span>
                 ))}
               </div>
             )}

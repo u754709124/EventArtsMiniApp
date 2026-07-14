@@ -51,19 +51,52 @@ async function expectLivePreviewContract(
   expect(blockTypes).toEqual(expected.blockTypes);
   const geometry = await preview.evaluate((root) => {
     const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
+    const navigation = root.querySelector(".detail-preview-nav--overlay")?.getBoundingClientRect();
+    const heroCopy = root.querySelector(".detail-preview-hero-copy")?.getBoundingClientRect();
     const content = root.querySelector(".detail-preview-content")?.getBoundingClientRect();
     const firstCard = root.querySelector(".detail-preview-card")?.getBoundingClientRect();
-    if (!hero || !content || !firstCard) throw new Error("后台详情预览结构缺失");
+    const heroHeading = root.querySelector(".detail-preview-hero-heading")?.getBoundingClientRect();
+    const richHeading = root.querySelector<HTMLElement>(".detail-preview-rich-text h1");
+    const marker = richHeading?.querySelector<HTMLElement>("[data-detail-heading-marker='true']");
+    const headingContent = richHeading?.querySelector<HTMLElement>("[data-detail-heading-content='true']");
+    if (!hero || !navigation || !heroCopy || !content || !firstCard || !heroHeading || !richHeading || !marker || !headingContent) {
+      throw new Error("后台详情预览结构缺失");
+    }
+    const markerRect = marker.getBoundingClientRect();
+    const headingContentRect = headingContent.getBoundingClientRect();
+    const richHeadingStyle = getComputedStyle(richHeading);
     return {
       heroHeight: hero.height,
+      navigationTop: navigation.top - hero.top,
+      navigationHeight: navigation.height,
+      heroCopyTop: heroCopy.top - hero.top,
+      headingClearance: heroHeading.top - navigation.bottom,
+      heroInsideBanner: heroCopy.bottom <= hero.bottom,
+      heroCardClearance: firstCard.top - heroCopy.bottom,
       gutter: Number.parseFloat(getComputedStyle(root.querySelector(".detail-preview-content")!).paddingLeft),
-      overlap: hero.bottom - firstCard.top
+      overlap: hero.bottom - firstCard.top,
+      richHeadingFontSize: Number.parseFloat(richHeadingStyle.fontSize),
+      richHeadingDisplay: richHeadingStyle.display,
+      richHeadingAlignItems: richHeadingStyle.alignItems,
+      markerContentCenterDelta: Math.abs(
+        (markerRect.top + markerRect.bottom - headingContentRect.top - headingContentRect.bottom) / 2
+      )
     };
   });
-  expect(geometry.heroHeight).toBe(202);
+  expect(geometry.heroHeight).toBeGreaterThanOrEqual(212);
+  expect(geometry.navigationTop).toBe(0);
+  expect(geometry.navigationHeight).toBe(64);
+  expect(geometry.heroCopyTop).toBe(72);
+  expect(geometry.headingClearance).toBeGreaterThanOrEqual(7);
+  expect(geometry.heroInsideBanner).toBeTruthy();
+  expect(geometry.heroCardClearance).toBeGreaterThanOrEqual(11);
   expect(geometry.gutter).toBe(12);
   expect(geometry.overlap).toBeGreaterThanOrEqual(20);
   expect(geometry.overlap).toBeLessThanOrEqual(22);
+  expect(geometry.richHeadingFontSize).toBe(14);
+  expect(geometry.richHeadingDisplay).toBe("flex");
+  expect(geometry.richHeadingAlignItems).toBe("center");
+  expect(geometry.markerContentCenterDelta).toBeLessThanOrEqual(1);
 }
 
 async function createUniqueLibraryUploadPng() {
@@ -497,7 +530,7 @@ test("人员管理保留列表字段并只选择详情页引用", async ({ page 
   await expect(page.getByTestId("detail-rich-text-editor")).toHaveCount(0);
 });
 
-test("详情页管理可创建 BANNER 富文本并被人员引用", async ({ page, request }) => {
+test("详情页管理预览可创建 BANNER 富文本并被人员引用", async ({ page, request }) => {
   const existingArtists = await adminApi<{ items: Array<{ id: number; name: string }> }>(request, "GET", "/api/admin/artists?pageSize=100");
   for (const artist of existingArtists.items.filter((item) => item.name === "E2E 共享详情演员")) {
     await adminApi(request, "DELETE", `/api/admin/artists/${artist.id}`);
@@ -528,7 +561,12 @@ test("详情页管理可创建 BANNER 富文本并被人员引用", async ({ pag
   await expect(page.getByTestId(`detail-banner-item-${balanced.id}`).locator("img")).toHaveCSS("object-fit", "contain");
 
   const editor = page.getByRole("textbox", { name: "详情页富文本内容" });
-  await editor.fill("E2E 人员详情正文");
+  await editor.fill("E2E 人员详情标题");
+  await editor.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.getByLabel("段落与标题").selectOption("h1");
+  await editor.press("End");
+  await editor.press("Enter");
+  await editor.type("E2E 人员详情正文");
   await chooseDetailMediaFromLibrary(page, page.getByRole("button", { name: "插入图片" }), "advantage-experience.png");
   await chooseDetailMediaFromLibrary(page, page.getByRole("button", { name: "插入视频" }), "detail-case-demo.mp4");
   await expect(editor.locator("img[data-media-asset-id]")).toHaveCount(1);

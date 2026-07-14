@@ -168,7 +168,7 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 | 阴影           | 卡片外 8–30px 内约 4%–8% 深棕灰                         | `$detail-shadow`                  |
 | 页码背景       | 参考未提供独立纯色区；按暗棕遮罩约 `rgba(31,22,14,.64)` | `$detail-counter-background`      |
 | 返回按钮背景   | `(30..80,64..112)` 白色主簇，约 94%–98% 不透明          | `$detail-back-background`         |
-| BANNER 高度    | 背景底约 `482px`                                        | `$detail-banner-height: 404rpx`   |
+| BANNER 高度    | 背景底约 `482px`                                        | `$detail-banner-height: 424rpx`   |
 | 页面左右边距   | 左边 `29px`、右边约 `27px`                              | `$detail-gutter: 24rpx`           |
 | 卡片圆角       | 顶角转折约 `21–24px`                                    | `$detail-card-radius: 20rpx`      |
 | 卡片内边距     | 边框到标题竖线约 `26px`                                 | `$detail-card-padding: 24rpx`     |
@@ -177,7 +177,8 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 | 姓名           | 墨迹高约 `54px`                                         | `48–50rpx` font token             |
 | 类型           | 墨迹高约 `31px`                                         | `28–30rpx`                        |
 | 宣传语         | 墨迹高约 `25px`                                         | `25–27rpx`                        |
-| section 标题   | 墨迹高约 `27px`                                         | `30–32rpx`                        |
+| section 标题   | 墨迹高约 `27px`                                         | `$detail-section-title-size: 28rpx` |
+| 标题左竖线     | 棕金装饰不高于单行文字                                  | inline marker `height/max-height: 1em` |
 | 正文           | 墨迹高约 `20–22px`                                      | `26–28rpx`                        |
 | 正文行高       | 相邻基线约 `31px`                                       | `1.55–1.72`，以运行截图复核       |
 | 图片/视频圆角  | 案例图转角约 `12–16px`                                  | `$detail-media-radius: 14rpx`     |
@@ -187,6 +188,9 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 ## H5 与微信端差异
 
 - H5 视觉证据固定 viewport `427 × 922`、DPR 2；微信端以 `statusBarHeight` 和胶囊矩形计算导航安全区。
+- BANNER 以 `424rpx` 为最小高度而非固定最终高度；Hero 参与正常流并由真实内容自然撑高，顶部复用导航安全区，底部显式预留 `42rpx` 首卡重叠量加 `24rpx` 可见间距。Swiper、遮罩、导航和计数器绝对铺在最终 BANNER 高度内。
+- Admin 的 375px 移动端预览按半比例镜像该流式契约：`212px` 最小高度、`72px 115px 33px 22px` 内容 padding、覆盖导航 `20px + 44px`、首卡负重叠 `21px`；富文本标题为 `14px`，对应小程序 `28rpx`。
+- 标题由两端共用的可信展示增强器插入 marker/content 兄弟节点，`h1` 使用 flex 中心对齐，marker 的 `height/max-height` 均为 `1em` 且不再使用 `text-top` 或负 margin；图片继续合并 `width/max-width: 100%` 与 `height: auto`，不修改存储 HTML 或 DTO。
 - H5 测试通过 `globalThis.__TARO_DETAIL_E2E_FIXED__ = true` 固定第一张 BANNER 并关闭自动轮播；正式运行多图间隔 6500ms。
 - 微信小程序端公共详情页启用“发送给朋友”分享能力，并在右下角渲染独立悬浮圆形分享按钮；按钮使用 `Button openType="share"`，不绘制自定义分享面板。
 - 分享按钮图标来自用户提供的 `icon_font.png`，项目内副本为 `apps/miniapp/src/assets/generated/icon-share.png`，保留 64×64 RGBA、透明背景和深灰黑上传/分享图形。

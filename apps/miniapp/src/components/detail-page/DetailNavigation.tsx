@@ -2,12 +2,11 @@ import Taro from "@tarojs/taro";
 import { Text, View } from "@tarojs/components";
 import { useMemo } from "react";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
+import { detailNavigationFallbackMetrics, type DetailNavigationMetrics } from "./navigation-layout";
 
-type NavigationMetrics = { safeTop: number; headerHeight: number };
-
-export function getDetailNavigationMetrics(): NavigationMetrics {
-  const fallback = { safeTop: 20, headerHeight: 44 };
-  if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return fallback;
+export function getDetailNavigationMetrics(): DetailNavigationMetrics {
+  const fallback = detailNavigationFallbackMetrics;
+  if (Taro.getEnv() === Taro.ENV_TYPE.WEB) return { ...fallback };
   try {
     const system = Taro.getSystemInfoSync();
     const safeTop = Number(system.statusBarHeight || fallback.safeTop);
@@ -48,13 +47,15 @@ export function navigateBackOrSwitchTab(fallbackTabUrl: string) {
 export function DetailNavigation({
   title,
   fallbackTabUrl,
-  overlay = false
+  overlay = false,
+  metrics: providedMetrics
 }: {
   title: string;
   fallbackTabUrl: string;
   overlay?: boolean;
+  metrics?: DetailNavigationMetrics;
 }) {
-  const metrics = useMemo(getDetailNavigationMetrics, []);
+  const metrics = useMemo(() => providedMetrics ?? getDetailNavigationMetrics(), [providedMetrics]);
   const clickGuard = useRepeatClickGuard();
   return (
     <View

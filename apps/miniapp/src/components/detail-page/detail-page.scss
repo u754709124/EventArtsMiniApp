@@ -11,17 +11,18 @@ $detail-shadow: 0 8rpx 30rpx rgba(71, 51, 31, 0.07);
 $detail-counter-background: rgba(25, 18, 13, 0.64);
 $detail-back-background: rgba(255, 255, 255, 0.94);
 $detail-share-background: rgba(255, 255, 255, 0.96);
-$detail-banner-height: 404rpx;
+$detail-banner-height: 424rpx;
 $detail-card-radius: 20rpx;
 $detail-card-padding: 24rpx;
 $detail-card-gap: 8rpx;
 $detail-media-radius: 14rpx;
 $detail-gutter: 24rpx;
 $detail-overlap: 42rpx;
+$detail-hero-visible-gap: 24rpx;
 $detail-name-size: 50rpx;
 $detail-type-size: 30rpx;
 $detail-subtitle-size: 27rpx;
-$detail-section-title-size: 32rpx;
+$detail-section-title-size: 28rpx;
 $detail-body-size: 28rpx;
 $detail-body-line-height: 1.72;
 
@@ -116,13 +117,23 @@ $detail-body-line-height: 1.72;
 
 .detail-banner {
   position: relative;
+  box-sizing: border-box;
   width: 750rpx;
   max-width: 100%;
-  height: $detail-banner-height;
+  min-height: $detail-banner-height;
+  padding-right: 230rpx;
+  padding-bottom: calc(#{$detail-overlap} + #{$detail-hero-visible-gap});
+  padding-left: 44rpx;
   overflow: hidden;
   background: #2d2118;
 
-  &__swiper,
+  &__swiper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
   &__image {
     width: 100%;
     height: 100%;
@@ -158,10 +169,7 @@ $detail-body-line-height: 1.72;
 }
 
 .detail-hero {
-  position: absolute;
-  left: 44rpx;
-  right: 230rpx;
-  bottom: 42rpx;
+  position: relative;
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -342,10 +350,11 @@ $detail-body-line-height: 1.72;
   white-space: break-spaces;
 
   h1 {
-    display: block;
+    display: flex;
+    align-items: center;
     margin: 0 0 16rpx;
-    padding-left: 18rpx;
-    border-left: 7rpx solid $detail-gold;
+    padding-left: 0;
+    border-left: 0;
     color: $detail-text;
     font-size: $detail-section-title-size;
     font-weight: 650;
@@ -391,7 +400,8 @@ $detail-body-line-height: 1.72;
 
   img {
     display: block;
-    width: auto;
+    box-sizing: border-box;
+    width: 100%;
     max-width: 100% !important;
     height: auto !important;
     margin: 12rpx auto;

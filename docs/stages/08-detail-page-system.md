@@ -101,6 +101,19 @@
 
 ## 当前验证证据
 
+- 2026-07-14 详情页真机布局与富文本显示修复：
+  - revision 2 将 BANNER 改为 `424rpx` 最小高度的内容驱动布局；Hero 进入正常流，顶部复用导航安全区，底部预留 `42rpx` 重叠加 `24rpx` 可见间距，长标题、4 标签、位置和元数据可自然撑高。
+  - shared 可信展示增强器为 `h1` 幂等生成 marker/content 兄弟节点并使用 flex 中心对齐；小程序标题为 `28rpx`，Admin 375px 预览为 `14px`，marker 不超过 `1em` 且不再使用 `text-top` 或负 margin。图片响应式及原媒体属性保持不变。
+  - Admin BANNER 预览按半比例镜像流式契约：`212px` 最小高度、`72px 115px 33px 22px` 内容 padding、覆盖导航 `20px + 44px`、首卡负重叠 `21px`，人员与活动案例长内容复用同一预览结构。
+  - 定向单测：shared 2 files / 32 tests、miniapp 6 files / 33 tests、Admin 19 files / 80 tests，均通过；覆盖已有 style、重复处理、多行标题、marker 高度契约、图片属性保留和 Admin CSS/DOM 结构。
+  - `pnpm test`：通过，48 files / 318 tests（shared 32、miniapp 33、API 165、Admin 80、deploy 8）。
+  - shared typecheck、Admin 生产构建和 changed-file ESLint 通过；Admin 构建仅有既有的单 chunk 大小警告。
+  - Admin 定向 Playwright “详情页管理预览可创建 BANNER 富文本并被人员引用”通过，1/1；浏览器实测预览的导航/Hero/首卡净空、`14px` 标题和 marker/content 中心差均满足约束。
+  - `NODE_ENV=development pnpm e2e --project=miniapp-h5 --grep "详情"`：通过，12/12；覆盖人员与活动案例长 Hero、全部标签与元数据、首卡净空、按 750rpx 动态换算的 `28rpx` 标题、竖线中心对齐、图片自适应及原详情回归。
+  - `NODE_ENV=development pnpm e2e`：通过，48/48。根 `.env` 为生产配置，故本地 E2E 显式使用 development；额外诊断确认 `NODE_ENV=test` 的 H5 watch 会因 miniapp 未直连 `@babel/runtime` 而失败，该工具环境问题未用于判定产品页面结果。
+  - changed-file ESLint：通过；`pnpm lint` 未通过，阻塞为本次未改动的 `apps/miniapp/src/services/api.test.ts:84:10` 既有未使用变量 `rateLimitedBody`。
+  - `pnpm --filter miniapp build:h5` 与 `pnpm build:weapp` 均通过；H5 和微信小程序产物可正常生成。
+  - 自动化证据为上述 shared HTML 输出测试、小程序/Admin 单测、Admin/H5 浏览器 E2E、全仓单测、变更文件 ESLint、shared/Admin/H5/WeApp 构建、`git diff --check` 与源码审查；微信开发者工具/真机仍需分别复核人员与活动案例的返回按钮净空、标题竖线和正文图片完整缩放，未执行前不宣称 revision 2 已完成。
 - 2026-07-12 详情页分享入口更新：
   - `pnpm --filter miniapp test`：通过，4 files / 22 tests。
   - `pnpm lint`：通过。
@@ -158,7 +171,8 @@
 
 ## 待完成
 
-- 无代码、迁移、测试、构建或文档待完成项；最终回复需按源规格“最终回复格式”输出结构化实施报告。
+- revision 2 的代码、自动化测试、H5/WeApp 构建与文档已完成；仍需在微信开发者工具或真机分别复核人员和活动案例的导航净空、首卡净空、标题竖线居中与正文图片完整缩放。
+- 全仓 `pnpm lint` 仍被本次未改动的 `apps/miniapp/src/services/api.test.ts:84:10` 既有未使用变量阻塞。
 
 ## 已知取舍
 

@@ -22,6 +22,113 @@ export type DetailPagePresentationModel = {
   hasSemanticContent: boolean;
 };
 
+type StyleDeclaration = readonly [property: string, value: string];
+
+const styleAttributePattern = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu;
+const detailHeadingPattern = /(<h1\b[^>]*>)([\s\S]*?)(<\/h1\s*>)/giu;
+const detailHeadingMarkerElementPattern =
+  /<span\b(?=[^>]*\bdata-detail-heading-marker\s*=\s*(?:"true"|'true'|true))[^>]*>\s*<\/span\s*>/giu;
+const detailHeadingContentPattern =
+  /<span\b(?=[^>]*\bdata-detail-heading-content\s*=\s*(?:"true"|'true'|true))[^>]*>/iu;
+
+function mergeInlineStyle(
+  existing: string,
+  required: readonly StyleDeclaration[],
+  removedProperties: readonly string[] = []
+) {
+  const replacedProperties = new Set([
+    ...required.map(([property]) => property),
+    ...removedProperties
+  ]);
+  const preserved = existing
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .filter((declaration) => {
+      const colonIndex = declaration.indexOf(":");
+      if (colonIndex < 1) return true;
+      return !replacedProperties.has(declaration.slice(0, colonIndex).trim().toLowerCase());
+    });
+  return [...preserved, ...required.map(([property, value]) => `${property}:${value}`)].join(";");
+}
+
+function mergeTagStyle(
+  tag: string,
+  required: readonly StyleDeclaration[],
+  removedProperties: readonly string[] = []
+) {
+  const match = styleAttributePattern.exec(tag);
+  const existing = match ? (match[1] ?? match[2] ?? match[3] ?? "") : "";
+  const styleAttribute = ` style="${mergeInlineStyle(existing, required, removedProperties)}"`;
+  if (match?.index !== undefined) {
+    return `${tag.slice(0, match.index)}${styleAttribute}${tag.slice(match.index + match[0].length)}`;
+  }
+  const closingIndex = tag.endsWith("/>") ? tag.length - 2 : tag.length - 1;
+  return `${tag.slice(0, closingIndex)}${styleAttribute}${tag.slice(closingIndex)}`;
+}
+
+const detailHeadingStyles: readonly StyleDeclaration[] = [
+  ["display", "flex"],
+  ["box-sizing", "border-box"],
+  ["align-items", "center"],
+  ["padding-left", "0"],
+  ["border-left", "0"]
+];
+
+const detailHeadingMarkerStyles: readonly StyleDeclaration[] = [
+  ["display", "block"],
+  ["box-sizing", "border-box"],
+  ["flex", "0 0 auto"],
+  ["width", "0.233333em"],
+  ["height", "1em"],
+  ["max-height", "1em"],
+  ["margin-right", "0.366667em"],
+  ["background", "#e5893d"],
+  ["align-self", "center"]
+];
+
+const detailHeadingContentStyles: readonly StyleDeclaration[] = [
+  ["display", "block"],
+  ["box-sizing", "border-box"],
+  ["min-width", "0"],
+  ["flex", "1"]
+];
+
+const detailImageStyles: readonly StyleDeclaration[] = [
+  ["display", "block"],
+  ["box-sizing", "border-box"],
+  ["width", "100%"],
+  ["max-width", "100%"],
+  ["height", "auto"]
+];
+
+/**
+ * Applies the shared detail display contract at the trusted rendering boundary.
+ * Typography and spacing remain platform-owned at 28rpx in miniapp CSS and
+ * 14px in Admin CSS; this helper supplies heading structure, marker and image semantics.
+ */
+export function enhanceDetailRichTextForPresentation(html: string) {
+  const markerHtml = `${mergeTagStyle(
+    '<span data-detail-heading-marker="true">',
+    detailHeadingMarkerStyles
+  )}</span>`;
+  const contentOpeningHtml = mergeTagStyle(
+    '<span data-detail-heading-content="true">',
+    detailHeadingContentStyles
+  );
+  return html
+    .replace(detailHeadingPattern, (_match, openingTag: string, content: string, closingTag: string) => {
+      const contentWithoutMarkers = content.replace(detailHeadingMarkerElementPattern, "");
+      const contentHtml = detailHeadingContentPattern.test(contentWithoutMarkers)
+        ? contentWithoutMarkers.replace(detailHeadingContentPattern, (tag) =>
+            mergeTagStyle(tag, detailHeadingContentStyles)
+          )
+        : `${contentOpeningHtml}${contentWithoutMarkers}</span>`;
+      return `${mergeTagStyle(openingTag, detailHeadingStyles)}${markerHtml}${contentHtml}${closingTag}`;
+    })
+    .replace(/<img\b[^>]*>/giu, (tag) => mergeTagStyle(tag, detailImageStyles));
+}
+
 function cleanDetailText(value: string | null | undefined) {
   return value?.trim() ?? "";
 }

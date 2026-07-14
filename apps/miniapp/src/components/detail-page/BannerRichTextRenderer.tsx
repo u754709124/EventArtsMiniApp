@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { getDisplayDetailPageBanners } from "@event-arts/shared/detail-page-presentation";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../AppImage";
-import { DetailNavigation } from "./DetailNavigation";
+import { DetailNavigation, getDetailNavigationMetrics } from "./DetailNavigation";
+import { getDetailHeroTop } from "./navigation-layout";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
@@ -16,6 +17,7 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
   const [bannerRetryKey, setBannerRetryKey] = useState(0);
   const clickGuard = useRepeatClickGuard();
+  const navigationMetrics = useMemo(getDetailNavigationMetrics, []);
   const multiple = banners.length > 1;
   const fixedForE2E =
     process.env.NODE_ENV === "test" ||
@@ -34,7 +36,11 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
 
   return (
     <View className="detail-page detail-page--banner" data-testid="detail-layout-banner">
-      <View className="detail-banner" data-testid="detail-banner">
+      <View
+        className="detail-banner"
+        data-testid="detail-banner"
+        style={{ paddingTop: `${getDetailHeroTop(navigationMetrics)}px` }}
+      >
         <Swiper
           className="detail-banner__swiper"
           current={current}
@@ -63,7 +69,12 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
           ))}
         </Swiper>
         <View className="detail-banner__shade" aria-hidden />
-        <DetailNavigation title="" fallbackTabUrl={fallbackTabUrl} overlay />
+        <DetailNavigation
+          title=""
+          fallbackTabUrl={fallbackTabUrl}
+          overlay
+          metrics={navigationMetrics}
+        />
         <DetailHeroBanner hero={hero} />
         <Text className="detail-banner__counter" data-testid="detail-banner-counter">
           {Math.min(current + 1, banners.length)}/{banners.length}

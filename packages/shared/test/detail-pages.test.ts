@@ -9,6 +9,7 @@ import {
   detailPageTypeDefinitions,
   detailPageTypeLabels,
   detailPageTypeValues,
+  enhanceDetailRichTextForPresentation,
   mediaFieldRules,
   collectDetailPageImageUrls,
   getDisplayDetailPageBanners,
@@ -305,5 +306,53 @@ describe("detail page presentation resolver", () => {
     expect(hasSemanticDetailPageContent([{ type: "richText", html: "<p>&nbsp;<br></p>" }])).toBe(false);
     expect(hasSemanticDetailPageContent([{ type: "video", assetId: 1, url: " ", posterUrl: null, width: null, height: null }])).toBe(false);
     expect(hasSemanticDetailPageContent([{ type: "richText", html: '<p><img src="/valid.jpg"></p>' }])).toBe(true);
+  });
+
+  it("adds centered heading structure and responsive images idempotently", () => {
+    const source = [
+      "<h1>无样式标题</h1>",
+      '<h1 class="title" style="padding-left:99px;color:#333">单行标题<strong>重点</strong></h1>',
+      "<h1>多行标题<br><em>第二行</em></h1>",
+      '<img data-media-asset-id="9" src="/wide.jpg" alt="宴会厅" loading="lazy" style="width:900px;border:1px solid red">'
+    ].join("");
+    const enhanced = enhanceDetailRichTextForPresentation(source);
+
+    expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(3);
+    expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(3);
+    expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
+    expect(enhanced.match(/height:1em;max-height:1em/gu)).toHaveLength(3);
+    expect(enhanced.match(/align-self:center/gu)).toHaveLength(3);
+    expect(enhanced.match(/display:block;box-sizing:border-box;min-width:0;flex:1/gu)).toHaveLength(3);
+    expect(enhanced).toContain("单行标题<strong>重点</strong>");
+    expect(enhanced).toContain("多行标题<br><em>第二行</em>");
+    expect(enhanced).toContain("width:100%;max-width:100%;height:auto");
+    expect(enhanced).toContain("color:#333");
+    expect(enhanced).toContain("border:1px solid red");
+    expect(enhanced).toContain('data-media-asset-id="9"');
+    expect(enhanced).toContain('alt="宴会厅"');
+    expect(enhanced).toContain('loading="lazy"');
+    expect(enhanced).not.toContain("padding-left:99px");
+    expect(enhanced).not.toContain("width:900px");
+    expect(enhanced).not.toContain("vertical-align");
+    expect(enhanced).not.toContain("margin-left");
+    expect(enhanceDetailRichTextForPresentation(enhanced)).toBe(enhanced);
+  });
+
+  it("migrates the previous baseline-offset marker without duplicating nodes", () => {
+    const legacy = [
+      '<h1 style="display:block;padding-left:0.6em">',
+      '<span data-detail-heading-marker="true" style="height:1em;margin-left:-0.6em;vertical-align:text-top"></span>',
+      "旧版标题<br>第二行",
+      "</h1>"
+    ].join("");
+    const enhanced = enhanceDetailRichTextForPresentation(legacy);
+
+    expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(1);
+    expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(1);
+    expect(enhanced).toContain("display:flex");
+    expect(enhanced).toContain("align-items:center");
+    expect(enhanced).not.toContain("text-top");
+    expect(enhanced).not.toContain("margin-left:-0.6em");
+    expect(enhanceDetailRichTextForPresentation(enhanced)).toBe(enhanced);
   });
 });

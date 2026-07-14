@@ -7,6 +7,7 @@ import { collectDetailCardImageUrls } from "./model";
 import { DetailVideoBlock } from "./DetailVideoBlock";
 import { useDetailImageHealth } from "./useDetailImageHealth";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
+import { enhanceDetailRichTextForDisplay } from "./rich-text-display";
 
 export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
   const imageUrls = useMemo(() => collectDetailCardImageUrls(cards), [cards]);
@@ -48,7 +49,7 @@ export function DetailRichContent({ cards }: { cards: DetailPageCardDto[] }) {
                 key={`${imageHealth.richTextRetryKey}-rich-${cardIndex}-${blockIndex}`}
                 className="detail-rich-text"
                 data-testid="detail-rich-text-block"
-                nodes={block.html}
+                nodes={enhanceDetailRichTextForDisplay(block.html)}
                 onClick={(event) => clickGuard("detail:rich-image:preview", () => previewImage(event))}
               />
             ) : (

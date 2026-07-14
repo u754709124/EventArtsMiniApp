@@ -33,6 +33,10 @@ type DetailPageDto = {
     title: string;
     typeLabel: string;
     subtitle: string;
+    badge: string;
+    tags: string[];
+    location: string;
+    metaItems: Array<{ label: string; value: string }>;
   };
   banners: Array<{ id: number; url: string; sortOrder: number }>;
   blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
@@ -56,6 +60,16 @@ type HomeResponse = {
   announcements: Announcement[];
   featuredArticles: ArticleItem[];
 };
+
+const longActivityCaseHero = {
+  title: "浪漫粉色系户外婚礼暨品牌答谢晚宴",
+  typeLabel: "企业品牌活动统筹与婚礼主持",
+  subtitle: "专业策划・精彩呈现・全流程现场执行",
+  badge: "品牌婚礼案例",
+  tags: ["户外草坪", "浪漫仪式", "品牌答谢", "现场统筹"],
+  location: "杭州・西湖区",
+  metaItems: [{ label: "日期", value: "2024-05-18" }]
+} satisfies DetailPageDto["hero"];
 
 test.describe.configure({ mode: "serial" });
 
@@ -287,6 +301,24 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
   if (dto.hero.subtitle.trim()) {
     await expect(page.getByTestId("detail-hero")).toContainText(dto.hero.subtitle.trim());
   }
+  const expectedTags = dto.hero.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 4);
+  const heroTags = page.getByTestId("detail-hero-tag");
+  await expect(heroTags).toHaveCount(expectedTags.length);
+  for (const [index, tag] of expectedTags.entries()) {
+    await expect(heroTags.nth(index)).toHaveText(tag);
+    await expect(heroTags.nth(index)).toBeVisible();
+  }
+  const expectedMetaItems = dto.hero.metaItems.filter((item) => item.value.trim());
+  const heroMetaItems = page.getByTestId("detail-hero-meta-item");
+  await expect(heroMetaItems).toHaveCount(expectedMetaItems.length);
+  for (const [index, item] of expectedMetaItems.entries()) {
+    await expect(heroMetaItems.nth(index)).toHaveText(`${item.label}：${item.value}`);
+    await expect(heroMetaItems.nth(index)).toBeVisible();
+  }
+  if (dto.hero.location.trim()) {
+    await expect(page.getByTestId("detail-hero-location")).toHaveText(dto.hero.location.trim());
+    await expect(page.getByTestId("detail-hero-location")).toBeVisible();
+  }
 
   const expectedBannerUrls = [...dto.banners]
     .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
@@ -312,15 +344,64 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
     expectedCards.map((card) => card.blocks.map((block) => block.type))
   );
 
+  const richTextPresentation = await page.getByTestId("detail-rich-content").evaluate((root) => ({
+    expectedHeadingFontSize:
+      document.querySelector<HTMLElement>(".detail-page")!.getBoundingClientRect().width * 28 / 750,
+    headings: Array.from(root.querySelectorAll("h1")).map((heading) => {
+      const marker = heading.querySelector<HTMLElement>("[data-detail-heading-marker='true']");
+      const content = heading.querySelector<HTMLElement>("[data-detail-heading-content='true']");
+      const markerRect = marker?.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      const style = getComputedStyle(heading);
+      return {
+        fontSize: Number.parseFloat(style.fontSize),
+        display: style.display,
+        alignItems: style.alignItems,
+        markerHeight: markerRect?.height ?? 0,
+        markerContentCenterDelta: markerRect && contentRect
+          ? Math.abs((markerRect.top + markerRect.bottom - contentRect.top - contentRect.bottom) / 2)
+          : -1,
+        markerInlineHeight: marker?.style.height ?? "",
+        markerInlineMaxHeight: marker?.style.maxHeight ?? ""
+      };
+    }),
+    images: Array.from(root.querySelectorAll("img")).map((image) => ({
+      width: image.getBoundingClientRect().width,
+      containerWidth: image.parentElement?.getBoundingClientRect().width ?? 0,
+      inlineWidth: image.style.width,
+      inlineMaxWidth: image.style.maxWidth,
+      inlineHeight: image.style.height
+    }))
+  }));
+  expect(richTextPresentation.headings.length).toBeGreaterThan(0);
+  richTextPresentation.headings.forEach((heading) => {
+    expect(heading.fontSize).toBeCloseTo(richTextPresentation.expectedHeadingFontSize, 1);
+    expect(heading.display).toBe("flex");
+    expect(heading.alignItems).toBe("center");
+    expect(heading.markerHeight).toBeGreaterThan(0);
+    expect(heading.markerHeight).toBeLessThanOrEqual(heading.fontSize + 0.5);
+    expect(heading.markerContentCenterDelta).toBeGreaterThanOrEqual(0);
+    expect(heading.markerContentCenterDelta).toBeLessThanOrEqual(1);
+    expect(heading.markerInlineHeight).toBe("1em");
+    expect(heading.markerInlineMaxHeight).toBe("1em");
+  });
+  richTextPresentation.images.forEach((image) => {
+    expect(image.width).toBeLessThanOrEqual(image.containerWidth + 1);
+    expect(image.inlineWidth).toBe("100%");
+    expect(image.inlineMaxWidth).toBe("100%");
+    expect(image.inlineHeight).toBe("auto");
+  });
+
   const geometry = await page.evaluate(() => {
     const banner = document.querySelector('[data-testid="detail-banner"]')!.getBoundingClientRect();
     const content = document.querySelector('[data-testid="detail-content-overlap"]')!.getBoundingClientRect();
     return {
-      bannerRatio: banner.width / banner.height,
+      bannerHeight: banner.height,
+      minimumBannerHeight: banner.width * 424 / 750,
       overlap: banner.bottom - content.top
     };
   });
-  expect(geometry.bannerRatio).toBeCloseTo(750 / 404, 1);
+  expect(geometry.bannerHeight).toBeGreaterThanOrEqual(geometry.minimumBannerHeight - 1);
   expect(geometry.overlap).toBeGreaterThanOrEqual(18);
   expect(geometry.overlap).toBeLessThanOrEqual(28);
 }
@@ -368,14 +449,37 @@ async function expectBannerDetail(page: Page, expectedTitle: string, expectedTyp
     const firstCard = document.querySelector(".detail-rich-card")!.getBoundingClientRect();
     return {
       amount: banner.bottom - content.top,
-      bannerRatio: banner.width / banner.height,
+      bannerHeight: banner.height,
+      minimumBannerHeight: banner.width * 424 / 750,
       firstCardVisible: firstCard.top >= content.top - 1
     };
   });
-  expect(overlap.bannerRatio).toBeCloseTo(750 / 404, 1);
+  expect(overlap.bannerHeight).toBeGreaterThanOrEqual(overlap.minimumBannerHeight - 1);
   expect(overlap.amount).toBeGreaterThanOrEqual(18);
   expect(overlap.amount).toBeLessThanOrEqual(28);
   expect(overlap.firstCardVisible).toBeTruthy();
+}
+
+async function expectBannerHeroGeometry(page: Page, ownerLabel: "人员" | "活动案例") {
+  const geometry = await page.evaluate(() => {
+    const banner = document.querySelector('[data-testid="detail-banner"]')!.getBoundingClientRect();
+    const navigation = document
+      .querySelector('[data-testid="detail-navigation"]')!
+      .getBoundingClientRect();
+    const heading = document
+      .querySelector('[data-testid="detail-hero-heading"]')!
+      .getBoundingClientRect();
+    const hero = document.querySelector('[data-testid="detail-hero"]')!.getBoundingClientRect();
+    const firstCard = document.querySelector(".detail-rich-card")!.getBoundingClientRect();
+    return {
+      headingClearance: heading.top - navigation.bottom,
+      heroInsideBanner: hero.bottom <= banner.bottom,
+      heroCardClearance: firstCard.top - hero.bottom
+    };
+  });
+  expect(geometry.headingClearance, `${ownerLabel} Hero 首行应保留导航安全间距`).toBeGreaterThanOrEqual(7);
+  expect(geometry.heroInsideBanner, `${ownerLabel} Hero 应完整保留在 BANNER 内`).toBeTruthy();
+  expect(geometry.heroCardClearance, `${ownerLabel} Hero 底部应与首卡保持可见间距`).toBeGreaterThanOrEqual(8);
 }
 
 async function expectRichOnlyDetail(page: Page, expectedTitle: string) {
@@ -999,6 +1103,7 @@ test("人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局", a
   await openDetail(page, artistBanner.detailPageId);
   await waitForDetailVisuals(page);
   await expectBannerDetail(page, artistBanner.name, "主持人");
+  await expectBannerHeroGeometry(page, "人员");
   await expectDetailPageDtoContract(page, dto);
   await expect(page.getByTestId("detail-banner-image")).toHaveCount(3);
   await expect(page.getByTestId("detail-hero")).toContainText("温暖・专业・掌控全场");
@@ -1024,10 +1129,17 @@ test("人员单富文本详情完全移除 BANNER DOM、占高和负重叠", asy
 test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节点", async ({ page, request }) => {
   const { caseBanner } = await resolveDetailFixtures(request);
   const dto = await clientApi<DetailPageDto>(request, `/api/client/detail-pages/${caseBanner.detailPageId}`);
+  const longDto: DetailPageDto = { ...dto, hero: longActivityCaseHero };
+  await page.route(`**/api/client/detail-pages/${caseBanner.detailPageId}`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { success: boolean; data: DetailPageDto };
+    await route.fulfill({ response, json: { ...body, data: longDto } });
+  });
   await openDetail(page, caseBanner.detailPageId);
   await waitForDetailVisuals(page);
-  await expectBannerDetail(page, caseBanner.title, "婚礼主持");
-  await expectDetailPageDtoContract(page, dto);
+  await expectBannerDetail(page, longActivityCaseHero.title, longActivityCaseHero.typeLabel);
+  await expectBannerHeroGeometry(page, "活动案例");
+  await expectDetailPageDtoContract(page, longDto);
   await expect(page.getByTestId("detail-hero")).toContainText("杭州・西湖区");
   await expect(page.getByTestId("detail-hero")).toContainText("日期：2024-05-18");
   const video = page.getByTestId("detail-video").locator("video");
