@@ -1,4 +1,4 @@
-import Taro from "@tarojs/taro";
+import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import type { ITouchEvent } from "@tarojs/components/types";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { ErrorState, LoadingState } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { openMenu } from "../../utils/menu-navigation";
+import { runPullDownRefresh } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
@@ -349,25 +350,36 @@ export default function HomePage() {
   const [data, setData] = useState<ClientHomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const requestToken = useRef(0);
   const clickGuard = useRepeatClickGuard();
 
-  async function load() {
-    setLoading(true);
-    setFailed(false);
+  async function load(background = false) {
+    const token = requestToken.current + 1;
+    requestToken.current = token;
+    if (!background) {
+      setLoading(true);
+      setFailed(false);
+    }
     try {
       const home = await getHome();
+      if (requestToken.current !== token) return;
       setData(home);
+      setFailed(false);
       trackPageView("/pages/index/index", "home").catch(() => undefined);
-    } catch {
+    } catch (error) {
+      if (requestToken.current !== token) return;
+      if (background) throw error;
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (requestToken.current === token) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
   }, []);
+
+  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
 
   if (loading) return <LoadingState />;
   if (failed || !data) return <ErrorState onRetry={load} />;

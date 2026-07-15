@@ -49,5 +49,14 @@
 ## 对应 git commit hash
 6dd9a7d
 
+## 2026-07-15 下拉刷新与图片缓存联调验证
+
+- 首页、分类、案例、文章、人员五个远端数据页已启用原生下拉刷新；刷新会等待真实接口请求，并在成功或失败后停止原生刷新动画。
+- 后台刷新保留已有成功内容和当前筛选上下文；文章列表从第一页重新请求并替换累计数据。五页均使用最新请求保护，旧请求不会覆盖新结果。
+- `pnpm --filter miniapp test` 通过：9 个文件、43 个测试；`pnpm --filter miniapp build:h5` 与 `pnpm build:weapp` 均通过。
+- WeApp 构建产物中的首页、分类、案例、文章、人员五个页面 JSON 均包含 `enablePullDownRefresh: true`。
+- 根 `pnpm test` 通过；根 `pnpm lint` 仍被本功能范围外的既有 `apps/miniapp/src/services/api.test.ts:84` 未使用变量 `rateLimitedBody` 阻塞。
+- 完整 `NODE_ENV=development pnpm e2e` 首次在 sandbox 内因本地端口监听权限失败；授权后运行时，既有 Admin“新增 Banner”资源选择断言失败并触发后续串行用例停止。单独运行 Miniapp H5 项目时前 18 个场景通过，随后既有“人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局”仍因标题节点为 0 失败，其余 15 个场景未执行；该失败与本次刷新改动无关。
+
 ## 已知问题或设计取舍
 参考图下方扩展模块不纳入一期交互范围。H5 截图不模拟微信状态栏和胶囊按钮，因此采用独立的 36px 顶部安全区；微信端保持运行时胶囊按钮适配。Taro 构建需要写入 `~/.taro4.0` 缓存目录，sandbox 内需授权运行。后续已将首页切图改为 palette PNG 并配置构建 performance budget，H5/weapp 当前构建无 warning 输出。

@@ -1,5 +1,6 @@
 import { Text, View } from "@tarojs/components";
-import { useEffect, useState } from "react";
+import { usePullDownRefresh } from "@tarojs/taro";
+import { useEffect, useRef, useState } from "react";
 import type { MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
@@ -7,6 +8,7 @@ import { MiniappPageHeader } from "../../components/MiniappPageHeader";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getMenuItems } from "../../services/api";
 import { menuSummaries, openMenu } from "../../utils/menu-navigation";
+import { runPullDownRefresh } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./index.scss";
 
@@ -14,23 +16,35 @@ export default function CategoryPage() {
   const [menus, setMenus] = useState<MenuItemDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const requestToken = useRef(0);
   const clickGuard = useRepeatClickGuard();
 
-  async function load() {
-    setLoading(true);
-    setFailed(false);
+  async function load(background = false) {
+    const token = requestToken.current + 1;
+    requestToken.current = token;
+    if (!background) {
+      setLoading(true);
+      setFailed(false);
+    }
     try {
-      setMenus(await getMenuItems());
-    } catch {
+      const data = await getMenuItems();
+      if (requestToken.current !== token) return;
+      setMenus(data);
+      setFailed(false);
+    } catch (error) {
+      if (requestToken.current !== token) return;
+      if (background) throw error;
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (requestToken.current === token) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
   }, []);
+
+  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
 
   return (
     <View className="page" data-testid="category-page">

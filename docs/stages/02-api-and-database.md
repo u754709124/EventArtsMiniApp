@@ -41,5 +41,13 @@
 ## 对应 git commit hash
 c988312
 
+## 2026-07-15 上传图片客户端缓存验证
+
+- `/uploads/` 静态资源按真实文件路径判断扩展名：`.jpg`、`.png`、`.webp`（大小写不敏感）返回 `Cache-Control: public, max-age=2592000, immutable`。
+- 非图片资源保留原有 `Cache-Control: public, max-age=0`；ETag、Last-Modified、Accept-Ranges 和静态文件读取行为保持不变。
+- 长缓存依赖随机、不可原地覆盖的上传文件名；本次未引入客户端 `downloadFile`/`saveFile` 缓存，也未改变对象存储或 CDN 策略。
+- `app.inject()` 正向测试验证真实上传 PNG 的 30 天不可变缓存及文件字节，负向测试验证 MP4 不获得图片缓存策略。
+- `pnpm --filter api test` 通过：19 个文件、169 个测试；`pnpm --filter api build` 与根 `pnpm test` 均通过。
+
 ## 已知问题或设计取舍
 本地 SQLite；生产可迁移到托管数据库和对象存储。旧 `media_assets.usage` 与 `activity_cases.mediaJson` 仅保留为内部 legacy 列，新业务不再读写用途或 JSON 媒体列表。生产迁移前必须同时备份数据库与 `uploads`。当前环境中 `prisma db push` 的 schema engine 对 SQLite 返回 `Schema engine error: undefined`，因此项目保留 Prisma schema 和 Prisma Client，同时使用 `apps/api/src/sqlite-schema.ts` 作为可重复执行的 SQLite bootstrap。

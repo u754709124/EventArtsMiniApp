@@ -1,4 +1,4 @@
-import Taro, { useLoad } from "@tarojs/taro";
+import Taro, { useLoad, usePullDownRefresh } from "@tarojs/taro";
 import { ScrollView, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArticleListItemDto } from "@event-arts/shared";
@@ -6,6 +6,7 @@ import { ArticleCard } from "../../components/ArticleCard";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getArticles } from "../../services/api";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
+import { runPullDownRefresh } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -87,14 +88,16 @@ export default function ArticleList() {
 
   const hasMore = items.length < total;
 
-  async function load(nextPage: number, reset: boolean) {
+  async function load(nextPage: number, reset: boolean, background = false) {
     const token = requestToken.current + 1;
     requestToken.current = token;
-    if (reset) {
-      setLoading(true);
-      setFailed(false);
-    } else {
-      setLoadingMore(true);
+    if (!background) {
+      if (reset) {
+        setLoading(true);
+        setFailed(false);
+      } else {
+        setLoadingMore(true);
+      }
     }
     try {
       const data = await getArticles({ category, page: nextPage, pageSize });
@@ -103,8 +106,10 @@ export default function ArticleList() {
       setCategories(data.categories);
       setTotal(data.total);
       setPage(data.page);
-    } catch {
+      setFailed(false);
+    } catch (error) {
       if (requestToken.current !== token) return;
+      if (background) throw error;
       setFailed(true);
     } finally {
       if (requestToken.current === token) {
@@ -118,6 +123,8 @@ export default function ArticleList() {
     if (!ready) return;
     void load(1, true);
   }, [category, pageSize, ready]);
+
+  usePullDownRefresh(() => runPullDownRefresh(() => load(1, true, true)));
 
   function selectCategory(nextCategory: string) {
     if (nextCategory === category) return;

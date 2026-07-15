@@ -189,6 +189,9 @@ const defaultCorsConfig: ApiCorsConfig = {
 };
 const publicInternalErrorMessage = "服务异常，请稍后再试";
 const publicMediaRecoveryErrorMessage = "资源处理失败，请联系管理员并提供请求 ID";
+const uploadedImageCacheControl = "public, max-age=2592000, immutable";
+const defaultUploadedFileCacheControl = "public, max-age=0";
+const uploadedImageFilePattern = /\.(?:jpg|png|webp)$/i;
 const defaultAppRateLimit: AppRateLimitConfig = {
   login: { windowMs: 900_000, maxFailures: 5 },
   analytics: { windowMs: 60_000, maxRequests: 60 }
@@ -914,7 +917,14 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   await app.register(fastifyStatic, {
     root: options.uploadDir,
     prefix: "/uploads/",
-    decorateReply: false
+    decorateReply: false,
+    cacheControl: false,
+    setHeaders(response, filePath) {
+      response.setHeader(
+        "Cache-Control",
+        uploadedImageFilePattern.test(filePath) ? uploadedImageCacheControl : defaultUploadedFileCacheControl
+      );
+    }
   });
 
   app.addHook("preHandler", async (request, reply) => {

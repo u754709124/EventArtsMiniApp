@@ -1,4 +1,4 @@
-import { useDidShow } from "@tarojs/taro";
+import { useDidShow, usePullDownRefresh } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityCaseListItemDto } from "@event-arts/shared";
@@ -7,6 +7,7 @@ import { MiniappPageHeader } from "../../components/MiniappPageHeader";
 import { EmptyState, LoadingState } from "../../components/PageState";
 import { getCases } from "../../services/api";
 import { consumePendingCaseMenuFilter } from "../../utils/menu-navigation";
+import { runPullDownRefresh } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -34,17 +35,21 @@ export default function CaseList() {
     [items, query]
   );
 
-  async function load(nextCategory = category) {
+  async function load(nextCategory = category, background = false) {
     const current = requestId.current + 1;
     requestId.current = current;
-    setLoading(true);
-    setFailed(false);
+    if (!background) {
+      setLoading(true);
+      setFailed(false);
+    }
     try {
       const data = await getCases({ category: nextCategory });
       if (requestId.current !== current) return;
       setItems(data);
-    } catch {
+      setFailed(false);
+    } catch (error) {
       if (requestId.current !== current) return;
+      if (background) throw error;
       setFailed(true);
     } finally {
       if (requestId.current === current) setLoading(false);
@@ -61,6 +66,8 @@ export default function CaseList() {
     setCategory(pendingFilter.category?.trim() ?? "");
     setQuery("");
   });
+
+  usePullDownRefresh(() => runPullDownRefresh(() => load(category, true)));
 
   return (
     <View className="page" data-testid="case-list-page">

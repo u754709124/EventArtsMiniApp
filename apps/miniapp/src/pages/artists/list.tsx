@@ -1,4 +1,4 @@
-import Taro, { useLoad } from "@tarojs/taro";
+import Taro, { useLoad, usePullDownRefresh } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtistListItemDto, ArtistType } from "@event-arts/shared";
@@ -7,6 +7,7 @@ import { AppImage } from "../../components/AppImage";
 import { request } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
+import { runPullDownRefresh } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -231,7 +232,6 @@ export default function ArtistList() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   const requestToken = useRef(0);
   const metrics = useMemo(getNavigationMetrics, []);
   const copy = artistCopy[type as ArtistType];
@@ -254,25 +254,33 @@ export default function ArtistList() {
     return () => clearTimeout(timer);
   }, [keywordInput]);
 
-  useEffect(() => {
+  async function load(background = false) {
     const token = requestToken.current + 1;
     requestToken.current = token;
-    setLoading(true);
-    setFailed(false);
-    void request<ArtistListItem[]>(buildArtistListUrl(type, keyword, location, tag))
-      .then((data) => {
-        if (requestToken.current !== token) return;
-        setItems(data);
-        if (!keyword && !location && !tag) setFilterOptions(getFilterOptions(data));
-      })
-      .catch(() => {
-        if (requestToken.current !== token) return;
-        setFailed(true);
-      })
-      .finally(() => {
-        if (requestToken.current === token) setLoading(false);
-      });
-  }, [keyword, location, reloadKey, tag, type]);
+    if (!background) {
+      setLoading(true);
+      setFailed(false);
+    }
+    try {
+      const data = await request<ArtistListItem[]>(buildArtistListUrl(type, keyword, location, tag));
+      if (requestToken.current !== token) return;
+      setItems(data);
+      setFailed(false);
+      if (!keyword && !location && !tag) setFilterOptions(getFilterOptions(data));
+    } catch (error) {
+      if (requestToken.current !== token) return;
+      if (background) throw error;
+      setFailed(true);
+    } finally {
+      if (requestToken.current === token) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [keyword, location, tag, type]);
+
+  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
 
   function goBack() {
     try {
@@ -345,7 +353,7 @@ export default function ArtistList() {
           <View className="artist-state" data-testid="artist-list-error">
             <Text className="artist-state__title">页面加载失败</Text>
             <Text className="artist-state__desc">请稍后重试</Text>
-            <Text className="artist-state__action" data-testid="artist-list-retry" onClick={() => clickGuard("artist:retry", () => setReloadKey((value: number) => value + 1))}>
+            <Text className="artist-state__action" data-testid="artist-list-retry" onClick={() => clickGuard("artist:retry", load)}>
               重新加载
             </Text>
           </View>
