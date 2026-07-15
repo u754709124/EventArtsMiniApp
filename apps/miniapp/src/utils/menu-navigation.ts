@@ -1,5 +1,6 @@
 import Taro from "@tarojs/taro";
 import type { MenuItemDto, MenuType } from "@event-arts/shared";
+import { navigateToDetailPage } from "./detail-page-navigation";
 import { runGuardedAction } from "./repeat-click-guard";
 
 export const menuLabels: Record<MenuType, string> = {
@@ -8,6 +9,7 @@ export const menuLabels: Record<MenuType, string> = {
   actor: "演员",
   activity_case: "活动案例",
   article: "文章",
+  detail_page: "详情页直达",
   contact: "联系我们"
 };
 
@@ -17,6 +19,7 @@ export const menuSummaries: Record<MenuType, string> = {
   actor: "挑选丰富活动体验的演艺人员",
   activity_case: "浏览真实活动案例与现场效果",
   article: "阅读婚礼攻略与活动策划经验",
+  detail_page: "直接查看精选服务与活动详情",
   contact: "咨询档期、报价与合作方式"
 };
 
@@ -26,6 +29,7 @@ const menuRoutes: Record<MenuType, string> = {
   actor: "/pages/artists/list?type=actor",
   activity_case: "/pages/cases/list",
   article: "/pages/articles/list",
+  detail_page: "/pages/detail/index",
   contact: "/pages/contact/index"
 };
 
@@ -71,6 +75,11 @@ function articleMenuUrl(menu: MenuItemDto | MenuType | string) {
   return `/pages/articles/list${entries.length ? `?${entries.join("&")}` : ""}`;
 }
 
+function detailPageMenuId(menu: MenuItemDto | MenuType | string) {
+  const detailPageId = getMenuConfig(menu).detailPageId;
+  return Number.isInteger(detailPageId) && Number(detailPageId) > 0 ? Number(detailPageId) : null;
+}
+
 export function consumePendingCaseMenuFilter(): CaseMenuFilter | undefined {
   try {
     const value = Taro.getStorageSync<CaseMenuFilter>(caseMenuFilterStorageKey);
@@ -83,6 +92,11 @@ export function consumePendingCaseMenuFilter(): CaseMenuFilter | undefined {
 
 export function openMenu(menu: MenuItemDto | MenuType | string) {
   const menuType = (isMenuItemLike(menu) ? menu.type : menu) as MenuType;
+  if (menuType === "detail_page") {
+    const detailPageId = detailPageMenuId(menu);
+    if (detailPageId !== null) navigateToDetailPage(detailPageId);
+    return;
+  }
   const url = menuRoutes[menuType];
   if (!url) return;
   runGuardedAction(`menu:navigate:${menuType}:${url}`, () => {

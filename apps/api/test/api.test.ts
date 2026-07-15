@@ -4,7 +4,6 @@ import path from "node:path";
 import type { InjectOptions, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { menuTypeValues } from "@event-arts/shared";
 import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { seedDatabase } from "../src/seed";
@@ -230,7 +229,14 @@ describe("client home aggregation", () => {
       "featuredArticles"
     ]);
     expect(body.data.site.appName).toBe("喜缘主持・演艺服务");
-    expect(body.data.menus.map((menu: { type: string }) => menu.type)).toEqual(menuTypeValues);
+    expect(body.data.menus.map((menu: { type: string }) => menu.type)).toEqual([
+      "host",
+      "singer",
+      "actor",
+      "activity_case",
+      "article",
+      "contact"
+    ]);
     expect(body.data.menus.every((menu: { showOnHome: boolean }) => menu.showOnHome)).toBe(true);
     expect(body.data.featuredCases).toHaveLength(3);
     expect(body.data.featuredArticles).toHaveLength(2);
@@ -520,6 +526,206 @@ describe("client home aggregation", () => {
       code: "VALIDATION_ERROR",
       message: "菜单参数错误"
     });
+  });
+
+  it("creates direct detail-page menus, preserves partial updates, and protects only the current target", async () => {
+    const token = await login();
+    const icon = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "placeholder-icon.png" } });
+    const richDetail = await prisma.detailPageConfig.create({
+      data: { name: "菜单图文详情", pageType: "rich_text", richTextHtml: "<p>图文详情</p>" }
+    });
+    const bannerDetail = await prisma.detailPageConfig.create({
+      data: { name: "菜单视觉详情", pageType: "banner_rich_text", richTextHtml: "<p>视觉详情</p>" }
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/menu-items",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        text: "品牌故事",
+        iconAssetId: icon.id,
+        type: "detail_page",
+        configJson: { detailPageType: "rich_text", detailPageId: richDetail.id },
+        sortOrder: 120,
+        status: "enabled"
+      }
+    });
+    const menuId = created.json().data.id as number;
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data).toMatchObject({
+      type: "detail_page",
+      configJson: { detailPageType: "rich_text", detailPageId: richDetail.id }
+    });
+    expect(JSON.parse((await prisma.menuItem.findUniqueOrThrow({ where: { id: menuId } })).configJson)).toEqual({
+      detailPageType: "rich_text",
+      detailPageId: richDetail.id
+    });
+
+    const partialUpdate = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${menuId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { text: "品牌故事更新" }
+    });
+    expect(partialUpdate.statusCode).toBe(200);
+    expect(partialUpdate.json().data.configJson).toEqual({ detailPageType: "rich_text", detailPageId: richDetail.id });
+
+    const references = await app.inject({
+      method: "GET",
+      url: `/api/admin/detail-pages/${richDetail.id}/references`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const detailList = await app.inject({
+      method: "GET",
+      url: `/api/admin/detail-pages?q=${richDetail.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(references.json().data.items).toContainEqual({ sourceType: "menu", sourceId: menuId, sourceName: "品牌故事更新" });
+    expect(detailList.json().data.items.find((item: { id: number }) => item.id === richDetail.id).referenceCount).toBe(1);
+
+    const blocked = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/detail-pages/${richDetail.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().error.code).toBe("DETAIL_PAGE_IN_USE");
+
+    const retargeted = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${menuId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { configJson: { detailPageType: "banner_rich_text", detailPageId: bannerDetail.id } }
+    });
+    expect(retargeted.statusCode).toBe(200);
+    expect(retargeted.json().data.configJson).toEqual({
+      detailPageType: "banner_rich_text",
+      detailPageId: bannerDetail.id
+    });
+    expect((await app.inject({
+      method: "DELETE",
+      url: `/api/admin/detail-pages/${richDetail.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    })).statusCode).toBe(200);
+
+    const switchedAway = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${menuId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { type: "contact" }
+    });
+    expect(switchedAway.statusCode).toBe(200);
+    expect(switchedAway.json().data).toMatchObject({ type: "contact", configJson: {} });
+    expect((await app.inject({
+      method: "DELETE",
+      url: `/api/admin/detail-pages/${bannerDetail.id}`,
+      headers: { authorization: `Bearer ${token}` }
+    })).statusCode).toBe(200);
+  });
+
+  it("rejects incomplete, missing, or type-mismatched direct detail-page menu targets", async () => {
+    const token = await login();
+    const icon = await prisma.mediaAsset.findFirstOrThrow({ where: { resourceName: "placeholder-icon.png" } });
+    const detail = await prisma.detailPageConfig.create({
+      data: { name: "仅图文菜单详情", pageType: "rich_text", richTextHtml: "<p>正文</p>" }
+    });
+    const beforeCount = await prisma.menuItem.count();
+    const payload = {
+      text: "非法直达",
+      iconAssetId: icon.id,
+      type: "detail_page",
+      sortOrder: 121,
+      status: "enabled"
+    };
+    const [incomplete, missing, mismatched] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: "/api/admin/menu-items",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...payload, configJson: { detailPageType: "rich_text" } }
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/admin/menu-items",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...payload, configJson: { detailPageType: "rich_text", detailPageId: 999999 } }
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/admin/menu-items",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...payload, configJson: { detailPageType: "banner_rich_text", detailPageId: detail.id } }
+      })
+    ]);
+
+    expect(incomplete.statusCode).toBe(400);
+    expect(incomplete.json().error.code).toBe("VALIDATION_ERROR");
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("DETAIL_PAGE_NOT_FOUND");
+    expect(mismatched.statusCode).toBe(400);
+    expect(mismatched.json().error.code).toBe("VALIDATION_ERROR");
+    expect(await prisma.menuItem.count()).toBe(beforeCount);
+
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const switchedWithConfig = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${existing.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        type: "detail_page",
+        configJson: { detailPageType: "rich_text", detailPageId: detail.id }
+      }
+    });
+    expect(switchedWithConfig.statusCode).toBe(200);
+
+    const mismatchedUpdate = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${existing.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { configJson: { detailPageType: "banner_rich_text", detailPageId: detail.id } }
+    });
+    expect(mismatchedUpdate.statusCode).toBe(400);
+    expect(JSON.parse((await prisma.menuItem.findUniqueOrThrow({ where: { id: existing.id } })).configJson)).toEqual({
+      detailPageType: "rich_text",
+      detailPageId: detail.id
+    });
+
+    const anotherExisting = await prisma.menuItem.findFirstOrThrow({ where: { type: "singer" } });
+    const switchedWithoutConfig = await app.inject({
+      method: "PUT",
+      url: `/api/admin/menu-items/${anotherExisting.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { type: "detail_page" }
+    });
+    expect(switchedWithoutConfig.statusCode).toBe(400);
+    expect((await prisma.menuItem.findUniqueOrThrow({ where: { id: anotherExisting.id } })).type).toBe("singer");
+  });
+
+  it("degrades damaged direct detail-page configs without failing menu responses", async () => {
+    const token = await login();
+    const menu = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    await prisma.menuItem.update({
+      where: { id: menu.id },
+      data: { type: "detail_page", configJson: JSON.stringify({ detailPageType: "rich_text", detailPageId: 0 }) }
+    });
+
+    const [home, clientMenus, adminMenu] = await Promise.all([
+      clientInject({ method: "GET", url: "/api/client/home" }),
+      clientInject({ method: "GET", url: "/api/client/menu-items" }),
+      app.inject({
+        method: "GET",
+        url: `/api/admin/menu-items/${menu.id}`,
+        headers: { authorization: `Bearer ${token}` }
+      })
+    ]);
+
+    expect(home.statusCode).toBe(200);
+    expect(clientMenus.statusCode).toBe(200);
+    expect(adminMenu.statusCode).toBe(200);
+    expect(home.json().data.menus.find((item: { id: number }) => item.id === menu.id).configJson).toEqual({});
+    expect(clientMenus.json().data.find((item: { id: number }) => item.id === menu.id).configJson).toEqual({});
+    expect(adminMenu.json().data.configJson).toEqual({});
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Form, Input, Select, Space, Spin, Tag, message } from "antd";
 import type { DetailPageConfigDto, DetailPageReferenceDto, DetailPageType } from "@event-arts/shared";
-import { detailPageTypeDefinitions } from "@event-arts/shared";
+import { DetailPageTypeSchema, detailPageTypeDefinitions } from "@event-arts/shared";
 import { flushSync } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { request } from "../api";
@@ -37,11 +37,12 @@ const richTextRules = [
   }
 ];
 
-function referencePath(reference: DetailPageReferenceDto) {
+export function referencePath(reference: DetailPageReferenceDto) {
   if (reference.sourceType === "announcement") return "/announcements";
   if (reference.sourceType === "banner") return "/banners";
   if (reference.sourceType === "artist") return "/artists";
   if (reference.sourceType === "article") return "/articles";
+  if (reference.sourceType === "menu") return "/menu-items";
   return "/cases";
 }
 
@@ -49,6 +50,8 @@ export function DetailPageDesigner() {
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams] = useSearchParams();
+  const requestedTypeResult = DetailPageTypeSchema.safeParse(searchParams.get("type"));
+  const requestedType = requestedTypeResult.success ? requestedTypeResult.data : undefined;
   const editingId = params.id ? Number(params.id) : null;
   const isNew = !editingId;
   const [form] = Form.useForm<StandaloneDetailPageFormValue>();
@@ -71,6 +74,7 @@ export function DetailPageDesigner() {
     hydrating.current = true;
     if (isNew) {
       form.resetFields();
+      if (requestedType) form.setFieldValue(["detailPage", "type"], requestedType);
       setDetail(null);
       setLoading(false);
       setDirty(false);
@@ -96,7 +100,7 @@ export function DetailPageDesigner() {
           hydrating.current = false;
         }, 0);
       });
-  }, [editingId, form, isNew]);
+  }, [editingId, form, isNew, requestedType]);
 
   useEffect(() => {
     window.__eventartsDetailPageDirty = dirty;

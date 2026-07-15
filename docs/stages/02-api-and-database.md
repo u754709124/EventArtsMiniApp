@@ -34,6 +34,7 @@
 - 已实现资源查询/详情/标签/MD5 查询/名称检查/元数据编辑/未使用扫描/批量删除接口，并在删除前重新统计全部引用，包含文章封面 `article_cover`。
 - 已实现旧 SQLite 幂等迁移预检：从真实文件回填 MD5、大小和尺寸，合并重复内容并迁移引用；文件缺失或非空旧 `mediaJson` 会在写库前终止。
 - 已实现 client home/detail/list/articles/page-view 接口和 admin dashboard/site-config/media/articles/CRUD 接口。
+- 分类菜单公共契约现有 7 种类型；`detail_page` 使用严格 `{ detailPageType, detailPageId }` JSON 配置。API 保存时校验目标存在及真实类型，损坏配置安全降级，并将菜单纳入详情页反向引用、引用计数和删除保护；不新增数据库列或默认 seed 菜单。
 - API Vitest 使用 Fastify `app.inject()` 覆盖图片/MP4、真实 MIME、MD5 不一致、并发去重、名称标准化、标签筛选、元数据编辑、案例顺序、引用保护、清理和旧库迁移失败原子性。
 - 验证通过：`pnpm lint`、`pnpm test`、`pnpm --filter api build`、`pnpm --filter api db:push`、`pnpm --filter api db:seed`。
 

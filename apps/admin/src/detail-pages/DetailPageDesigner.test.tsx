@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { referencePath } from "./DetailPageDesigner";
 
 const css = readFileSync(resolve(import.meta.dirname, "detail-page-designer.css"), "utf8");
 
@@ -16,5 +17,10 @@ describe("DetailPageDesigner layout", () => {
     expect(rule(".detail-designer__preview")).toMatch(/overflow-y:\s*auto/);
     expect(rule(".detail-designer__panel")).toMatch(/overflow-y:\s*auto/);
     expect(rule(".detail-designer__toolbar")).toMatch(/position:\s*sticky/);
+  });
+
+  it("routes menu references back to menu management", () => {
+    expect(referencePath({ sourceType: "menu", sourceId: 7, sourceName: "品牌故事" })).toBe("/menu-items");
+    expect(referencePath({ sourceType: "activity_case", sourceId: 8, sourceName: "活动案例" })).toBe("/cases");
   });
 });

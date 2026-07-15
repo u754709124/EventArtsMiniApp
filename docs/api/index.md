@@ -278,6 +278,20 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 
 公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
 
+菜单类型共有 7 种：`host`、`singer`、`actor`、`activity_case`、`article`、`detail_page`、`contact`。创建或更新 `detail_page` 时提交严格配置：
+
+```json
+{
+  "type": "detail_page",
+  "configJson": {
+    "detailPageType": "rich_text",
+    "detailPageId": 12
+  }
+}
+```
+
+`detailPageType` 仅接受 `banner_rich_text` 或 `rich_text`，`detailPageId` 必须为正整数。缺失配置或类型不匹配返回 `400 VALIDATION_ERROR`；目标不存在返回 `404 DETAIL_PAGE_NOT_FOUND`。服务端以详情页真实 `pageType` 为准。菜单引用会以 `sourceType: "menu"` 出现在详情页反向引用中，并参与 `referenceCount` 与 `DETAIL_PAGE_IN_USE` 删除保护；删除菜单、切换类型或更换目标后旧引用立即释放。损坏的历史菜单配置降级为空配置，不会使菜单批量接口失败。
+
 Article admin create body:
 
 ```json

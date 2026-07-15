@@ -268,7 +268,7 @@ export type DetailPageOptionDto = {
 };
 
 export type DetailPageReferenceDto = {
-  sourceType: "announcement" | "banner" | "artist" | "activity_case" | "article";
+  sourceType: "announcement" | "banner" | "artist" | "activity_case" | "article" | "menu";
   sourceId: number;
   sourceName: string;
 };

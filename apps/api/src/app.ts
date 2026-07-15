@@ -17,6 +17,7 @@ import {
   ArtistUpdateRequestSchema,
   BannerLinkTypeSchema,
   DetailPageInputSchema,
+  DetailPageMenuConfigSchema,
   MediaFieldKeySchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
@@ -407,20 +408,36 @@ function isMenuType(value: string): value is MenuType {
 
 function parseMenuConfigForType(type: string, configJson: unknown) {
   if (!isMenuType(type)) return {};
-  const parsed = menuConfigSchemaByType[type].safeParse(configJson && typeof configJson === "object" ? configJson : {});
+  const schema = menuConfigSchemaByType[type];
+  const parsed = schema.safeParse(configJson && typeof configJson === "object" ? configJson : {});
   if (!parsed.success) {
     console.warn(`Invalid menu config for type ${type}; falling back to defaults.`);
   }
-  return parsed.success ? parsed.data : menuConfigSchemaByType[type].parse({});
+  if (parsed.success) return parsed.data;
+  const fallback = schema.safeParse({});
+  return fallback.success ? fallback.data : {};
 }
 
-function prepareMenuConfigForSave(type: string, configJson: unknown) {
+async function prepareMenuConfigForSave(prisma: AppPrismaClient, type: string, configJson: unknown) {
   if (!isMenuType(type)) {
     throw new DetailPageDomainError("VALIDATION_ERROR", "菜单类型错误", 400);
   }
   const parsed = menuConfigSchemaByType[type].safeParse(configJson && typeof configJson === "object" ? configJson : {});
   if (!parsed.success) {
     throw new DetailPageDomainError("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "菜单配置错误", 400);
+  }
+  if (type === "detail_page") {
+    const detailPageMenuConfig = DetailPageMenuConfigSchema.parse(parsed.data);
+    const detailPage = await prisma.detailPageConfig.findUnique({
+      where: { id: detailPageMenuConfig.detailPageId },
+      select: { pageType: true }
+    });
+    if (!detailPage) {
+      throw new DetailPageDomainError("DETAIL_PAGE_NOT_FOUND", "详情页不存在", 404);
+    }
+    if (detailPage.pageType !== detailPageMenuConfig.detailPageType) {
+      throw new DetailPageDomainError("VALIDATION_ERROR", "详情页类型与所选类型不一致", 400);
+    }
   }
   return parsed.data;
 }
@@ -2338,7 +2355,7 @@ function registerCrud(
     const body = parsed.data;
     const problem = await mediaProblemForId(prisma, body.iconAssetId, "menu.icon");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
-    const configJson = prepareMenuConfigForSave(body.type, body.configJson ?? {});
+    const configJson = await prepareMenuConfigForSave(prisma, body.type, body.configJson ?? {});
     const item = await prisma.menuItem.create({
       data: { ...body, configJson: JSON.stringify(configJson) },
       include: { iconAsset: true }
@@ -2356,8 +2373,9 @@ function registerCrud(
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
     const data = { ...body };
     const targetType = body.type ?? existing.type;
-    if (Object.hasOwn(body, "configJson") || Object.hasOwn(body, "type")) {
-      data.configJson = JSON.stringify(prepareMenuConfigForSave(targetType, body.configJson ?? {}));
+    const targetTypeChanged = body.type !== undefined && body.type !== existing.type;
+    if (Object.hasOwn(body, "configJson") || targetTypeChanged) {
+      data.configJson = JSON.stringify(await prepareMenuConfigForSave(prisma, targetType, body.configJson ?? {}));
     }
     const item = await prisma.menuItem.update({
       where: { id },

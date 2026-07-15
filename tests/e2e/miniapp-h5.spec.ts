@@ -16,7 +16,7 @@ type Announcement = {
 };
 type Banner = { id: number; status: string; detailPageId: number | null };
 type MediaAsset = { id: number; resourceName: string };
-type Menu = { id: number; text: string; type: string; status: string; showOnHome: boolean; configJson?: Record<string, unknown> };
+type Menu = { id: number; text: string; iconAssetId: number; type: string; status: string; showOnHome: boolean; configJson?: Record<string, unknown> };
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
 type ArticleItem = { id: number; title: string; category: string; detailPageId: number | null; hasDetailPage: boolean };
 type ArticleListResponse = { items: ArticleItem[]; categories: string[]; total: number; page: number; pageSize: number };
@@ -1005,6 +1005,57 @@ test("分类页使用后端菜单，首页隐藏项仍在分类页展示，停�
       status: disabled.status,
       showOnHome: disabled.showOnHome
     });
+  }
+});
+
+test("详情页直达菜单从首页和分类页进入同一独立详情页", async ({ page, request }) => {
+  const menuText = "E2E 详情页直达";
+  const detailName = "E2E H5 菜单直达详情";
+  const detailBody = "E2E H5 菜单直达正文";
+  const removeFixtures = async () => {
+    const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+    for (const menu of menus.items.filter((item) => item.text === menuText)) {
+      await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
+    }
+    const details = await adminApi<AdminList<{ id: number; name: string; referenceCount: number }>>(
+      request,
+      "GET",
+      `/api/admin/detail-pages?q=${encodeURIComponent(detailName)}&pageSize=100`
+    );
+    for (const detail of details.items.filter((item) => item.name === detailName && item.referenceCount === 0)) {
+      await adminApi(request, "DELETE", `/api/admin/detail-pages/${detail.id}`);
+    }
+  };
+
+  await removeFixtures();
+  try {
+    const seedMenus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+    const iconSource = seedMenus.items.find((item) => Number.isInteger(item.iconAssetId));
+    if (!iconSource) throw new Error("菜单图标种子数据缺失");
+    const detail = await createRichTextDetailPage(request, detailName, `<p>${detailBody}</p>`);
+    const menu = await adminApi<Menu>(request, "POST", "/api/admin/menu-items", {
+      text: menuText,
+      iconAssetId: iconSource.iconAssetId,
+      type: "detail_page",
+      configJson: { detailPageType: "rich_text", detailPageId: detail.id },
+      showOnHome: true,
+      sortOrder: 88,
+      status: "enabled"
+    });
+
+    await openHome(page);
+    await tap(page, page.getByTestId("home-menu-detail_page").filter({ hasText: menuText }));
+    await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+    await expect(page.getByTestId("detail-rich-text-block")).toContainText(detailBody);
+
+    await openHome(page);
+    await tap(page, page.getByText("分类").last());
+    await expect(page.getByTestId("category-page")).toBeVisible();
+    await tap(page, page.getByTestId(`category-menu-${menu.id}`));
+    await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+    await expect(page.getByTestId("detail-rich-text-block")).toContainText(detailBody);
+  } finally {
+    await removeFixtures();
   }
 });
 

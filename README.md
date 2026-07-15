@@ -119,7 +119,7 @@ pnpm assets:slice:artists
 
 ## 独立详情页管理
 
-详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员、案例和文章可以共享同一详情页；被任一业务记录引用的详情页不能删除。
+详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员、案例、文章和“详情页直达”菜单可以共享同一详情页；被任一业务记录引用的详情页不能删除。
 
 后台信息架构按“数据看板 / 首页运营 / 内容管理 / 素材管理”分组，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
 
@@ -130,6 +130,14 @@ pnpm assets:slice:artists
 ```
 
 `detailPageId` 为空时入口不可点击，也不会回退旧 `linkType/linkTarget` 或 owner 详情页。旧人员/案例详情路由仅作为兼容跳板。
+
+分类菜单共有 7 种类型：`host`、`singer`、`actor`、`activity_case`、`article`、`detail_page`、`contact`。`detail_page` 的严格配置为：
+
+```json
+{ "detailPageType": "rich_text", "detailPageId": 1 }
+```
+
+`detailPageType` 只能是 `banner_rich_text` 或 `rich_text`。后台先选择类型，再从该类型下选择详情页；服务端重新校验目标存在且真实类型一致。首页和分类页点击后都直接进入公共详情页路由。菜单引用纳入详情页反向引用、引用计数和删除保护。本能力不新增默认 seed 菜单，也不改变首页默认布局。
 
 支持：
 

@@ -510,7 +510,7 @@ test("新增 Banner", async ({ page, request }) => {
   await expect(page.getByRole("row", { name: /E2E Banner/ })).toBeVisible();
 });
 
-test("新增菜单项并验证五种类型、首页显示和动态配置", async ({ page, request }) => {
+test("新增菜单项并验证七种类型、首页显示和动态配置", async ({ page, request }) => {
   const existing = await adminApi<{ items: Array<{ id: number; text: string }> }>(request, "GET", "/api/admin/menu-items");
   for (const menu of existing.items.filter((item) => item.text === "E2E 联系我们")) {
     await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
@@ -530,7 +530,7 @@ test("新增菜单项并验证五种类型、首页显示和动态配置", async
   await expect(page.getByTestId("menu-show-on-home")).toHaveAttribute("aria-checked", "true");
 
   await page.getByTestId("menu-type-select").click();
-  for (const label of ["主持人", "歌手", "演员", "活动案例", "联系我们"]) {
+  for (const label of ["主持人", "歌手", "演员", "活动案例", "文章", "详情页直达", "联系我们"]) {
     await expect(visibleSelectOption(page, label)).toBeVisible();
   }
   await visibleSelectOption(page, "主持人").click();
@@ -565,6 +565,78 @@ test("新增菜单项并验证五种类型、首页显示和动态配置", async
   await waitForToast(page, "保存成功");
   const updated = await adminApi<{ showOnHome: boolean }>(request, "GET", `/api/admin/menu-items/${saved?.id}`);
   expect(updated.showOnHome).toBe(true);
+});
+
+test("详情页直达菜单按类型选择详情页、正确回填并参与删除保护", async ({ page, request }) => {
+  const menuText = "E2E 详情页直达";
+  const richName = "E2E 菜单单富文本详情";
+  const removeFixtures = async () => {
+    const menus = await adminApi<{ items: Array<{ id: number; text: string }> }>(request, "GET", "/api/admin/menu-items");
+    for (const menu of menus.items.filter((item) => item.text === menuText)) {
+      await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
+    }
+    await deleteDetailPagesByName(request, richName);
+  };
+
+  await removeFixtures();
+  try {
+    const richDetail = await createRichTextDetailPage(request, richName, "<p>E2E 菜单直达正文</p>");
+    const details = await adminApi<{ items: DetailPageSummary[] }>(
+      request,
+      "GET",
+      "/api/admin/detail-pages?type=banner_rich_text&pageSize=100"
+    );
+    const bannerDetail = details.items.find((item) => item.type === "banner_rich_text");
+    if (!bannerDetail) throw new Error("BANNER + 富文本 seed 详情缺失");
+
+    await loginAdminUi(page);
+    await page.getByTestId("sidebar-menu-items").click();
+    await page.getByTestId("menu-items-create").click();
+    await page.getByTestId("menu-text").fill(menuText);
+    await chooseMediaFromLibrary(page, "menu-icon-select", /icon-contact\.png/);
+    await selectOption(page, "menu-type-select", "详情页直达");
+    await expect(page.getByTestId("detail-page-reference-select")).toHaveClass(/ant-select-disabled/);
+
+    await selectOption(page, "menu-config-detail-page-type", "单富文本");
+    await page.getByTestId("detail-page-reference-select").click();
+    await expect(visibleSelectOption(page, richName)).toBeVisible();
+    await expect(visibleSelectOption(page, bannerDetail.name)).toHaveCount(0);
+    await visibleSelectOption(page, richName).click();
+    await page.getByTestId("menu-items-save").click();
+    await waitForToast(page, "保存成功");
+
+    const menus = await adminApi<{
+      items: Array<{
+        id: number;
+        text: string;
+        type: string;
+        configJson: { detailPageType?: string; detailPageId?: number };
+      }>;
+    }>(request, "GET", "/api/admin/menu-items");
+    const saved = menus.items.find((item) => item.text === menuText);
+    expect(saved).toMatchObject({
+      type: "detail_page",
+      configJson: { detailPageType: "rich_text", detailPageId: richDetail.id }
+    });
+    if (!saved) throw new Error("详情页直达菜单保存失败");
+
+    const row = page.getByRole("row", { name: new RegExp(menuText) });
+    await row.getByTestId("menu-items-edit").click();
+    await expect(page.getByTestId("menu-config-detail-page-type")).toContainText("单富文本");
+    await expect(page.getByTestId("detail-page-reference-select")).toContainText(richName);
+
+    const token = await adminToken(request);
+    const blocked = await request.delete(`${apiBase}/api/admin/detail-pages/${richDetail.id}`, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(blocked.status()).toBe(409);
+    expect((await blocked.json()).error.code).toBe("DETAIL_PAGE_IN_USE");
+
+    await adminApi(request, "DELETE", `/api/admin/menu-items/${saved.id}`);
+    await adminApi(request, "DELETE", `/api/admin/detail-pages/${richDetail.id}`);
+  } finally {
+    await removeFixtures();
+  }
 });
 
 test("人员管理保留列表字段并只选择详情页引用", async ({ page }) => {

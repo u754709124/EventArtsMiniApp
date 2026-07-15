@@ -200,32 +200,55 @@ function detailPageData(prepared: PreparedDetailPage) {
   };
 }
 
+async function menuReferencesToDetailPage(db: DetailPageDb, detailPageId: number): Promise<DetailPageReferenceDto[]> {
+  const menus = await db.menuItem.findMany({
+    where: { type: "detail_page" },
+    select: { id: true, text: true, configJson: true },
+    orderBy: { id: "asc" }
+  });
+  return menus.flatMap((menu) => {
+    try {
+      const config = JSON.parse(menu.configJson) as { detailPageId?: unknown };
+      return Number.isInteger(config?.detailPageId) && config.detailPageId === detailPageId && detailPageId > 0
+        ? [{ sourceType: "menu" as const, sourceId: menu.id, sourceName: menu.text }]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export async function getDetailPageReferences(db: DetailPageDb, id: number): Promise<DetailPageReferenceDto[]> {
-  const [announcements, banners, artists, cases, articles] = await Promise.all([
+  const [announcements, banners, artists, cases, articles, menus] = await Promise.all([
     db.announcement.findMany({ where: { detailPageId: id }, select: { id: true, summary: true }, orderBy: { id: "asc" } }),
     db.banner.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } }),
     db.artist.findMany({ where: { detailPageId: id }, select: { id: true, name: true }, orderBy: { id: "asc" } }),
     db.activityCase.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } }),
-    db.article.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } })
+    db.article.findMany({ where: { detailPageId: id }, select: { id: true, title: true }, orderBy: { id: "asc" } }),
+    menuReferencesToDetailPage(db, id)
   ]);
   return [
     ...announcements.map((item) => ({ sourceType: "announcement" as const, sourceId: item.id, sourceName: item.summary })),
     ...banners.map((item) => ({ sourceType: "banner" as const, sourceId: item.id, sourceName: item.title })),
     ...artists.map((item) => ({ sourceType: "artist" as const, sourceId: item.id, sourceName: item.name })),
     ...cases.map((item) => ({ sourceType: "activity_case" as const, sourceId: item.id, sourceName: item.title })),
-    ...articles.map((item) => ({ sourceType: "article" as const, sourceId: item.id, sourceName: item.title }))
+    ...articles.map((item) => ({ sourceType: "article" as const, sourceId: item.id, sourceName: item.title })),
+    ...menus
   ];
 }
 
 export async function detailPageReferenceCount(db: DetailPageDb, id: number) {
-  const counts = await Promise.all([
-    db.announcement.count({ where: { detailPageId: id } }),
-    db.banner.count({ where: { detailPageId: id } }),
-    db.artist.count({ where: { detailPageId: id } }),
-    db.activityCase.count({ where: { detailPageId: id } }),
-    db.article.count({ where: { detailPageId: id } })
+  const [counts, menuReferences] = await Promise.all([
+    Promise.all([
+      db.announcement.count({ where: { detailPageId: id } }),
+      db.banner.count({ where: { detailPageId: id } }),
+      db.artist.count({ where: { detailPageId: id } }),
+      db.activityCase.count({ where: { detailPageId: id } }),
+      db.article.count({ where: { detailPageId: id } })
+    ]),
+    menuReferencesToDetailPage(db, id)
   ]);
-  return counts.reduce((sum, count) => sum + count, 0);
+  return counts.reduce((sum, count) => sum + count, menuReferences.length);
 }
 
 export async function listDetailPages(

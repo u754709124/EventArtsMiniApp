@@ -6,8 +6,11 @@ import type { ColumnsType } from "antd/es/table";
 import {
   artistTypeLabels,
   artistTypeValues,
+  detailPageTypeDefinitions,
+  detailPageTypeValues,
   normalizeArticleCategory,
   menuConfigSchemaByType,
+  type DetailPageType,
   type MenuType
 } from "@event-arts/shared";
 import { MediaField } from "../media/MediaField";
@@ -242,8 +245,9 @@ function ArticleCategoryFilter({
   );
 }
 
-function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
+export function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
   const type = Form.useWatch("type", form) as MenuType | undefined;
+  const detailPageType = Form.useWatch(["configJson", "detailPageType"], form) as DetailPageType | undefined;
   if (!type) return null;
   if (["host", "singer", "actor"].includes(type)) {
     return (
@@ -286,6 +290,37 @@ function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useForm>[0] }
         </Form.Item>
         <Form.Item label="每页数量" name={["configJson", "pageSize"]} initialValue={10}>
           <InputNumber data-testid="menu-config-article-page-size" min={1} max={50} precision={0} />
+        </Form.Item>
+      </>
+    );
+  }
+  if (type === "detail_page") {
+    return (
+      <>
+        <Form.Item
+          label="详情页类型"
+          name={["configJson", "detailPageType"]}
+          rules={[{ required: true, message: "请选择详情页类型" }]}
+        >
+          <Select
+            aria-label="菜单详情页类型"
+            data-testid="menu-config-detail-page-type"
+            placeholder="请先选择详情页类型"
+            options={detailPageTypeValues.map((value) => ({
+              value,
+              label: detailPageTypeDefinitions[value].label
+            }))}
+            onChange={(nextType) => {
+              if (nextType !== detailPageType) form.setFieldValue(["configJson", "detailPageId"], null);
+            }}
+          />
+        </Form.Item>
+        <Form.Item
+          label="对应详情页"
+          name={["configJson", "detailPageId"]}
+          rules={[{ required: true, message: "请选择对应详情页" }]}
+        >
+          <DetailPageReferenceField detailPageType={detailPageType} disabled={!detailPageType} />
         </Form.Item>
       </>
     );
@@ -663,8 +698,10 @@ export const configs: Record<string, CrudConfig> = {
               { value: "actor", label: "演员" },
               { value: "activity_case", label: "活动案例" },
               { value: "article", label: "文章" },
+              { value: "detail_page", label: "详情页直达" },
               { value: "contact", label: "联系我们" }
             ]}
+            onChange={() => form.setFieldValue("configJson", undefined)}
           />
         </Form.Item>
         <MenuConfigFields form={form} />

@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { DetailPageReferenceIdSchema, DetailPageConfigDto } from "./detail-pages";
+import { DetailPageReferenceIdSchema, DetailPageTypeSchema, DetailPageConfigDto } from "./detail-pages";
 
 export * from "./detail-pages";
 export * from "./detail-page-presentation";
 
 export const statusValues = ["enabled", "disabled"] as const;
-export const menuTypeValues = ["host", "singer", "actor", "activity_case", "article", "contact"] as const;
+export const menuTypeValues = ["host", "singer", "actor", "activity_case", "article", "detail_page", "contact"] as const;
 export const artistTypeValues = ["host", "singer", "actor"] as const;
 export const bannerLinkTypeValues = ["none", "announcement", "case", "internal"] as const;
 export const mediaTypeValues = ["image", "video"] as const;
@@ -932,6 +932,15 @@ export type BackupDeleteResponse = z.infer<typeof backupDeleteResponseSchema>;
 export type BackupImportPreflightResponse = z.infer<typeof backupImportPreflightResponseSchema>;
 export type BackupRestoreAcceptedResponse = z.infer<typeof backupRestoreAcceptedResponseSchema>;
 
+export const DetailPageMenuConfigSchema = z
+  .object({
+    detailPageType: DetailPageTypeSchema,
+    detailPageId: z.number().int().positive()
+  })
+  .strict();
+
+export type DetailPageMenuConfig = z.infer<typeof DetailPageMenuConfigSchema>;
+
 export const menuConfigSchemaByType = {
   host: z.object({
     defaultSort: z.enum(["sortOrder", "newest"]).default("sortOrder"),
@@ -954,6 +963,7 @@ export const menuConfigSchemaByType = {
     category: articleOptionalCategorySchema,
     pageSize: z.number().int().min(1).max(50).default(10)
   }),
+  detail_page: DetailPageMenuConfigSchema,
   contact: z.object({
     phone: z.string().optional(),
     address: z.string().optional(),

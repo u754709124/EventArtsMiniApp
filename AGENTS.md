@@ -69,6 +69,8 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - `singer`: 歌手
 - `actor`: 演员
 - `activity_case`: 活动案例
+- `article`: 文章
+- `detail_page`: 详情页直达
 - `contact`: 联系我们
 
 ## Agent Ownership
@@ -142,6 +144,31 @@ target. Planner is the sole authority that creates the executable Goal, scope,
 acceptance criteria, constraints, non-goals, route recommendation, and ordered
 Gxx tasks. The parent must not create, expand, reinterpret, revise, or merge an
 executable Goal. It may reject a plan and ask Planner for a new revision.
+
+### Planner persistence output contract
+
+Every Planner delegation must include the persistence parser's machine-format
+contract in the child-agent message. Do not rely on the Planner role template
+or a previous conversation to supply it implicitly. The parent must require all
+of the following in the initial Planner request:
+
+- exactly one level-1 heading named `# EXECUTION GOAL`;
+- each executable task uses a level-2 heading containing only its ID, such as
+  `## G01`, `## G02`, with no title or other text on that heading line;
+- every Gxx section contains a `### Prerequisites` heading; its content is
+  either `None`/`无` or the exact prerequisite Gxx IDs;
+- Gxx IDs are unique, ordered, and match the dependency graph;
+- the Planner also returns complete immutable contents for `plan-index.md`,
+  `decisions.md`, and one handoff per Goal under `handoffs/`;
+- every handoff states task ID, objective Goal ID, Gxx ID, role, prerequisite
+  state, files to read first, allowed write scope, forbidden actions, result
+  path, and required return evidence.
+
+Before initializing or delegating implementation, the parent must verify the
+Planner response against these rules. If it does not conform, the same Planner
+must issue a format-only correction; the parent must not rewrite the
+authoritative Goal or Gxx task content. Run `pnpm codex:plan:persist` and
+`pnpm codex:plan:verify` only after that check passes.
 
 ### Immutable plan and delegation protocol
 

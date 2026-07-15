@@ -3,6 +3,7 @@ import {
   ArtistCreateRequestSchema,
   ArticleCreateRequestSchema,
   ApiErrorCodeSchema,
+  DetailPageMenuConfigSchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
   adminChangePasswordRequestSchema,
@@ -44,12 +45,30 @@ import {
   type ArtistDetailDto,
   type ArtistListItemDto,
   type ClientHomeResponse,
-  type DetailPageConfigDto
+  type DetailPageConfigDto,
+  type DetailPageReferenceDto
 } from "../src/index";
 
 describe("shared contracts", () => {
   it("keeps the phase-one menu enum aligned with supported home menu types", () => {
-    expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "article", "contact"]);
+    expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "article", "detail_page", "contact"]);
+  });
+
+  it("validates detail-page menu configuration strictly", () => {
+    expect(
+      DetailPageMenuConfigSchema.parse({ detailPageType: "banner_rich_text", detailPageId: 12 })
+    ).toEqual({ detailPageType: "banner_rich_text", detailPageId: 12 });
+    expect(menuConfigSchemaByType.detail_page).toBe(DetailPageMenuConfigSchema);
+    expect(() => DetailPageMenuConfigSchema.parse({ detailPageId: 12 })).toThrow();
+    expect(() => DetailPageMenuConfigSchema.parse({ detailPageType: "unknown", detailPageId: 12 })).toThrow();
+    expect(() => DetailPageMenuConfigSchema.parse({ detailPageType: "rich_text", detailPageId: 0 })).toThrow();
+    expect(() => DetailPageMenuConfigSchema.parse({ detailPageType: "rich_text", detailPageId: 1.5 })).toThrow();
+    expect(() => DetailPageMenuConfigSchema.parse({ detailPageType: "rich_text", detailPageId: 12, extra: true })).toThrow();
+  });
+
+  it("supports menu references to detail pages", () => {
+    const reference: DetailPageReferenceDto = { sourceType: "menu", sourceId: 7, sourceName: "关于我们" };
+    expect(reference).toEqual({ sourceType: "menu", sourceId: 7, sourceName: "关于我们" });
   });
 
   it("validates menu item create and update requests strictly", () => {
