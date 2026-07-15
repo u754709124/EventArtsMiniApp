@@ -197,7 +197,7 @@ describe("detail renderer registry and layout contracts", () => {
 describe("owner adapters and rich media model", () => {
   it("adds idempotent WeChat-safe centered headings and responsive image styles", () => {
     const source = [
-      '<h1 class="title" style="color:#333;padding-left:2rpx">标题一</h1>',
+      '<h1 class="title" style="color:#333;padding-left:2rpx;font-size:96px">标题一</h1>',
       "<h1>标题二</h1>",
       "<h1>多行<strong>标题</strong><br><em>第二行</em></h1>",
       '<img data-media-asset-id="9" src="/one.jpg" style="width:900px;border:1rpx solid red">',
@@ -212,21 +212,23 @@ describe("owner adapters and rich media model", () => {
     expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
-    expect(enhanced.match(/height:1em;max-height:1em/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-size:30rpx/gu)).toHaveLength(3);
+    expect(enhanced.match(/width:0\.2em;height:0\.8em;max-height:0\.8em/gu)).toHaveLength(3);
     expect(enhanced.match(/width:100%;max-width:100%;height:auto/gu)).toHaveLength(2);
     expect(enhanced).toContain('class="title"');
     expect(enhanced).toContain("color:#333");
     expect(enhanced).toContain("padding-left:0");
     expect(enhanced).toContain("border-left:0");
-    expect(enhanced).toContain("多行<strong>标题</strong><br><em>第二行</em>");
+    expect(enhanced).toMatch(/多行<strong[^>]*font-size:inherit[^>]*>标题<\/strong><br[^>]*font-size:inherit[^>]*><em[^>]*font-size:inherit[^>]*>第二行<\/em>/u);
     expect(enhanced).toContain("border:1rpx solid red");
     expect(enhanced).toContain('data-media-asset-id="9"');
     expect(enhanced).not.toContain("padding-left:2rpx");
+    expect(enhanced).not.toContain("font-size:96px");
     expect(enhanced).not.toContain("width:900px");
     expect(enhanced).not.toContain("vertical-align");
     expect(enhanced).not.toContain("margin-left");
     expect(enhanceDetailRichTextForDisplay(enhanced)).toBe(enhanced);
-    expect(stylesheet).toContain("$detail-section-title-size: 28rpx");
+    expect(stylesheet).toContain("$detail-section-title-size: 30rpx");
     expect(stylesheet).toMatch(/h1\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;/u);
   });
 

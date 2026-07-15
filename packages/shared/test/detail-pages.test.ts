@@ -311,8 +311,9 @@ describe("detail page presentation resolver", () => {
   it("adds centered heading structure and responsive images idempotently", () => {
     const source = [
       "<h1>无样式标题</h1>",
-      '<h1 class="title" style="padding-left:99px;color:#333">单行标题<strong>重点</strong></h1>',
-      "<h1>多行标题<br><em>第二行</em></h1>",
+      '<h1 class="title" style="padding-left:99px;color:#333;font-size:96px">单行标题<strong style="font-size:72px;color:#b77836">重点</strong></h1>',
+      '<h1>多行标题<br><span style="font-size:3em"><em style="font-size:192rpx;background:#fff">第二行</em></span></h1>',
+      '<p style="font-size:18px">保留的正文字号</p>',
       '<img data-media-asset-id="9" src="/wide.jpg" alt="宴会厅" loading="lazy" style="width:900px;border:1px solid red">'
     ].join("");
     const enhanced = enhanceDetailRichTextForPresentation(source);
@@ -320,13 +321,22 @@ describe("detail page presentation resolver", () => {
     expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
-    expect(enhanced.match(/height:1em;max-height:1em/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-size:30rpx/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-size:inherit/gu)?.length).toBeGreaterThanOrEqual(6);
+    expect(enhanced.match(/width:0\.2em;height:0\.8em;max-height:0\.8em/gu)).toHaveLength(3);
     expect(enhanced.match(/align-self:center/gu)).toHaveLength(3);
     expect(enhanced.match(/display:block;box-sizing:border-box;min-width:0;flex:1/gu)).toHaveLength(3);
-    expect(enhanced).toContain("单行标题<strong>重点</strong>");
-    expect(enhanced).toContain("多行标题<br><em>第二行</em>");
+    expect(enhanced).toMatch(/单行标题<strong[^>]*font-size:inherit[^>]*>重点<\/strong>/u);
+    expect(enhanced).toMatch(/多行标题<br[^>]*font-size:inherit[^>]*>.*第二行/su);
     expect(enhanced).toContain("width:100%;max-width:100%;height:auto");
     expect(enhanced).toContain("color:#333");
+    expect(enhanced).toContain("color:#b77836");
+    expect(enhanced).toContain("background:#fff");
+    expect(enhanced).toContain('<p style="font-size:18px">保留的正文字号</p>');
+    expect(enhanced).not.toContain("font-size:96px");
+    expect(enhanced).not.toContain("font-size:72px");
+    expect(enhanced).not.toContain("font-size:3em");
+    expect(enhanced).not.toContain("font-size:192rpx");
     expect(enhanced).toContain("border:1px solid red");
     expect(enhanced).toContain('data-media-asset-id="9"');
     expect(enhanced).toContain('alt="宴会厅"');
@@ -336,6 +346,10 @@ describe("detail page presentation resolver", () => {
     expect(enhanced).not.toContain("vertical-align");
     expect(enhanced).not.toContain("margin-left");
     expect(enhanceDetailRichTextForPresentation(enhanced)).toBe(enhanced);
+
+    const adminEnhanced = enhanceDetailRichTextForPresentation(source, { headingFontSize: "15px" });
+    expect(adminEnhanced.match(/font-size:15px/gu)).toHaveLength(3);
+    expect(enhanceDetailRichTextForPresentation(adminEnhanced, { headingFontSize: "15px" })).toBe(adminEnhanced);
   });
 
   it("migrates the previous baseline-offset marker without duplicating nodes", () => {

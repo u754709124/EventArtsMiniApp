@@ -179,11 +179,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  function openCreate() {
-    if (config.formMode === "page") {
-      navigate(`${config.routePath}/new`, { state: { listSearch: searchParams.toString() } });
-      return;
-    }
+  function resetCreateDrawer() {
     hydrating.current = true;
     setEditing(null);
     form.resetFields();
@@ -193,6 +189,14 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     window.setTimeout(() => {
       hydrating.current = false;
     }, 0);
+  }
+
+  function openCreate() {
+    if (config.formMode === "page") {
+      navigate(`${config.routePath}/new`, { state: { listSearch: searchParams.toString() } });
+      return;
+    }
+    resetCreateDrawer();
   }
 
   async function openEdit(record: AnyRecord) {
@@ -227,6 +231,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
 
   async function save(values: AnyRecord, mode: SaveMode) {
     if (saving) return;
+    const wasCreating = editing === null;
     setSaving(true);
     try {
       const saveRequest = buildCrudSaveRequest(config, editing, values);
@@ -238,12 +243,16 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       setDirty(false);
       await load();
       if (mode === "continue") {
-        hydrating.current = true;
-        setEditing(saved);
-        form.setFieldsValue(prepareCrudEditValues(saved));
-        window.setTimeout(() => {
-          hydrating.current = false;
-        }, 0);
+        if (wasCreating) {
+          resetCreateDrawer();
+        } else {
+          hydrating.current = true;
+          setEditing(saved);
+          form.setFieldsValue(prepareCrudEditValues(saved));
+          window.setTimeout(() => {
+            hydrating.current = false;
+          }, 0);
+        }
       } else {
         setDrawerOpen(false);
       }

@@ -93,7 +93,7 @@ async function expectLivePreviewContract(
   expect(geometry.gutter).toBe(12);
   expect(geometry.overlap).toBeGreaterThanOrEqual(20);
   expect(geometry.overlap).toBeLessThanOrEqual(22);
-  expect(geometry.richHeadingFontSize).toBe(14);
+  expect(geometry.richHeadingFontSize).toBe(15);
   expect(geometry.richHeadingDisplay).toBe("flex");
   expect(geometry.richHeadingAlignItems).toBe("center");
   expect(geometry.markerContentCenterDelta).toBeLessThanOrEqual(1);
@@ -430,6 +430,60 @@ test("新增公告并修改状态", async ({ page }) => {
   await page.getByTestId("announcements-save").click();
   await waitForToast(page, "保存成功");
   await expect(page.getByRole("row", { name: /E2E 公告/ })).toContainText("停用");
+});
+
+test("新增公告保存并继续会清空表单并连续创建", async ({ page, request }) => {
+  const summaries = ["E2E 连续公告 A", "E2E 连续公告 B"];
+  async function removeFixtures() {
+    const data = await adminApi<{ items: Array<{ id: number; summary: string }> }>(
+      request,
+      "GET",
+      "/api/admin/announcements"
+    );
+    for (const item of data.items.filter((record) => summaries.includes(record.summary))) {
+      await adminApi(request, "DELETE", `/api/admin/announcements/${item.id}`);
+    }
+  }
+
+  await removeFixtures();
+  try {
+    await loginAdminUi(page);
+    await page.getByTestId("sidebar-announcements").click();
+    await page.getByTestId("announcements-create").click();
+    await page.getByTestId("announcement-summary").fill(summaries[0]);
+    await page.getByTestId("announcement-content").fill("第一条连续创建内容");
+    await fillNumber(page, "announcement-display-duration", 5);
+    await fillNumber(page, "sort-order", 91);
+    await page.getByTestId("announcements-save-continue").click();
+    await waitForToast(page, "保存成功");
+
+    const drawer = page.getByTestId("announcements-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText("新增公告管理");
+    await expect(page.getByTestId("announcement-summary")).toHaveValue("");
+    await expect(page.getByTestId("announcement-content")).toHaveValue("");
+    await expect(page.getByTestId("announcement-display-duration")).toHaveValue("3.0");
+    await expect(page.getByTestId("sort-order")).toHaveValue("1");
+    await expect(page.getByTestId("status-select")).toHaveAttribute("aria-checked", "true");
+
+    await page.getByTestId("announcement-summary").fill(summaries[1]);
+    await page.getByTestId("announcement-content").fill("第二条连续创建内容");
+    await page.getByTestId("announcements-save").click();
+    await waitForToast(page, "保存成功");
+
+    const saved = await adminApi<{ items: Array<{ id: number; summary: string; content: string }> }>(
+      request,
+      "GET",
+      "/api/admin/announcements"
+    );
+    const created = saved.items.filter((item) => summaries.includes(item.summary));
+    expect(created).toHaveLength(2);
+    expect(new Set(created.map((item) => item.id)).size).toBe(2);
+    expect(created.find((item) => item.summary === summaries[0])?.content).toBe("第一条连续创建内容");
+    expect(created.find((item) => item.summary === summaries[1])?.content).toBe("第二条连续创建内容");
+  } finally {
+    await removeFixtures();
+  }
 });
 
 test("新增 Banner", async ({ page, request }) => {

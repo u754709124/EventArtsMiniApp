@@ -24,12 +24,19 @@ export type DetailPagePresentationModel = {
 
 type StyleDeclaration = readonly [property: string, value: string];
 
+export type DetailRichTextHeadingFontSize = "30rpx" | "15px";
+
+export type DetailRichTextPresentationOptions = {
+  headingFontSize: DetailRichTextHeadingFontSize;
+};
+
 const styleAttributePattern = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu;
 const detailHeadingPattern = /(<h1\b[^>]*>)([\s\S]*?)(<\/h1\s*>)/giu;
 const detailHeadingMarkerElementPattern =
   /<span\b(?=[^>]*\bdata-detail-heading-marker\s*=\s*(?:"true"|'true'|true))[^>]*>\s*<\/span\s*>/giu;
 const detailHeadingContentPattern =
   /<span\b(?=[^>]*\bdata-detail-heading-content\s*=\s*(?:"true"|'true'|true))[^>]*>/iu;
+const detailHeadingDescendantPattern = /<[a-z][\w:-]*\b[^>]*>/giu;
 
 function mergeInlineStyle(
   existing: string,
@@ -79,10 +86,10 @@ const detailHeadingMarkerStyles: readonly StyleDeclaration[] = [
   ["display", "block"],
   ["box-sizing", "border-box"],
   ["flex", "0 0 auto"],
-  ["width", "0.233333em"],
-  ["height", "1em"],
-  ["max-height", "1em"],
-  ["margin-right", "0.366667em"],
+  ["width", "0.2em"],
+  ["height", "0.8em"],
+  ["max-height", "0.8em"],
+  ["margin-right", "0.333333em"],
   ["background", "#e5893d"],
   ["align-self", "center"]
 ];
@@ -91,7 +98,8 @@ const detailHeadingContentStyles: readonly StyleDeclaration[] = [
   ["display", "block"],
   ["box-sizing", "border-box"],
   ["min-width", "0"],
-  ["flex", "1"]
+  ["flex", "1"],
+  ["font-size", "inherit"]
 ];
 
 const detailImageStyles: readonly StyleDeclaration[] = [
@@ -104,10 +112,17 @@ const detailImageStyles: readonly StyleDeclaration[] = [
 
 /**
  * Applies the shared detail display contract at the trusted rendering boundary.
- * Typography and spacing remain platform-owned at 28rpx in miniapp CSS and
- * 14px in Admin CSS; this helper supplies heading structure, marker and image semantics.
+ * The caller supplies the platform heading size so the final RichText nodes
+ * carry the typography contract without relying on descendant CSS selectors.
  */
-export function enhanceDetailRichTextForPresentation(html: string) {
+export function enhanceDetailRichTextForPresentation(
+  html: string,
+  { headingFontSize }: DetailRichTextPresentationOptions = { headingFontSize: "30rpx" }
+) {
+  const headingStyles: readonly StyleDeclaration[] = [
+    ...detailHeadingStyles,
+    ["font-size", headingFontSize]
+  ];
   const markerHtml = `${mergeTagStyle(
     '<span data-detail-heading-marker="true">',
     detailHeadingMarkerStyles
@@ -119,12 +134,15 @@ export function enhanceDetailRichTextForPresentation(html: string) {
   return html
     .replace(detailHeadingPattern, (_match, openingTag: string, content: string, closingTag: string) => {
       const contentWithoutMarkers = content.replace(detailHeadingMarkerElementPattern, "");
-      const contentHtml = detailHeadingContentPattern.test(contentWithoutMarkers)
-        ? contentWithoutMarkers.replace(detailHeadingContentPattern, (tag) =>
+      const clampedContent = contentWithoutMarkers.replace(detailHeadingDescendantPattern, (tag) =>
+        mergeTagStyle(tag, [["font-size", "inherit"]])
+      );
+      const contentHtml = detailHeadingContentPattern.test(clampedContent)
+        ? clampedContent.replace(detailHeadingContentPattern, (tag) =>
             mergeTagStyle(tag, detailHeadingContentStyles)
           )
-        : `${contentOpeningHtml}${contentWithoutMarkers}</span>`;
-      return `${mergeTagStyle(openingTag, detailHeadingStyles)}${markerHtml}${contentHtml}${closingTag}`;
+        : `${contentOpeningHtml}${clampedContent}</span>`;
+      return `${mergeTagStyle(openingTag, headingStyles)}${markerHtml}${contentHtml}${closingTag}`;
     })
     .replace(/<img\b[^>]*>/giu, (tag) => mergeTagStyle(tag, detailImageStyles));
 }

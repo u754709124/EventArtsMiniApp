@@ -114,17 +114,19 @@ describe("DetailPagePreview", () => {
     expect(previewCss).toMatch(/\.detail-preview-nav--overlay\s*\{[^}]*height:\s*64px[^}]*padding-top:\s*20px/su);
     expect(previewCss).toMatch(/\.detail-preview-banner\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0/su);
     expect(previewCss).toMatch(/\.detail-preview-hero-copy\s*\{[^}]*position:\s*relative/su);
-    expect(previewCss).toMatch(/\.detail-preview-rich-text h1\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*font-size:\s*14px/su);
+    expect(previewCss).toMatch(/\.detail-preview-rich-text h1\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*font-size:\s*15px/su);
     expect(headings).toHaveLength(2);
     expect(markers).toHaveLength(2);
     expect(contents).toHaveLength(2);
     headings.forEach((heading) => {
       expect((heading as HTMLElement).style.display).toBe("flex");
       expect((heading as HTMLElement).style.alignItems).toBe("center");
+      expect((heading as HTMLElement).style.fontSize).toBe("15px");
     });
     markers.forEach((marker) => {
-      expect((marker as HTMLElement).style.height).toBe("1em");
-      expect((marker as HTMLElement).style.maxHeight).toBe("1em");
+      expect((marker as HTMLElement).style.width).toBe("0.2em");
+      expect((marker as HTMLElement).style.height).toBe("0.8em");
+      expect((marker as HTMLElement).style.maxHeight).toBe("0.8em");
       expect((marker as HTMLElement).style.alignSelf).toBe("center");
       expect((marker as HTMLElement).style.verticalAlign).toBe("");
       expect((marker as HTMLElement).style.marginLeft).toBe("");
@@ -134,6 +136,7 @@ describe("DetailPagePreview", () => {
       expect(style.flexGrow).toBe("1");
       expect(style.flexShrink).toBe("1");
       expect(style.flexBasis).toBe("0%");
+      expect(style.fontSize).toBe("inherit");
     });
     expect(image.style.width).toBe("100%");
     expect(image.style.maxWidth).toBe("100%");
