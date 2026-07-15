@@ -24,19 +24,28 @@ export type DetailPagePresentationModel = {
 
 type StyleDeclaration = readonly [property: string, value: string];
 
+export type DetailRichTextPresentationTarget = "admin" | "weapp";
+
 export type DetailRichTextHeadingFontSize = "30rpx" | "15px";
 
-export type DetailRichTextPresentationOptions = {
-  headingFontSize: DetailRichTextHeadingFontSize;
-};
+export type DetailRichTextPresentationOptions =
+  | { target: DetailRichTextPresentationTarget }
+  /** @deprecated Select an explicit target instead. */
+  | { headingFontSize: DetailRichTextHeadingFontSize };
 
 const styleAttributePattern = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu;
 const detailHeadingPattern = /(<h1\b[^>]*>)([\s\S]*?)(<\/h1\s*>)/giu;
+const detailWeappHeadingPattern =
+  /(<div\b(?=[^>]*\bdata-detail-heading\s*=\s*(?:"true"|'true'|true))[^>]*>)([\s\S]*?)(<\/div\s*>)/giu;
 const detailHeadingMarkerElementPattern =
   /<span\b(?=[^>]*\bdata-detail-heading-marker\s*=\s*(?:"true"|'true'|true))[^>]*>\s*<\/span\s*>/giu;
 const detailHeadingContentPattern =
   /<span\b(?=[^>]*\bdata-detail-heading-content\s*=\s*(?:"true"|'true'|true))[^>]*>/iu;
 const detailHeadingDescendantPattern = /<[a-z][\w:-]*\b[^>]*>/giu;
+const detailPresentationRootPattern =
+  /^<div\b(?=[^>]*\bdata-detail-rich-text-root\s*=\s*(?:"true"|'true'|true))(?=[^>]*\bdata-detail-rich-text-target\s*=\s*(?:"(admin|weapp)"|'(admin|weapp)'|(admin|weapp)))[^>]*>([\s\S]*)<\/div\s*>$/iu;
+const currentDetailPresentationVersionPattern =
+  /\bdata-detail-rich-text-version\s*=\s*(?:"3"|'3'|3)/iu;
 
 function mergeInlineStyle(
   existing: string,
@@ -74,22 +83,40 @@ function mergeTagStyle(
   return `${tag.slice(0, closingIndex)}${styleAttribute}${tag.slice(closingIndex)}`;
 }
 
+function replaceTagName(tag: string, name: "div" | "h1") {
+  return tag.replace(/^<(?:h1|div)\b/iu, `<${name}`);
+}
+
+function removeAttribute(tag: string, attribute: string) {
+  const pattern = new RegExp(`\\s${attribute}\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+)`, "iu");
+  return tag.replace(pattern, "");
+}
+
+function setBooleanDataAttribute(tag: string, attribute: string) {
+  const withoutExisting = removeAttribute(tag, attribute);
+  const closingIndex = withoutExisting.endsWith("/>") ? withoutExisting.length - 2 : withoutExisting.length - 1;
+  return `${withoutExisting.slice(0, closingIndex)} ${attribute}="true"${withoutExisting.slice(closingIndex)}`;
+}
+
 const detailHeadingStyles: readonly StyleDeclaration[] = [
   ["display", "flex"],
   ["box-sizing", "border-box"],
   ["align-items", "center"],
   ["padding-left", "0"],
-  ["border-left", "0"]
+  ["border-left", "0"],
+  ["font-size", "17px"],
+  ["font-weight", "700"],
+  ["line-height", "1.35"]
 ];
 
 const detailHeadingMarkerStyles: readonly StyleDeclaration[] = [
   ["display", "block"],
   ["box-sizing", "border-box"],
   ["flex", "0 0 auto"],
-  ["width", "0.2em"],
-  ["height", "0.8em"],
-  ["max-height", "0.8em"],
-  ["margin-right", "0.333333em"],
+  ["width", "3px"],
+  ["height", "13px"],
+  ["max-height", "13px"],
+  ["margin-right", "5px"],
   ["background", "#e5893d"],
   ["align-self", "center"]
 ];
@@ -99,7 +126,16 @@ const detailHeadingContentStyles: readonly StyleDeclaration[] = [
   ["box-sizing", "border-box"],
   ["min-width", "0"],
   ["flex", "1"],
-  ["font-size", "inherit"]
+  ["font-size", "inherit"],
+  ["font-weight", "inherit"],
+  ["line-height", "inherit"]
+];
+
+const detailRichTextRootStyles: readonly StyleDeclaration[] = [
+  ["display", "block"],
+  ["box-sizing", "border-box"],
+  ["font-size", "15px"],
+  ["line-height", "1.72"]
 ];
 
 const detailImageStyles: readonly StyleDeclaration[] = [
@@ -110,41 +146,80 @@ const detailImageStyles: readonly StyleDeclaration[] = [
   ["height", "auto"]
 ];
 
-/**
- * Applies the shared detail display contract at the trusted rendering boundary.
- * The caller supplies the platform heading size so the final RichText nodes
- * carry the typography contract without relying on descendant CSS selectors.
- */
-export function enhanceDetailRichTextForPresentation(
-  html: string,
-  { headingFontSize }: DetailRichTextPresentationOptions = { headingFontSize: "30rpx" }
-) {
-  const headingStyles: readonly StyleDeclaration[] = [
-    ...detailHeadingStyles,
-    ["font-size", headingFontSize]
-  ];
-  const markerHtml = `${mergeTagStyle(
+function normalizeHeadingContent(content: string) {
+  const contentWithoutMarkers = content.replace(detailHeadingMarkerElementPattern, "");
+  const clampedContent = contentWithoutMarkers.replace(detailHeadingDescendantPattern, (tag) =>
+    mergeTagStyle(tag, [
+      ["font-size", "inherit"],
+      ["font-weight", "inherit"],
+      ["line-height", "inherit"]
+    ], ["font"])
+  );
+  if (detailHeadingContentPattern.test(clampedContent)) {
+    return clampedContent.replace(detailHeadingContentPattern, (tag) =>
+      mergeTagStyle(tag, detailHeadingContentStyles, ["font"])
+    );
+  }
+  return `${mergeTagStyle(
+    '<span data-detail-heading-content="true">',
+    detailHeadingContentStyles,
+    ["font"]
+  )}${clampedContent}</span>`;
+}
+
+function renderHeading(openingTag: string, content: string, target: DetailRichTextPresentationTarget) {
+  let normalizedOpeningTag = replaceTagName(openingTag, target === "weapp" ? "div" : "h1");
+  normalizedOpeningTag = target === "weapp"
+    ? setBooleanDataAttribute(normalizedOpeningTag, "data-detail-heading")
+    : removeAttribute(normalizedOpeningTag, "data-detail-heading");
+  normalizedOpeningTag = mergeTagStyle(normalizedOpeningTag, detailHeadingStyles, ["font"]);
+  const marker = `${mergeTagStyle(
     '<span data-detail-heading-marker="true">',
     detailHeadingMarkerStyles
   )}</span>`;
-  const contentOpeningHtml = mergeTagStyle(
-    '<span data-detail-heading-content="true">',
-    detailHeadingContentStyles
+  return `${normalizedOpeningTag}${marker}${normalizeHeadingContent(content)}</${target === "weapp" ? "div" : "h1"}>`;
+}
+
+function unwrapPresentationRoot(html: string) {
+  const match = detailPresentationRootPattern.exec(html);
+  if (!match) return { html, target: undefined };
+  return {
+    html: match[4],
+    target: (match[1] ?? match[2] ?? match[3]) as DetailRichTextPresentationTarget
+  };
+}
+
+/**
+ * Produces platform-owned display HTML without changing canonical stored HTML.
+ * WeChat receives div-based headings to avoid native h1 sizing; Admin retains
+ * h1 semantics. Both targets receive explicit px typography at the HTML boundary.
+ */
+export function enhanceDetailRichTextForPresentation(
+  html: string,
+  options: DetailRichTextPresentationOptions = { target: "weapp" }
+) {
+  const target = "target" in options
+    ? options.target
+    : options.headingFontSize === "15px" ? "admin" : "weapp";
+  const existingRoot = unwrapPresentationRoot(html);
+  if (existingRoot.target === target && currentDetailPresentationVersionPattern.test(html)) return html;
+
+  const headingNormalized = existingRoot.html
+    .replace(detailHeadingPattern, (_match, openingTag: string, content: string) =>
+      renderHeading(openingTag, content, target)
+    )
+    .replace(detailWeappHeadingPattern, (_match, openingTag: string, content: string) =>
+      renderHeading(openingTag, content, target)
+    );
+  const imageNormalized = headingNormalized.replace(/<img\b[^>]*>/giu, (tag) =>
+    mergeTagStyle(tag, detailImageStyles)
   );
-  return html
-    .replace(detailHeadingPattern, (_match, openingTag: string, content: string, closingTag: string) => {
-      const contentWithoutMarkers = content.replace(detailHeadingMarkerElementPattern, "");
-      const clampedContent = contentWithoutMarkers.replace(detailHeadingDescendantPattern, (tag) =>
-        mergeTagStyle(tag, [["font-size", "inherit"]])
-      );
-      const contentHtml = detailHeadingContentPattern.test(clampedContent)
-        ? clampedContent.replace(detailHeadingContentPattern, (tag) =>
-            mergeTagStyle(tag, detailHeadingContentStyles)
-          )
-        : `${contentOpeningHtml}${clampedContent}</span>`;
-      return `${mergeTagStyle(openingTag, headingStyles)}${markerHtml}${contentHtml}${closingTag}`;
-    })
-    .replace(/<img\b[^>]*>/giu, (tag) => mergeTagStyle(tag, detailImageStyles));
+  const rootOpeningTag = mergeTagStyle(
+    `<div data-detail-rich-text-root="true" data-detail-rich-text-target="${target}" data-detail-rich-text-version="3">`,
+    detailRichTextRootStyles,
+    ["font"]
+  );
+  return `${rootOpeningTag}${imageNormalized}</div>`;
 }
 
 function cleanDetailText(value: string | null | undefined) {

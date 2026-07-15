@@ -15,7 +15,6 @@ import {
   sortDetailBanners
 } from "./model";
 import {
-  checkDetailImageHealth,
   previewRichTextImage,
   resolveRichTextImageTarget,
   updateFailedMediaIds
@@ -211,9 +210,12 @@ describe("owner adapters and rich media model", () => {
 
     expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(3);
+    expect(enhanced).toContain('data-detail-rich-text-target="weapp"');
+    expect(enhanced).toContain("font-size:15px;line-height:1.72");
+    expect(enhanced).not.toMatch(/<\/?h1\b/iu);
     expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
-    expect(enhanced.match(/font-size:30rpx/gu)).toHaveLength(3);
-    expect(enhanced.match(/width:0\.2em;height:0\.8em;max-height:0\.8em/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-size:17px;font-weight:700;line-height:1\.35/gu)).toHaveLength(3);
+    expect(enhanced.match(/width:3px;height:13px;max-height:13px;margin-right:5px/gu)).toHaveLength(3);
     expect(enhanced.match(/width:100%;max-width:100%;height:auto/gu)).toHaveLength(2);
     expect(enhanced).toContain('class="title"');
     expect(enhanced).toContain("color:#333");
@@ -228,8 +230,9 @@ describe("owner adapters and rich media model", () => {
     expect(enhanced).not.toContain("vertical-align");
     expect(enhanced).not.toContain("margin-left");
     expect(enhanceDetailRichTextForDisplay(enhanced)).toBe(enhanced);
-    expect(stylesheet).toContain("$detail-section-title-size: 30rpx");
-    expect(stylesheet).toMatch(/h1\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;/u);
+    expect(stylesheet).toContain("$detail-section-title-size: 34rpx");
+    expect(stylesheet).toContain("$detail-body-size: 30rpx");
+    expect(stylesheet).toMatch(/h1\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?font-weight:\s*700;/u);
   });
 
   it("maps artist fields without leaking the business DTO into the renderer", () => {
@@ -300,21 +303,17 @@ describe("detail request race gate", () => {
 });
 
 describe("recoverable detail media", () => {
-  it("preflights only provided image URLs and reports failed URLs in stable order", async () => {
-    const checked: string[] = [];
-    const failed = await checkDetailImageHealth(
-      ["/one.jpg", "/two.jpg", "/one.jpg"],
-      async (url) => {
-        checked.push(url);
-        if (url === "/two.jpg") throw new Error("broken");
-      }
+  it("lets rich-text own slow image loading without an independent failure preflight", () => {
+    const richContentSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailRichContent.tsx"),
+      "utf8"
     );
-    expect(checked).toEqual(["/one.jpg", "/two.jpg"]);
-    expect(failed).toEqual(["/two.jpg"]);
-
-    let emptyChecks = 0;
-    expect(await checkDetailImageHealth([], async () => void (emptyChecks += 1))).toEqual([]);
-    expect(emptyChecks).toBe(0);
+    expect(richContentSource).toContain("collectDetailCardImageUrls");
+    expect(richContentSource).toContain("previewRichTextImage");
+    expect(richContentSource).not.toContain("useDetailImageHealth");
+    expect(richContentSource).not.toContain("Taro.getImageInfo");
+    expect(richContentSource).not.toContain("detail-rich-image-error");
+    expect(richContentSource).not.toContain("正文图片加载失败");
   });
 
   it("tracks banner failures explicitly and clears them on retry", () => {

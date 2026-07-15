@@ -1,26 +1,7 @@
-export type DetailImageHealthChecker = (url: string) => Promise<void>;
 export type DetailImagePreviewer = (options: {
   current: string;
   urls: string[];
 }) => Promise<unknown> | unknown;
-
-export async function checkDetailImageHealth(
-  imageUrls: string[],
-  checker: DetailImageHealthChecker
-) {
-  const uniqueUrls = [...new Set(imageUrls.filter(Boolean))];
-  const results = await Promise.all(
-    uniqueUrls.map(async (url) => {
-      try {
-        await checker(url);
-        return null;
-      } catch {
-        return url;
-      }
-    })
-  );
-  return results.filter((url): url is string => Boolean(url));
-}
 
 export function updateFailedMediaIds(ids: number[], mediaId: number, failed: boolean) {
   if (failed) return ids.includes(mediaId) ? ids : [...ids, mediaId];

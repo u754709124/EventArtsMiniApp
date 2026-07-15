@@ -76,6 +76,7 @@ async function expectLivePreviewContract(
       gutter: Number.parseFloat(getComputedStyle(root.querySelector(".detail-preview-content")!).paddingLeft),
       overlap: hero.bottom - firstCard.top,
       richHeadingFontSize: Number.parseFloat(richHeadingStyle.fontSize),
+      richHeadingFontWeight: richHeadingStyle.fontWeight,
       richHeadingDisplay: richHeadingStyle.display,
       richHeadingAlignItems: richHeadingStyle.alignItems,
       markerContentCenterDelta: Math.abs(
@@ -93,7 +94,8 @@ async function expectLivePreviewContract(
   expect(geometry.gutter).toBe(12);
   expect(geometry.overlap).toBeGreaterThanOrEqual(20);
   expect(geometry.overlap).toBeLessThanOrEqual(22);
-  expect(geometry.richHeadingFontSize).toBe(15);
+  expect(geometry.richHeadingFontSize).toBe(17);
+  expect(geometry.richHeadingFontWeight).toBe("700");
   expect(geometry.richHeadingDisplay).toBe("flex");
   expect(geometry.richHeadingAlignItems).toBe("center");
   expect(geometry.markerContentCenterDelta).toBeLessThanOrEqual(1);

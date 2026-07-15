@@ -311,19 +311,24 @@ describe("detail page presentation resolver", () => {
   it("adds centered heading structure and responsive images idempotently", () => {
     const source = [
       "<h1>无样式标题</h1>",
-      '<h1 class="title" style="padding-left:99px;color:#333;font-size:96px">单行标题<strong style="font-size:72px;color:#b77836">重点</strong></h1>',
+      '<h1 class="title" style="padding-left:99px;color:#333;font-size:96px;font-weight:300">单行标题<strong style="font-size:72px;font-weight:400;color:#b77836">重点</strong></h1>',
       '<h1>多行标题<br><span style="font-size:3em"><em style="font-size:192rpx;background:#fff">第二行</em></span></h1>',
       '<p style="font-size:18px">保留的正文字号</p>',
       '<img data-media-asset-id="9" src="/wide.jpg" alt="宴会厅" loading="lazy" style="width:900px;border:1px solid red">'
     ].join("");
     const enhanced = enhanceDetailRichTextForPresentation(source);
 
+    expect(enhanced).toContain('data-detail-rich-text-target="weapp"');
+    expect(enhanced).toContain("font-size:15px;line-height:1.72");
+    expect(enhanced.match(/data-detail-heading="true"/gu)).toHaveLength(3);
+    expect(enhanced).not.toMatch(/<\/?h1\b/iu);
     expect(enhanced.match(/data-detail-heading-marker="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/data-detail-heading-content="true"/gu)).toHaveLength(3);
     expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
-    expect(enhanced.match(/font-size:30rpx/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-size:17px;font-weight:700;line-height:1\.35/gu)).toHaveLength(3);
     expect(enhanced.match(/font-size:inherit/gu)?.length).toBeGreaterThanOrEqual(6);
-    expect(enhanced.match(/width:0\.2em;height:0\.8em;max-height:0\.8em/gu)).toHaveLength(3);
+    expect(enhanced.match(/font-weight:inherit/gu)?.length).toBeGreaterThanOrEqual(6);
+    expect(enhanced.match(/width:3px;height:13px;max-height:13px;margin-right:5px/gu)).toHaveLength(3);
     expect(enhanced.match(/align-self:center/gu)).toHaveLength(3);
     expect(enhanced.match(/display:block;box-sizing:border-box;min-width:0;flex:1/gu)).toHaveLength(3);
     expect(enhanced).toMatch(/单行标题<strong[^>]*font-size:inherit[^>]*>重点<\/strong>/u);
@@ -337,6 +342,8 @@ describe("detail page presentation resolver", () => {
     expect(enhanced).not.toContain("font-size:72px");
     expect(enhanced).not.toContain("font-size:3em");
     expect(enhanced).not.toContain("font-size:192rpx");
+    expect(enhanced).not.toContain("font-weight:300");
+    expect(enhanced).not.toContain("font-weight:400");
     expect(enhanced).toContain("border:1px solid red");
     expect(enhanced).toContain('data-media-asset-id="9"');
     expect(enhanced).toContain('alt="宴会厅"');
@@ -347,9 +354,21 @@ describe("detail page presentation resolver", () => {
     expect(enhanced).not.toContain("margin-left");
     expect(enhanceDetailRichTextForPresentation(enhanced)).toBe(enhanced);
 
-    const adminEnhanced = enhanceDetailRichTextForPresentation(source, { headingFontSize: "15px" });
-    expect(adminEnhanced.match(/font-size:15px/gu)).toHaveLength(3);
-    expect(enhanceDetailRichTextForPresentation(adminEnhanced, { headingFontSize: "15px" })).toBe(adminEnhanced);
+    const adminEnhanced = enhanceDetailRichTextForPresentation(source, { target: "admin" });
+    expect(adminEnhanced).toContain('data-detail-rich-text-target="admin"');
+    expect(adminEnhanced.match(/<h1\b/gu)).toHaveLength(3);
+    expect(adminEnhanced.match(/font-size:17px;font-weight:700;line-height:1\.35/gu)).toHaveLength(3);
+    expect(enhanceDetailRichTextForPresentation(adminEnhanced, { target: "admin" })).toBe(adminEnhanced);
+  });
+
+  it("upgrades V2 same-target output before becoming idempotent", () => {
+    const v2 = '<div data-detail-rich-text-root="true" data-detail-rich-text-target="weapp" style="font-size:15px;line-height:1.72"><div data-detail-heading="true" style="font-size:16px;line-height:1.35"><span data-detail-heading-marker="true"></span><span data-detail-heading-content="true">旧标题</span></div><p>正文</p></div>';
+    const upgraded = enhanceDetailRichTextForPresentation(v2, { target: "weapp" });
+
+    expect(upgraded).toContain('data-detail-rich-text-version="3"');
+    expect(upgraded).toContain("font-size:17px;font-weight:700;line-height:1.35");
+    expect(upgraded).not.toContain("font-size:16px");
+    expect(enhanceDetailRichTextForPresentation(upgraded, { target: "weapp" })).toBe(upgraded);
   });
 
   it("migrates the previous baseline-offset marker without duplicating nodes", () => {
@@ -367,6 +386,7 @@ describe("detail page presentation resolver", () => {
     expect(enhanced).toContain("align-items:center");
     expect(enhanced).not.toContain("text-top");
     expect(enhanced).not.toContain("margin-left:-0.6em");
+    expect(enhanced).not.toMatch(/<\/?h1\b/iu);
     expect(enhanceDetailRichTextForPresentation(enhanced)).toBe(enhanced);
   });
 });

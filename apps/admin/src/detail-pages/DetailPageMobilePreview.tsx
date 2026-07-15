@@ -40,7 +40,7 @@ function PreviewBlock({
     <section
       className="detail-preview-rich-text"
       dangerouslySetInnerHTML={{
-        __html: enhanceDetailRichTextForPresentation(block.html, { headingFontSize: "15px" })
+        __html: enhanceDetailRichTextForPresentation(block.html, { target: "admin" })
       }}
     />
   );

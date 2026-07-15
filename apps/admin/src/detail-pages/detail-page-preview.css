@@ -268,7 +268,7 @@
 .detail-preview-rich-text {
   min-width: 0;
   color: var(--preview-body);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.72;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -306,8 +306,8 @@
   padding-left: 0;
   color: var(--preview-text);
   border-left: 0;
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1.35;
 }
 

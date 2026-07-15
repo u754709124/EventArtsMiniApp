@@ -22,8 +22,8 @@ $detail-hero-visible-gap: 24rpx;
 $detail-name-size: 50rpx;
 $detail-type-size: 30rpx;
 $detail-subtitle-size: 27rpx;
-$detail-section-title-size: 30rpx;
-$detail-body-size: 28rpx;
+$detail-section-title-size: 34rpx;
+$detail-body-size: 30rpx;
 $detail-body-line-height: 1.72;
 
 .detail-page {
@@ -357,7 +357,7 @@ $detail-body-line-height: 1.72;
     border-left: 0;
     color: $detail-text;
     font-size: $detail-section-title-size;
-    font-weight: 650;
+    font-weight: 700;
     line-height: 1.35;
   }
 
