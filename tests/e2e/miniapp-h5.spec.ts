@@ -1443,6 +1443,32 @@ test("首页接口失败展示异常页，重新加载可恢复", async ({ page 
   await expect(page.getByTestId("miniapp-home")).toBeVisible();
 });
 
+test("我的页面复用后台配置的小程序名与副标题", async ({ page, request }) => {
+  const originalSite = await adminApi<Record<string, unknown>>(
+    request,
+    "GET",
+    "/api/admin/site-config"
+  );
+  const appName = "E2E 可配置演艺服务";
+  const subtitle = "E2E 专业主持・歌手・演艺团队";
+
+  try {
+    await adminApi(request, "PUT", "/api/admin/site-config", {
+      ...originalSite,
+      appName,
+      subtitle
+    });
+    await page.goto("/#/pages/mine/index");
+
+    await expect(page.getByTestId("mine-page")).toBeVisible();
+    await expect(page.getByTestId("mine-app-name")).toHaveText(appName);
+    await expect(page.getByTestId("mine-subtitle")).toHaveText(subtitle);
+    await expect(page.getByTestId("mine-welcome")).toBeVisible();
+  } finally {
+    await adminApi(request, "PUT", "/api/admin/site-config", originalSite);
+  }
+});
+
 test("无 Banner 时使用占位图", async ({ page, request }) => {
   await setBannerStatus(request, "disabled");
   const home = await clientApi<HomeResponse>(request, "/api/client/home");
@@ -1463,4 +1489,13 @@ test("设计复核截图", async ({ page, request }) => {
   await expect(page.getByTestId("home-menu")).toBeVisible();
   await expect(page.getByTestId("home-featured-cases")).toBeVisible();
   await page.screenshot({ path: "docs/design/actual-home-h5.png", fullPage: true });
+});
+
+test("我的页面设计复核截图", async ({ page, request }) => {
+  await prepareDesignReviewData(request);
+  await page.goto("/#/pages/mine/index");
+  await expect(page.getByTestId("mine-page")).toBeVisible();
+  await expect(page.getByTestId("mine-app-name")).toHaveText("喜缘主持・演艺服务");
+  await expect(page.getByTestId("mine-subtitle")).toHaveText("专业主持人・歌手・演艺团队");
+  await page.screenshot({ path: "docs/design/actual-mine-h5.png", fullPage: true });
 });

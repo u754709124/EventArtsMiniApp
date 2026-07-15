@@ -1,0 +1,296 @@
+.mine-page {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #fffaf5;
+}
+
+.mine-page::before {
+  position: absolute;
+  z-index: 0;
+  border: 1rpx solid rgba(206, 139, 68, 0.34);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.mine-page::before {
+  right: -410rpx;
+  bottom: 158rpx;
+  width: 1120rpx;
+  height: 520rpx;
+  transform: rotate(-31deg);
+}
+
+.mine-page .miniapp-page-header,
+.mine-welcome,
+.mine-message {
+  position: relative;
+  z-index: 1;
+}
+
+.mine-page .miniapp-page-header {
+  margin-left: 14rpx;
+  padding-bottom: 18rpx;
+}
+
+.mine-welcome {
+  position: relative;
+  box-sizing: border-box;
+  width: 826rpx;
+  min-height: 632rpx;
+  margin-left: -58rpx;
+  overflow: hidden;
+  padding: 170rpx 0 56rpx 117rpx;
+  border-radius: 44% 22% 24% 68% / 56% 8% 10% 58%;
+  background: linear-gradient(118deg, #fff7e9 0%, #faead3 54%, #f8dfbc 100%);
+}
+
+.mine-welcome::before {
+  position: absolute;
+  top: -62rpx;
+  left: -50rpx;
+  width: 800rpx;
+  height: 110rpx;
+  border-radius: 50%;
+  background: #fffaf5;
+  content: "";
+  transform: rotate(1deg);
+}
+
+.mine-welcome__copy {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  max-width: 540rpx;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.mine-welcome__eyebrow {
+  margin-bottom: 38rpx;
+  color: #a75b19;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 4rpx;
+}
+
+.mine-welcome__name {
+  color: #171411;
+  font-size: 46rpx;
+  font-weight: 800;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.mine-welcome__subtitle {
+  margin-top: 24rpx;
+  color: #a75b19;
+  font-size: 28rpx;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.mine-stage {
+  position: absolute;
+  z-index: 1;
+  right: 50rpx;
+  bottom: -30rpx;
+  width: 470rpx;
+  height: 470rpx;
+  color: rgba(198, 119, 39, 0.6);
+  pointer-events: none;
+}
+
+.mine-stage__curtain {
+  position: absolute;
+  top: -154rpx;
+  right: -70rpx;
+  border: 2rpx solid currentColor;
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(48deg);
+}
+
+.mine-stage__curtain--outer {
+  width: 540rpx;
+  height: 540rpx;
+}
+
+.mine-stage__curtain--middle {
+  top: -128rpx;
+  right: -44rpx;
+  width: 486rpx;
+  height: 486rpx;
+}
+
+.mine-stage__curtain--inner {
+  top: -102rpx;
+  right: -18rpx;
+  width: 432rpx;
+  height: 432rpx;
+}
+
+.mine-stage__spotlight {
+  position: absolute;
+  top: 98rpx;
+  width: 2rpx;
+  height: 236rpx;
+  background: linear-gradient(to bottom, currentColor, transparent);
+  transform-origin: top;
+}
+
+.mine-stage__spotlight::before {
+  position: absolute;
+  top: -7rpx;
+  left: -7rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 50%;
+  content: "";
+}
+
+.mine-stage__spotlight--left {
+  right: 194rpx;
+  transform: rotate(17deg);
+}
+
+.mine-stage__spotlight--right {
+  right: 86rpx;
+  transform: rotate(-13deg);
+}
+
+.mine-stage__platform {
+  position: absolute;
+  right: -58rpx;
+  bottom: 20rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 50%;
+}
+
+.mine-stage__platform--back {
+  width: 392rpx;
+  height: 84rpx;
+}
+
+.mine-stage__platform--front {
+  right: -106rpx;
+  bottom: -14rpx;
+  width: 490rpx;
+  height: 116rpx;
+}
+
+.mine-stage__note {
+  position: absolute;
+  color: rgba(190, 111, 33, 0.65);
+  line-height: 1;
+}
+
+.mine-stage__note--large {
+  top: 260rpx;
+  right: 274rpx;
+  font-size: 38rpx;
+  transform: rotate(-10deg);
+}
+
+.mine-stage__note--small {
+  top: 304rpx;
+  right: 44rpx;
+  font-size: 26rpx;
+  transform: rotate(12deg);
+}
+
+.mine-stage__spark {
+  position: absolute;
+  width: 8rpx;
+  height: 8rpx;
+  border: 1rpx solid currentColor;
+  transform: rotate(45deg);
+}
+
+.mine-stage__spark--one {
+  top: 214rpx;
+  right: 238rpx;
+}
+
+.mine-stage__spark--two {
+  top: 186rpx;
+  right: 102rpx;
+  width: 6rpx;
+  height: 6rpx;
+}
+
+.mine-stage__spark--three {
+  top: 322rpx;
+  right: 186rpx;
+  width: 6rpx;
+  height: 6rpx;
+}
+
+.mine-message {
+  display: flex;
+  margin-top: 190rpx;
+  flex-direction: column;
+  align-items: center;
+  color: #a75b19;
+  font-size: 28rpx;
+  line-height: 1.5;
+  letter-spacing: 3rpx;
+  text-align: center;
+}
+
+.mine-dot-field {
+  position: absolute;
+  z-index: -1;
+  width: 190rpx;
+  height: 310rpx;
+  background: radial-gradient(circle, rgba(213, 147, 77, 0.2) 0 2rpx, transparent 3rpx) 0 0 / 18rpx 18rpx;
+  pointer-events: none;
+}
+
+.mine-dot-field--left {
+  top: -100rpx;
+  left: -86rpx;
+  border-radius: 0 60% 60% 0;
+}
+
+.mine-dot-field--right {
+  top: -82rpx;
+  right: -98rpx;
+  border-radius: 60% 0 0 60%;
+}
+
+.mine-message__ornament {
+  display: flex;
+  width: 238rpx;
+  margin-top: 22rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  color: rgba(190, 111, 33, 0.48);
+}
+
+.mine-message__ornament > view {
+  width: 72rpx;
+  height: 1rpx;
+  background: rgba(190, 111, 33, 0.34);
+}
+
+@media (max-height: 720px) {
+  .mine-page .miniapp-page-header {
+    padding-bottom: 24rpx;
+  }
+
+  .mine-welcome {
+    min-height: 548rpx;
+    padding-top: 144rpx;
+  }
+
+  .mine-message {
+    margin-top: 82rpx;
+  }
+}
