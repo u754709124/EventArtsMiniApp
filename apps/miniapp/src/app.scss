@@ -56,3 +56,25 @@ page {
   padding: 14rpx 36rpx;
   background: #fffaf5;
 }
+
+.pull-down-refresh-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx 0;
+}
+
+.pull-down-refresh-loading__spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border: 4rpx solid rgba(180, 107, 42, 0.2);
+  border-top-color: #b46b2a;
+  border-radius: 50%;
+  animation: pull-down-refresh-spin 0.75s linear infinite;
+}
+
+@keyframes pull-down-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

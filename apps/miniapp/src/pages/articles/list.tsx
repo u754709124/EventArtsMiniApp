@@ -1,12 +1,12 @@
-import Taro, { useLoad, usePullDownRefresh } from "@tarojs/taro";
+import Taro, { useLoad } from "@tarojs/taro";
 import { ScrollView, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArticleListItemDto } from "@event-arts/shared";
 import { ArticleCard } from "../../components/ArticleCard";
-import { EmptyState, LoadingState } from "../../components/PageState";
+import { EmptyState, LoadingState, PullDownRefreshIndicator } from "../../components/PageState";
 import { getArticles } from "../../services/api";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
-import { runPullDownRefresh } from "../../utils/pull-down-refresh";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -124,7 +124,7 @@ export default function ArticleList() {
     void load(1, true);
   }, [category, pageSize, ready]);
 
-  usePullDownRefresh(() => runPullDownRefresh(() => load(1, true, true)));
+  const refreshing = usePullDownRefreshState(() => load(1, true, true));
 
   function selectCategory(nextCategory: string) {
     if (nextCategory === category) return;
@@ -159,6 +159,7 @@ export default function ArticleList() {
           <Text className="article-list-nav__title" data-testid="article-list-title">{title}</Text>
         </View>
       </View>
+      {refreshing && <PullDownRefreshIndicator />}
       <ScrollView className="article-category-tabs" data-testid="article-category-tabs" scrollX enhanced showScrollbar={false}>
         <Text
           className={`article-category-tab ${category === "" ? "article-category-tab--active" : ""}`}

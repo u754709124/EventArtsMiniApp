@@ -9,6 +9,14 @@ export function LoadingState() {
   );
 }
 
+export function PullDownRefreshIndicator() {
+  return (
+    <View className="pull-down-refresh-loading" data-testid="pull-down-refresh-loading" role="status" aria-label="正在刷新">
+      <View className="pull-down-refresh-loading__spinner" aria-hidden />
+    </View>
+  );
+}
+
 export function EmptyState({ text }: { text: string }) {
   return (
     <View className="empty" data-testid="miniapp-empty">

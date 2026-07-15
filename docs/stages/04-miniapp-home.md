@@ -58,5 +58,14 @@
 - 根 `pnpm test` 通过；根 `pnpm lint` 仍被本功能范围外的既有 `apps/miniapp/src/services/api.test.ts:84` 未使用变量 `rateLimitedBody` 阻塞。
 - 完整 `NODE_ENV=development pnpm e2e` 首次在 sandbox 内因本地端口监听权限失败；授权后运行时，既有 Admin“新增 Banner”资源选择断言失败并触发后续串行用例停止。单独运行 Miniapp H5 项目时前 18 个场景通过，随后既有“人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局”仍因标题节点为 0 失败，其余 15 个场景未执行；该失败与本次刷新改动无关。
 
+## 2026-07-15 下拉刷新顶部 loading 圈验证
+
+- 首页、分类、案例、文章和人员列表在主动下拉刷新请求期间，于各自顶部内容区显示统一的棕金色旋转 loading 圈；请求成功或失败后组件立即卸载，不保留高度或空占位。
+- 共享刷新 controller 防止活动请求期间重复下拉产生并行请求或提前隐藏；初次加载、手动重试和文章加载更多不显示该 loading 圈。
+- `pnpm --filter miniapp test` 通过：9 个文件、47 个测试；新增覆盖 pending、成功、失败、重复触发、五页位置、可访问语义和公共动画样式。
+- 聚焦 ESLint、`pnpm test`、`pnpm --filter miniapp build:h5` 与 `pnpm build:weapp` 通过。
+- 根 `pnpm lint` 仍仅被本功能范围外的既有 `apps/miniapp/src/services/api.test.ts:84` 未使用变量 `rateLimitedBody` 阻塞。
+- 完整 E2E 中 Admin 19 个场景及 Miniapp H5 前 18 个场景通过；随后仍停在既有“人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局”标题节点为 0 的断言，后续 15 个场景未执行。该详情富文本失败与本次顶部 loading 圈无交集。
+
 ## 已知问题或设计取舍
 参考图下方扩展模块不纳入一期交互范围。H5 截图不模拟微信状态栏和胶囊按钮，因此采用独立的 36px 顶部安全区；微信端保持运行时胶囊按钮适配。Taro 构建需要写入 `~/.taro4.0` 缓存目录，sandbox 内需授权运行。后续已将首页切图改为 palette PNG 并配置构建 performance budget，H5/weapp 当前构建无 warning 输出。

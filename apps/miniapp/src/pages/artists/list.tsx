@@ -1,13 +1,14 @@
-import Taro, { useLoad, usePullDownRefresh } from "@tarojs/taro";
+import Taro, { useLoad } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtistListItemDto, ArtistType } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
+import { PullDownRefreshIndicator } from "../../components/PageState";
 import { request } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
-import { runPullDownRefresh } from "../../utils/pull-down-refresh";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -280,7 +281,7 @@ export default function ArtistList() {
     void load();
   }, [keyword, location, tag, type]);
 
-  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
+  const refreshing = usePullDownRefreshState(() => load(true));
 
   function goBack() {
     try {
@@ -326,6 +327,8 @@ export default function ArtistList() {
           </Text>
         </View>
       </View>
+
+      {refreshing && <PullDownRefreshIndicator />}
 
       <View className="artist-search-row">
         <View className="artist-search">

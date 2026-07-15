@@ -1,14 +1,13 @@
 import { Text, View } from "@tarojs/components";
-import { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import type { MenuItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { MiniappPageHeader } from "../../components/MiniappPageHeader";
-import { EmptyState, LoadingState } from "../../components/PageState";
+import { EmptyState, LoadingState, PullDownRefreshIndicator } from "../../components/PageState";
 import { getMenuItems } from "../../services/api";
 import { menuSummaries, openMenu } from "../../utils/menu-navigation";
-import { runPullDownRefresh } from "../../utils/pull-down-refresh";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./index.scss";
 
@@ -44,11 +43,12 @@ export default function CategoryPage() {
     void load();
   }, []);
 
-  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
+  const refreshing = usePullDownRefreshState(() => load(true));
 
   return (
     <View className="page" data-testid="category-page">
       <MiniappPageHeader title="分类" />
+      {refreshing && <PullDownRefreshIndicator />}
       {loading ? <LoadingState /> : failed ? (
         <View className="category-state" data-testid="category-error-state">
           <Text>分类加载失败</Text>

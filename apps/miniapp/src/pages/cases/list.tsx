@@ -1,13 +1,13 @@
-import { useDidShow, usePullDownRefresh } from "@tarojs/taro";
+import { useDidShow } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityCaseListItemDto } from "@event-arts/shared";
 import { CaseCard } from "../../components/CaseCard";
 import { MiniappPageHeader } from "../../components/MiniappPageHeader";
-import { EmptyState, LoadingState } from "../../components/PageState";
+import { EmptyState, LoadingState, PullDownRefreshIndicator } from "../../components/PageState";
 import { getCases } from "../../services/api";
 import { consumePendingCaseMenuFilter } from "../../utils/menu-navigation";
-import { runPullDownRefresh } from "../../utils/pull-down-refresh";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
@@ -67,11 +67,12 @@ export default function CaseList() {
     setQuery("");
   });
 
-  usePullDownRefresh(() => runPullDownRefresh(() => load(category, true)));
+  const refreshing = usePullDownRefreshState(() => load(category, true));
 
   return (
     <View className="page" data-testid="case-list-page">
       <MiniappPageHeader title="活动案例" />
+      {refreshing && <PullDownRefreshIndicator />}
       <View className="case-search" data-testid="case-search-box">
         <Input
           className="case-search__input"

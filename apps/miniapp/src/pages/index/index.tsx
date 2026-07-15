@@ -1,4 +1,4 @@
-import Taro, { usePullDownRefresh } from "@tarojs/taro";
+import Taro from "@tarojs/taro";
 import { Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import type { ITouchEvent } from "@tarojs/components/types";
 import { useEffect, useRef, useState } from "react";
@@ -8,11 +8,11 @@ import { AppImage } from "../../components/AppImage";
 import { ArticleCard } from "../../components/ArticleCard";
 import { CaseCard } from "../../components/CaseCard";
 import { MiniappPageHeader } from "../../components/MiniappPageHeader";
-import { ErrorState, LoadingState } from "../../components/PageState";
+import { ErrorState, LoadingState, PullDownRefreshIndicator } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
 import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { openMenu } from "../../utils/menu-navigation";
-import { runPullDownRefresh } from "../../utils/pull-down-refresh";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
 import "./index.scss";
@@ -379,7 +379,7 @@ export default function HomePage() {
     void load();
   }, []);
 
-  usePullDownRefresh(() => runPullDownRefresh(() => load(true)));
+  const refreshing = usePullDownRefreshState(() => load(true));
 
   if (loading) return <LoadingState />;
   if (failed || !data) return <ErrorState onRetry={load} />;
@@ -387,6 +387,7 @@ export default function HomePage() {
   return (
     <View className="page home-page" data-testid="miniapp-home">
       <MiniappPageHeader title={data.site.appName} subtitle={data.site.subtitle} titleTestId="home-app-name" subtitleTestId="home-subtitle" />
+      {refreshing && <PullDownRefreshIndicator />}
       <AnnouncementBar announcements={data.announcements} />
       <BannerSection banners={data.banners} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />
