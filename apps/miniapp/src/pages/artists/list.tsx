@@ -317,6 +317,7 @@ export default function ArtistList() {
 
   return (
     <View className="artists-page" data-testid={`artist-list-page-${type}`}>
+      {refreshing && <PullDownRefreshIndicator />}
       <View className="artists-nav" style={{ paddingTop: `${metrics.safeTop}px` }}>
         <View className="artists-nav__content" style={{ height: `${metrics.headerHeight}px` }}>
           <View className="artists-nav__back" data-testid="artist-back-button" onClick={() => clickGuard("artist:back", goBack)}>
@@ -327,8 +328,6 @@ export default function ArtistList() {
           </Text>
         </View>
       </View>
-
-      {refreshing && <PullDownRefreshIndicator />}
 
       <View className="artist-search-row">
         <View className="artist-search">

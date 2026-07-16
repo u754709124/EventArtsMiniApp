@@ -71,8 +71,8 @@ export default function CaseList() {
 
   return (
     <View className="page" data-testid="case-list-page">
-      <MiniappPageHeader title="活动案例" />
       {refreshing && <PullDownRefreshIndicator />}
+      <MiniappPageHeader title="活动案例" />
       <View className="case-search" data-testid="case-search-box">
         <Input
           className="case-search__input"

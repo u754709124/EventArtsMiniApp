@@ -2,6 +2,7 @@ import Taro, { usePullDownRefresh } from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 
 export const pullDownRefreshFailureMessage = "刷新失败，请稍后重试";
+export const pullDownRefreshMinimumVisibleMs = 2000;
 
 export async function runPullDownRefresh(refresh: () => Promise<unknown>) {
   try {
@@ -33,7 +34,13 @@ export function createPullDownRefreshController(
       if (activeRefresh) return activeRefresh;
 
       onRefreshingChange(true);
-      const task = runPullDownRefresh(() => currentRefresh()).finally(() => {
+      const minimumVisible = new Promise<void>((resolve) => {
+        setTimeout(resolve, pullDownRefreshMinimumVisibleMs);
+      });
+      const task = Promise.all([
+        runPullDownRefresh(() => currentRefresh()),
+        minimumVisible
+      ]).then(() => undefined).finally(() => {
         if (activeRefresh !== task) return;
         activeRefresh = null;
         onRefreshingChange(false);

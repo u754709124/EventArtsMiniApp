@@ -417,8 +417,8 @@ export default function HomePage() {
 
   return (
     <View className="page home-page" data-testid="miniapp-home">
-      <MiniappPageHeader title={data.site.appName} subtitle={data.site.subtitle} titleTestId="home-app-name" subtitleTestId="home-subtitle" />
       {refreshing && <PullDownRefreshIndicator />}
+      <MiniappPageHeader title={data.site.appName} subtitle={data.site.subtitle} titleTestId="home-app-name" subtitleTestId="home-subtitle" />
       <AnnouncementBar announcements={data.announcements} />
       <BannerSection banners={data.banners} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />

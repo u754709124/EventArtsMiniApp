@@ -151,6 +151,7 @@ export default function ArticleList() {
 
   return (
     <View className="page article-list-page" data-testid="article-list-page">
+      {refreshing && <PullDownRefreshIndicator />}
       <View className="article-list-nav" style={{ paddingTop: `${metrics.safeTop}px` }}>
         <View className="article-list-nav__content" style={{ height: `${metrics.headerHeight}px` }}>
           <View className="article-list-nav__back" data-testid="article-back-button" onClick={() => clickGuard("article:back", goBack)}>
@@ -159,7 +160,6 @@ export default function ArticleList() {
           <Text className="article-list-nav__title" data-testid="article-list-title">{title}</Text>
         </View>
       </View>
-      {refreshing && <PullDownRefreshIndicator />}
       <ScrollView className="article-category-tabs" data-testid="article-category-tabs" scrollX enhanced showScrollbar={false}>
         <Text
           className={`article-category-tab ${category === "" ? "article-category-tab--active" : ""}`}

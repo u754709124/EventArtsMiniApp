@@ -67,6 +67,16 @@
 - 根 `pnpm lint` 仍仅被本功能范围外的既有 `apps/miniapp/src/services/api.test.ts:84` 未使用变量 `rateLimitedBody` 阻塞。
 - 完整 E2E 中 Admin 19 个场景及 Miniapp H5 前 18 个场景通过；随后仍停在既有“人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局”标题节点为 0 的断言，后续 15 个场景未执行。该详情富文本失败与本次顶部 loading 圈无交集。
 
+## 2026-07-16 下拉刷新 loading 位置与最低展示时间验证
+
+- 首页、分类、案例页的 loading 圈已移动到页面根节点内、公共标题之前；文章和人员列表的 loading 圈已移动到页面根节点内、顶部导航之前。刷新结束后组件卸载并恢复原布局。
+- 共享刷新 controller 以刷新状态开启为起点，保证 loading 圈至少展示 2000ms；请求超过 2000ms 时继续展示至真实请求及原生下拉刷新生命周期结束。活动刷新期间重复触发复用同一 Promise、计时器和起点，不会重置最低展示时间。
+- `pnpm --filter miniapp test` 通过：9 个文件、48 个测试；新增覆盖 1999ms/2000ms 边界、慢请求、失败请求、重复触发及五个页面的最顶部位置。
+- `pnpm test` 全部通过：shared 35、miniapp 48、API 169、admin 89、deploy 8；`pnpm --filter miniapp build:h5` 与 `pnpm build:weapp` 均成功。
+- 根 `pnpm lint` 仍仅被本功能范围外的既有 `apps/miniapp/src/services/api.test.ts:84` 未使用变量 `rateLimitedBody` 阻塞；本次涉及文件的聚焦 ESLint 已通过。
+- 完整 `NODE_ENV=development pnpm e2e` 中 37 个场景通过，随后既有“人员 BANNER 富文本详情使用公共 hero、轮播和覆盖布局”仍因标题节点为 0 失败，后续 15 个串行场景未执行；该详情富文本失败与本次刷新位置和时长调整无交集。
+- 首次将 H5 构建与根测试并行执行造成严重资源争用，根测试出现超时；改为串行后 H5 构建和根测试均通过，最终结果以上述串行验证为准。
+
 ## 2026-07-16 首页公告首次自动轮转验证
 
 - 首页公告继续以自定义计时器作为唯一轮转时钟，`Swiper` 保持 `autoplay=false`；微信端先等待原生视图提交，并为 `nextTick`、节点查询和临时零尺寸分别增加一次性启动保护、有界超时/重试及安全降级，避免首次进入永久停在 `measuring`。

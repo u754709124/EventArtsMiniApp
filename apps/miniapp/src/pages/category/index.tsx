@@ -47,8 +47,8 @@ export default function CategoryPage() {
 
   return (
     <View className="page" data-testid="category-page">
-      <MiniappPageHeader title="分类" />
       {refreshing && <PullDownRefreshIndicator />}
+      <MiniappPageHeader title="分类" />
       {loading ? <LoadingState /> : failed ? (
         <View className="category-state" data-testid="category-error-state">
           <Text>分类加载失败</Text>
