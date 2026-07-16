@@ -14,7 +14,15 @@ import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { openMenu } from "../../utils/menu-navigation";
 import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
-import { getNoticeDisplayTiming, getNoticeMarqueeStartPauseMs } from "./announcement-timing";
+import {
+  createNoticeMeasurementRun,
+  createNoticeViewReadyRun,
+  getNextNoticeIndex,
+  getNoticeDisplayTiming,
+  getNoticeMarqueeStartPauseMs,
+  type NoticeMeasurementRun,
+  type NoticeViewReadyRun
+} from "./announcement-timing";
 import "./index.scss";
 
 const swipeThreshold = 8;
@@ -133,6 +141,8 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
 
     let cancelled = false;
     let startTimer: ReturnType<typeof setTimeout> | undefined;
+    let measurementRun: NoticeMeasurementRun | undefined;
+    let viewReadyRun: NoticeViewReadyRun | undefined;
     const runId = marqueeRunId.current + 1;
     marqueeRunId.current = runId;
     const baseTiming = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, 0);
@@ -145,12 +155,19 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
       totalDurationMs: baseTiming.totalDurationMs
     });
 
-    const measureTimer = setTimeout(() => {
-      void Promise.all([
-        getNoticeNodeWidth(`#noticeContentViewport-${current}`),
-        getNoticeNodeWidth(`#noticeContentItem-${current}`, true)
-      ]).then(([viewportWidth, contentWidth]) => {
-        if (cancelled) return;
+    function beginMeasurement() {
+      if (cancelled || marqueeRunId.current !== runId) return;
+
+      measurementRun = createNoticeMeasurementRun(async () => {
+        const [viewportWidth, contentWidth] = await Promise.all([
+          getNoticeNodeWidth(`#noticeContentViewport-${current}`),
+          getNoticeNodeWidth(`#noticeContentItem-${current}`, true)
+        ]);
+        return { contentWidth, viewportWidth };
+      });
+
+      void measurementRun.promise.then(({ viewportWidth, contentWidth }) => {
+        if (cancelled || marqueeRunId.current !== runId) return;
 
         const timing = getNoticeDisplayTiming(currentAnnouncement.displayDurationMs, contentWidth - viewportWidth);
         setMarquee({
@@ -164,7 +181,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
 
         if (timing.shouldScroll) {
           startTimer = setTimeout(() => {
-            if (cancelled) return;
+            if (cancelled || marqueeRunId.current !== runId) return;
             setMarquee((state) => (
               state?.runId === runId
                 ? { ...state, phase: "scrolling" }
@@ -173,11 +190,25 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
           }, getNoticeMarqueeStartPauseMs());
         }
       });
+    }
+
+    const measureTimer = setTimeout(() => {
+      if (cancelled) return;
+      if (Taro.getEnv() === Taro.ENV_TYPE.WEB) {
+        beginMeasurement();
+        return;
+      }
+      viewReadyRun = createNoticeViewReadyRun(
+        (callback) => Taro.nextTick(callback),
+        beginMeasurement
+      );
     }, noticeMeasureDelayMs);
 
     return () => {
       cancelled = true;
       clearTimeout(measureTimer);
+      viewReadyRun?.cancel();
+      measurementRun?.cancel();
       if (startTimer) clearTimeout(startTimer);
     };
   }, [current, currentAnnouncementKey]);
@@ -188,7 +219,7 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
     }
 
     const switchTimer = setTimeout(() => {
-      setCurrent((value) => (value + 1) % announcements.length);
+      setCurrent((value) => getNextNoticeIndex(value, announcements.length));
     }, marquee.totalDurationMs);
 
     return () => clearTimeout(switchTimer);

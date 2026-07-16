@@ -808,7 +808,7 @@ test("无公告时公告栏隐藏", async ({ page, request }) => {
   await expect(page.getByTestId("home-announcement")).toHaveCount(0);
 });
 
-test("多条公告按相同时长持续自动循环切换", async ({ page, request }) => {
+test("首次进入无需手势即可持续自动循环切换多条公告", async ({ page, request }) => {
   await setAnnouncementStatus(request, "disabled");
   await createAnnouncement(request, "E2E 第一条公告", 100, 700);
   await createAnnouncement(request, "E2E 第二条公告", 101, 700);
