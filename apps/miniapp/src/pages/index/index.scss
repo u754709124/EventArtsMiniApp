@@ -159,6 +159,7 @@
 
 .menu-empty,
 .case-empty {
+  box-sizing: border-box;
   width: 100%;
   padding: 36rpx;
   text-align: center;

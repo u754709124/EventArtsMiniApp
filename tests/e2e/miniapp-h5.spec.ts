@@ -620,6 +620,47 @@ test("首页案例卡片高度接近参考图", async ({ page }) => {
   expect(firstCaseHeight).toBeLessThanOrEqual(205);
 });
 
+test("首页精选内容为空时卡片不产生横向滚动", async ({ page }) => {
+  await page.route(`${apiBase}/api/client/home`, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      data: Record<string, unknown>;
+    };
+
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        data: {
+          ...body.data,
+          featuredCases: [],
+          featuredArticles: []
+        }
+      }
+    });
+  });
+
+  await openHome(page);
+  await expect(page.getByText("暂无精选案例")).toBeVisible();
+  await expect(page.getByText("暂无精选文章")).toBeVisible();
+
+  const metrics = await page.evaluate(() => ({
+    viewportWidth: document.documentElement.clientWidth,
+    pageScrollWidth: document.documentElement.scrollWidth,
+    emptyCards: Array.from(document.querySelectorAll(".case-empty")).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    })
+  }));
+
+  expect(metrics.pageScrollWidth).toBeLessThanOrEqual(metrics.viewportWidth);
+  expect(metrics.emptyCards).toHaveLength(2);
+  for (const card of metrics.emptyCards) {
+    expect(card.left).toBeGreaterThanOrEqual(0);
+    expect(card.right).toBeLessThanOrEqual(metrics.viewportWidth);
+  }
+});
+
 test("首页精选标题与更多入口样式统一", async ({ page }) => {
   await openHome(page);
   const metrics = await page.evaluate(() => {
