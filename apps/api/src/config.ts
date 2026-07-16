@@ -54,9 +54,7 @@ export type ApiConfig = {
     };
   };
   analytics: {
-    sampleRate: number;
     retentionDays: number;
-    dedupeWindowSeconds: number;
   };
 };
 
@@ -151,9 +149,7 @@ const rawEnvSchema = z.object({
   LOGIN_RATE_LIMIT_MAX_FAILURES: z.coerce.number().int().min(1).max(1_000).default(5),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   ANALYTICS_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).max(100_000).default(60),
-  PAGE_VIEW_SAMPLE_RATE: z.coerce.number().min(0.001).max(1).default(0.1),
-  PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
-  PAGE_VIEW_DEDUPE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(30)
+  PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90)
 });
 
 export function getRepositoryRoot() {
@@ -438,9 +434,7 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
       }
     },
     analytics: {
-      sampleRate: raw.PAGE_VIEW_SAMPLE_RATE,
-      retentionDays: raw.PAGE_VIEW_RETENTION_DAYS,
-      dedupeWindowSeconds: raw.PAGE_VIEW_DEDUPE_WINDOW_SECONDS
+      retentionDays: raw.PAGE_VIEW_RETENTION_DAYS
     }
   };
 }

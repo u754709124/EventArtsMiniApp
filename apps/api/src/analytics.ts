@@ -7,9 +7,17 @@ import { createPrismaClient, type AppPrismaClient } from "./db";
 import { ensureDatabaseSchema } from "./sqlite-schema";
 
 export type PageViewAnalyticsConfig = {
-  sampleRate: number;
   retentionDays: number;
+  /** @deprecated 仅为旧调用方的过渡类型兼容；活动统计不再采样。 */
+  sampleRate: number;
+  /** @deprecated 仅为旧调用方的过渡类型兼容；活动统计改为按北京时间自然日去重。 */
   dedupeWindowSeconds: number;
+};
+
+export type DailyUserVisitInput = {
+  appId: string;
+  openidHash: string;
+  now: Date;
 };
 
 export type PageViewAnalyticsInput = {
@@ -27,13 +35,23 @@ export type PageViewAnalyticsResult =
   | { sampled: true; tracked: false; deduped: true; sampleWeight: number }
   | { sampled: true; tracked: true; deduped: false; sampleWeight: number };
 
-export const defaultPageViewAnalyticsConfig: PageViewAnalyticsConfig = {
-  sampleRate: 0.1,
+export const defaultPageViewAnalyticsConfig = {
   retentionDays: 90,
+  /** @deprecated 仅供旧测试/调用方过渡；活动统计路径不读取此值。 */
+  sampleRate: 0.1,
+  /** @deprecated 仅供旧测试/调用方过渡；活动统计路径不读取此值。 */
   dedupeWindowSeconds: 30
 };
 
 const oneDayMs = 24 * 60 * 60 * 1000;
+const legacySampleRate = 0.1;
+const legacyDedupeWindowSeconds = 30;
+const shanghaiDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
 
 function utcDay(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -44,8 +62,106 @@ function hmacHex(secret: string, purpose: string, value: string) {
 }
 
 function clampSampleRate(sampleRate: number) {
-  if (!Number.isFinite(sampleRate)) return defaultPageViewAnalyticsConfig.sampleRate;
+  if (!Number.isFinite(sampleRate)) return legacySampleRate;
   return Math.min(1, Math.max(0.001, sampleRate));
+}
+
+function dateKeyWithOffset(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** 返回指定时刻对应的北京时间自然日键。 */
+export function shanghaiDateKey(date: Date) {
+  if (!Number.isFinite(date.getTime())) throw new Error("invalid analytics date");
+  const parts = Object.fromEntries(
+    shanghaiDateFormatter
+      .formatToParts(date)
+      .filter((part) => part.type === "year" || part.type === "month" || part.type === "day")
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function shanghaiAnalyticsPeriod(now: Date) {
+  const today = shanghaiDateKey(now);
+  const utcDate = new Date(`${today}T00:00:00.000Z`);
+  const isoWeekday = utcDate.getUTCDay() || 7;
+  return {
+    today,
+    tomorrow: dateKeyWithOffset(today, 1),
+    weekStart: dateKeyWithOffset(today, 1 - isoWeekday),
+    monthStart: `${today.slice(0, 8)}01`
+  };
+}
+
+/** 依赖数据库复合唯一键，使用单条 upsert 保证并发请求幂等。 */
+export async function recordDailyUserVisit(
+  prisma: AppPrismaClient,
+  input: DailyUserVisitInput
+) {
+  if (!input.appId || !input.openidHash) throw new Error("trusted client identity is required");
+  const visitDate = shanghaiDateKey(input.now);
+  const visit = await prisma.dailyUserVisit.upsert({
+    where: {
+      appId_openidHash_visitDate: {
+        appId: input.appId,
+        openidHash: input.openidHash,
+        visitDate
+      }
+    },
+    update: {},
+    create: {
+      appId: input.appId,
+      openidHash: input.openidHash,
+      visitDate,
+      createdAt: input.now
+    }
+  });
+  return { id: visit.id, visitDate };
+}
+
+export async function countDailyUserVisits(
+  prisma: AppPrismaClient,
+  input: { from: string; before: string }
+) {
+  return prisma.dailyUserVisit.count({
+    where: { visitDate: { gte: input.from, lt: input.before } }
+  });
+}
+
+export async function dailyUserVisitOverview(prisma: AppPrismaClient, now: Date) {
+  const period = shanghaiAnalyticsPeriod(now);
+  const [todayUniqueUsers, weekDailyUniqueUsers, monthDailyUniqueUsers] = await Promise.all([
+    countDailyUserVisits(prisma, { from: period.today, before: period.tomorrow }),
+    countDailyUserVisits(prisma, { from: period.weekStart, before: period.tomorrow }),
+    countDailyUserVisits(prisma, { from: period.monthStart, before: period.tomorrow })
+  ]);
+  return { todayUniqueUsers, weekDailyUniqueUsers, monthDailyUniqueUsers };
+}
+
+export function dailyUserVisitRetentionCutoff(now: Date, retentionDays: number) {
+  return dateKeyWithOffset(shanghaiDateKey(now), -Math.max(1, retentionDays));
+}
+
+export async function countExpiredDailyUserVisits(
+  prisma: AppPrismaClient,
+  input: { now: Date; retentionDays: number }
+) {
+  return prisma.dailyUserVisit.count({
+    where: { visitDate: { lt: dailyUserVisitRetentionCutoff(input.now, input.retentionDays) } }
+  });
+}
+
+export async function cleanupExpiredDailyUserVisits(
+  prisma: AppPrismaClient,
+  input: { now: Date; retentionDays: number }
+) {
+  const result = await prisma.dailyUserVisit.deleteMany({
+    where: { visitDate: { lt: dailyUserVisitRetentionCutoff(input.now, input.retentionDays) } }
+  });
+  return { deletedCount: result.count };
 }
 
 export function normalizeAnalyticsText(value: string, maxLength: number) {
@@ -117,21 +233,24 @@ export async function recordPageViewEvent(
     now: input.now,
     hmacSecret: input.hmacSecret
   });
-  const sampleWeight = pageViewSampleWeight(input.config.sampleRate);
+  const sampleRate = input.config.sampleRate ?? legacySampleRate;
+  const sampleWeight = pageViewSampleWeight(sampleRate);
 
   if (
     !shouldSamplePageView({
       anonymousFingerprint,
       pagePath,
       scene,
-      sampleRate: input.config.sampleRate,
+      sampleRate,
       hmacSecret: input.hmacSecret
     })
   ) {
     return { sampled: false, tracked: false, deduped: false, sampleWeight: 0 };
   }
 
-  const dedupeWindowStart = new Date(input.now.getTime() - input.config.dedupeWindowSeconds * 1000);
+  const dedupeWindowStart = new Date(
+    input.now.getTime() - (input.config.dedupeWindowSeconds ?? legacyDedupeWindowSeconds) * 1000
+  );
   const duplicate = await prisma.pageViewEvent.findFirst({
     where: {
       anonymousFingerprint,
@@ -206,19 +325,29 @@ export async function runPageViewCleanupCli(args = process.argv.slice(2)) {
     await ensureDatabaseSchema(prisma, { uploadDir: config.paths.uploadDir });
     const now = new Date();
     if (options.dryRun) {
-      const count = await countExpiredPageViewEvents(prisma, {
-        now,
-        retentionDays: config.analytics.retentionDays
-      });
-      console.log(`Expired page-view events would be deleted: ${count}`);
-      return { deletedCount: 0, dryRunCount: count };
+      const [legacyCount, dailyCount] = await Promise.all([
+        countExpiredPageViewEvents(prisma, { now, retentionDays: config.analytics.retentionDays }),
+        countExpiredDailyUserVisits(prisma, { now, retentionDays: config.analytics.retentionDays })
+      ]);
+      console.log(`Expired analytics rows would be deleted: ${legacyCount + dailyCount}`);
+      return { deletedCount: 0, dryRunCount: legacyCount + dailyCount, legacyCount, dailyCount };
     }
-    const result = await cleanupExpiredPageViewEvents(prisma, {
+    const legacyResult = await cleanupExpiredPageViewEvents(prisma, {
       now,
       retentionDays: config.analytics.retentionDays
     });
-    console.log(`Expired page-view events deleted: ${result.deletedCount}`);
-    return { ...result, dryRunCount: null };
+    const dailyResult = await cleanupExpiredDailyUserVisits(prisma, {
+      now,
+      retentionDays: config.analytics.retentionDays
+    });
+    const deletedCount = legacyResult.deletedCount + dailyResult.deletedCount;
+    console.log(`Expired analytics rows deleted: ${deletedCount}`);
+    return {
+      deletedCount,
+      dryRunCount: null,
+      legacyDeletedCount: legacyResult.deletedCount,
+      dailyDeletedCount: dailyResult.deletedCount
+    };
   } finally {
     await prisma.$disconnect();
   }

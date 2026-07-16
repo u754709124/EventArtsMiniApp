@@ -2,7 +2,7 @@
 
 ## 目标
 
-完成生产上线前的 P0/P1 安全加固闭环：禁止破坏性生产 seed，移除默认管理员和固定密码，强制加载 `.env` 并拒绝默认 JWT，增加登录和匿名统计限流，缩短 token 并实现服务器端撤销，避免直接暴露 Fastify 端口，补齐统计治理、严格 CORS、安全日志和后台备份/还原能力。
+完成生产上线前的 P0/P1 安全加固闭环：禁止破坏性生产 seed，移除默认管理员和固定密码，强制加载 `.env` 并拒绝默认 JWT，增加登录和客户端用户统计限流，缩短 token 并实现服务器端撤销，避免直接暴露 Fastify 端口，补齐统计治理、严格 CORS、安全日志和后台备份/还原能力。
 
 ## P0 状态
 
@@ -10,14 +10,14 @@
 - 首个管理员：通过 `admin:bootstrap --password-stdin` 显式创建；不再提供默认管理员和固定密码。
 - 密码轮换：后台提供修改密码入口；修改成功后撤销该管理员所有服务器端 session。
 - 环境变量：API/Admin server build 和 runtime 读取仓库 `.env`；生产默认/弱 JWT 启动即失败。
-- 限流：登录接口按 IP + 用户名限制失败次数；匿名统计接口按 IP 限制请求频率。
+- 限流：登录接口按 IP + 用户名限制失败次数；客户端用户统计接口按 IP 限制请求频率。
 - token/session：管理员 JWT 有效期 2 小时，受保护接口校验服务器端 `jti` session；登出、改密和恢复会撤销 session。
 - 小程序客户端访问边界：R1/G13 已实现 `POST /api/client/auth/wechat` 登录交换、微信 `jscode2session` 服务端 adapter、注入式 fake verifier、客户端会话 hash 存储/过期/撤销和 `/api/client/**` 统一鉴权 hook。R1/G14 已实现 miniapp 请求层 `Taro.login`/`wx.login` code 交换、短期 token 存储、客户端 API bearer 注入、并发登录单飞、401 单次重登重试和 H5 生产绕过禁用测试；G15 补齐 H5 dev/test adapter 与 E2E fake verifier，使本地 H5 调试仍走服务端登录交换。
 - Fastify 端口：默认只绑定 `127.0.0.1`，Nginx 模板仅暴露 HTTPS 反向代理入口；公网端口不可达性仍需目标环境验证。
 
 ## P1 状态
 
-- 统计治理：`pagePath`、`scene`、User-Agent 均有长度限制；匿名指纹不保存原始 IP；默认 10% 确定性采样、30 秒去重、90 天保留，并提供 `analytics:cleanup`。
+- 统计治理：统计身份只来自有效客户端会话中的 `appId + openidHash`；同一微信用户在同一北京时间自然日仅计一次，数据库复合唯一约束与原子 upsert 保证并发幂等。新统计不保存原始微信身份、code、token、IP 或 User-Agent；旧匿名事件不回填、不参与新指标。`PAGE_VIEW_RETENTION_DAYS` 继续控制新旧统计数据保留期，并提供 `analytics:cleanup`。
 - CORS：API 使用 `CORS_ALLOWED_ORIGINS` 显式白名单，拒绝未知、畸形或通配 origin。
 - 错误和日志：未知 5xx 返回通用错误和 `requestId`；结构化日志脱敏 Authorization、Cookie、密码、归档、备份内容和 secret。
 - 微信登录敏感字段：AppSecret、微信登录 code、`session_key`、openid/unionid 和 token 原文均不得进入文档示例、错误响应或结构化日志。G12 已扩展集中日志脱敏字段；G13 实现 verifier 时必须继续使用该路径。
@@ -45,6 +45,14 @@ G13 已在 API 侧实现：
 - `client_sessions` 只保存 opaque token 的 SHA-256 hash、AppID、`openidHash`、`unionidHash`、过期和撤销字段，不保存 raw token、微信 code、`session_key`、openid 或 unionid。
 - 登录交换复用应用层固定窗口限流；超时映射为 `504/WECHAT_AUTH_UNAVAILABLE`，上游/配置不可用映射为 `502/WECHAT_AUTH_UNAVAILABLE`，无效 code 或 AppID 不匹配映射为 `401/INVALID_WECHAT_CODE`。
 - 手写 SQLite bootstrap 已创建 `client_sessions` 表和索引；Prisma schema 已增加 `ClientSession` 模型。既有 SQLite 环境执行 `pnpm --filter api db:push` 会通过 bootstrap 创建缺失表。
+
+每日用户统计沿用该可信客户端会话边界：
+
+- `POST /api/client/track/page-view` 保留原请求体和成功信封，但 `pagePath`、`scene` 不参与身份或去重。
+- 服务端只使用会话中的 `appId + openidHash` 写入 `daily_user_visits`，唯一键为 `appId + openidHash + visitDate`；`visitDate` 是 `Asia/Shanghai` 的 `YYYY-MM-DD`。
+- 今日指标为当天去重用户数；本周从周一开始、本月从每月 1 日开始，周/月指标均为区间内每日去重记录数之和。
+- 原始 openid/unionid、微信 code、token、IP 和 User-Agent 不写入统计表、统计响应或该统计路由日志。
+- 旧 `page_view_events` 只保留兼容清理，不回填、不混入新指标；备份、恢复、测试重置和保留期清理均包含新表。
 
 G14 已在 miniapp 请求层实现：
 

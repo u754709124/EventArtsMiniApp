@@ -23,6 +23,7 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.clientSession.deleteMany();
   await prisma.seedRecord.deleteMany();
   await prisma.operationLog.deleteMany();
+  await prisma.dailyUserVisit.deleteMany();
   await prisma.pageViewEvent.deleteMany();
   await prisma.activityCaseMedia.deleteMany();
   await prisma.article.deleteMany();

@@ -155,6 +155,13 @@ describe("admin backup API", () => {
     await writeFile(path.join(root, "outside.txt"), "outside");
     await symlink(path.join(root, "outside.txt"), path.join(uploadDir, "linked.txt"));
     await prisma.operationLog.create({ data: { action: "PRE_BACKUP_SENTINEL", detail: "before snapshot" } });
+    await prisma.dailyUserVisit.create({
+      data: {
+        appId: "wx-backup-test",
+        openidHash: "backup-openid-hash",
+        visitDate: "2026-07-12"
+      }
+    });
     await startApp();
     const token = await login();
 
@@ -194,6 +201,9 @@ describe("admin backup API", () => {
       await expect(snapshotPrisma.operationLog.findFirstOrThrow({
         where: { action: "PRE_BACKUP_SENTINEL" }
       })).resolves.toMatchObject({ detail: "before snapshot" });
+      await expect(snapshotPrisma.dailyUserVisit.findFirstOrThrow({
+        where: { appId: "wx-backup-test" }
+      })).resolves.toMatchObject({ openidHash: "backup-openid-hash", visitDate: "2026-07-12" });
     } finally {
       await snapshotPrisma.$disconnect();
     }

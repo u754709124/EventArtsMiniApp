@@ -271,6 +271,15 @@ const statements = [
     sampleWeight INTEGER NOT NULL DEFAULT 1,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS daily_user_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appId TEXT NOT NULL,
+    openidHash TEXT NOT NULL,
+    visitDate TEXT NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(appId, openidHash, visitDate)
+  )`,
+  `CREATE INDEX IF NOT EXISTS daily_user_visits_visitDate_idx ON daily_user_visits(visitDate)`,
   `CREATE TABLE IF NOT EXISTS operation_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     action TEXT NOT NULL,

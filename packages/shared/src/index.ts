@@ -609,12 +609,9 @@ export type ClientHomeResponse = {
 };
 
 export type DashboardOverviewResponse = {
-  todayPv: number;
-  weekPv: number;
-  monthPv: number;
-  estimated?: boolean;
-  sampleRate?: number;
-  sampleWeight?: number;
+  todayUniqueUsers: number;
+  weekDailyUniqueUsers: number;
+  monthDailyUniqueUsers: number;
 };
 
 export const passwordPolicy = {

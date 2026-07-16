@@ -45,6 +45,7 @@ import {
   type ArtistDetailDto,
   type ArtistListItemDto,
   type ClientHomeResponse,
+  type DashboardOverviewResponse,
   type DetailPageConfigDto,
   type DetailPageReferenceDto
 } from "../src/index";
@@ -301,6 +302,14 @@ describe("shared contracts", () => {
     });
     expect(() => pageViewRequestSchema.parse({ pagePath: "x".repeat(257), scene: "home" })).toThrow();
     expect(() => pageViewRequestSchema.parse({ pagePath: "/pages/index/index", scene: "x".repeat(65) })).toThrow();
+  });
+
+  it("defines the exact daily unique-user dashboard contract", () => {
+    expectTypeOf<DashboardOverviewResponse>().toEqualTypeOf<{
+      todayUniqueUsers: number;
+      weekDailyUniqueUsers: number;
+      monthDailyUniqueUsers: number;
+    }>();
   });
 
   it("defines backup manifest and delete/restore confirmation contracts", () => {

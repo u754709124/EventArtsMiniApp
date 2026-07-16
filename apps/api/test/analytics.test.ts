@@ -4,13 +4,17 @@ import path from "node:path";
 import { analyticsFieldLimits } from "@event-arts/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  cleanupExpiredDailyUserVisits,
   cleanupExpiredPageViewEvents,
+  countExpiredDailyUserVisits,
   countExpiredPageViewEvents,
-  createAnonymousFingerprint,
-  shouldSamplePageView,
-  type PageViewAnalyticsConfig
+  dailyUserVisitOverview,
+  recordDailyUserVisit,
+  shanghaiAnalyticsPeriod,
+  shanghaiDateKey
 } from "../src/analytics";
 import { buildApp } from "../src/app";
+import { hashClientSessionToken, revokeClientSession } from "../src/client-auth";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
@@ -30,48 +34,14 @@ let clockNow: Date;
 let clientToken: string;
 
 const jwtSecret = "analytics-test-secret-with-more-than-32-chars";
-const defaultAnalyticsConfig: PageViewAnalyticsConfig = {
-  sampleRate: 0.1,
-  retentionDays: 90,
-  dedupeWindowSeconds: 30
-};
 
 function advanceClock(ms: number) {
   clockNow = new Date(clockNow.getTime() + ms);
 }
 
-function sampleDecision(input: {
-  ip: string;
-  pagePath: string;
-  scene?: string;
-  userAgent?: string;
-  sampleRate?: number;
-}) {
-  const anonymousFingerprint = createAnonymousFingerprint({
-    clientIp: input.ip,
-    userAgent: input.userAgent ?? null,
-    now: clockNow,
-    hmacSecret: jwtSecret
-  });
-  return shouldSamplePageView({
-    anonymousFingerprint,
-    pagePath: input.pagePath,
-    scene: input.scene ?? null,
-    sampleRate: input.sampleRate ?? defaultAnalyticsConfig.sampleRate,
-    hmacSecret: jwtSecret
-  });
-}
-
-function findIpForSampleDecision(sampled: boolean, input: { pagePath: string; scene?: string; userAgent?: string }) {
-  for (let index = 1; index < 5000; index += 1) {
-    const ip = `198.51.${Math.floor(index / 255)}.${index % 255}`;
-    if (sampleDecision({ ip, ...input }) === sampled) return ip;
-  }
-  throw new Error(`Unable to find sampled=${sampled} IP`);
-}
-
 function postPageView(input: {
-  pagePath: string;
+  token?: string;
+  pagePath?: string;
   scene?: string;
   ip?: string;
   userAgent?: string;
@@ -81,24 +51,46 @@ function postPageView(input: {
     url: "/api/client/track/page-view",
     remoteAddress: input.ip ?? "198.51.100.10",
     headers: {
-      ...clientAuthHeaders(clientToken),
+      ...(input.token ? clientAuthHeaders(input.token) : {}),
       ...(input.userAgent ? { "user-agent": input.userAgent } : {})
     },
-    payload: { pagePath: input.pagePath, scene: input.scene }
+    payload: { pagePath: input.pagePath ?? "/pages/index/index", scene: input.scene }
   });
 }
 
-async function login() {
+async function loginAdmin() {
   const response = await app.inject({
     method: "POST",
     url: "/api/admin/auth/login",
     payload: testAdminCredentials
   });
   expect(response.statusCode).toBe(200);
-  return response.json().data.token as string;
+  return String(response.json().data.token);
 }
 
-async function createApp(analytics: PageViewAnalyticsConfig = defaultAnalyticsConfig) {
+async function getOverview() {
+  const token = await loginAdmin();
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/admin/dashboard/overview",
+    headers: { authorization: `Bearer ${token}` }
+  });
+  expect(response.statusCode).toBe(200);
+  return response.json().data as {
+    todayUniqueUsers: number;
+    weekDailyUniqueUsers: number;
+    monthDailyUniqueUsers: number;
+  };
+}
+
+beforeEach(async () => {
+  root = await mkdtemp(path.join(os.tmpdir(), "event-arts-daily-users-"));
+  uploadDir = path.join(root, "uploads");
+  await mkdir(uploadDir, { recursive: true });
+  clockNow = new Date("2026-07-12T08:30:00.000Z");
+  prisma = createPrismaClient(`file:${path.join(root, "test.db")}`);
+  await ensureDatabaseSchema(prisma, { uploadDir });
+  await resetTestAdmin(prisma);
   app = await buildApp({
     prisma,
     jwtSecret,
@@ -106,20 +98,9 @@ async function createApp(analytics: PageViewAnalyticsConfig = defaultAnalyticsCo
     publicBaseUrl: "http://127.0.0.1:3001",
     now: () => clockNow,
     clientAuth: testClientAuthConfig,
-    weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier(),
-    analytics
+    weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier()
   });
-  clientToken = await loginClient(app);
-}
-
-beforeEach(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), "event-arts-g05-"));
-  uploadDir = path.join(root, "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  clockNow = new Date("2026-07-12T08:30:00.000Z");
-  prisma = createPrismaClient(`file:${path.join(root, "test.db")}`);
-  await ensureDatabaseSchema(prisma, { uploadDir });
-  await resetTestAdmin(prisma);
+  clientToken = await loginClient(app, "same-wechat-user");
 });
 
 afterEach(async () => {
@@ -128,177 +109,174 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe("page-view sampling and anonymization", () => {
-  it("uses deterministic 10% sampling and stores weighted anonymous events", async () => {
-    await createApp();
-    const pagePath = "/pages/index/index";
-    const scene = "home";
-    const userAgent = "  Test Browser   1.0  ";
-    const sampledIp = findIpForSampleDecision(true, { pagePath, scene, userAgent: "Test Browser 1.0" });
-    const unsampledIp = findIpForSampleDecision(false, { pagePath, scene, userAgent: "Test Browser 1.0" });
+describe("daily WeChat user analytics", () => {
+  it("counts one valid WeChat identity once per Beijing day across pages, scenes, sessions, IPs, and retries", async () => {
+    const secondSessionToken = await loginClient(app, "same-wechat-user");
 
-    expect(sampleDecision({ ip: sampledIp, pagePath, scene, userAgent: "Test Browser 1.0" })).toBe(true);
-    expect(sampleDecision({ ip: sampledIp, pagePath, scene, userAgent: "Test Browser 1.0" })).toBe(true);
-    expect(sampleDecision({ ip: unsampledIp, pagePath, scene, userAgent: "Test Browser 1.0" })).toBe(false);
+    const responses = await Promise.all([
+      postPageView({ token: clientToken, pagePath: "/pages/index/index", scene: "home" }),
+      postPageView({ token: clientToken, pagePath: "/pages/artists/list", scene: "menu", ip: "203.0.113.8" }),
+      postPageView({ token: secondSessionToken, pagePath: "/pages/detail/index", scene: "detail", userAgent: "Other Browser" }),
+      ...Array.from({ length: 12 }, () => postPageView({ token: secondSessionToken }))
+    ]);
 
-    expect((await postPageView({ pagePath, scene, ip: sampledIp, userAgent })).statusCode).toBe(200);
-    expect((await postPageView({ pagePath, scene, ip: unsampledIp, userAgent })).statusCode).toBe(200);
-
-    const rows = await prisma.pageViewEvent.findMany();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      pagePath,
-      scene,
-      userAgent: "Test Browser 1.0",
-      sampleWeight: 10
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    expect(await prisma.dailyUserVisit.count()).toBe(1);
+    expect(await prisma.pageViewEvent.count()).toBe(0);
+    expect(await getOverview()).toEqual({
+      todayUniqueUsers: 1,
+      weekDailyUniqueUsers: 1,
+      monthDailyUniqueUsers: 1
     });
-    expect(rows[0].anonymousFingerprint).toHaveLength(64);
-    expect(rows[0].anonymousFingerprint).not.toContain(sampledIp);
 
-    const token = await login();
-    const overview = await app.inject({
-      method: "GET",
-      url: "/api/admin/dashboard/overview",
-      headers: { authorization: `Bearer ${token}` }
+    const row = await prisma.dailyUserVisit.findFirstOrThrow();
+    expect(row).toMatchObject({ appId: testClientAuthConfig.wechat.appId, visitDate: "2026-07-12" });
+    expect(row.openidHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(row)).not.toContain("same-wechat-user");
+    expect(JSON.stringify(row)).not.toContain("198.51.100.10");
+    expect(JSON.stringify(row)).not.toContain("Other Browser");
+  });
+
+  it("counts different valid identities separately and counts the same identity again after Beijing midnight", async () => {
+    const otherUserToken = await loginClient(app, "different-wechat-user");
+    expect((await postPageView({ token: clientToken })).statusCode).toBe(200);
+    expect((await postPageView({ token: otherUserToken })).statusCode).toBe(200);
+    expect(await prisma.dailyUserVisit.count()).toBe(2);
+
+    clockNow = new Date("2026-07-12T15:59:59.999Z");
+    const boundarySessionToken = await loginClient(app, "same-wechat-user");
+    expect((await postPageView({ token: boundarySessionToken })).statusCode).toBe(200);
+    expect(await prisma.dailyUserVisit.count()).toBe(2);
+
+    clockNow = new Date("2026-07-12T16:00:00.000Z");
+    expect((await postPageView({ token: boundarySessionToken })).statusCode).toBe(200);
+    expect(await prisma.dailyUserVisit.count()).toBe(3);
+    expect(await prisma.dailyUserVisit.findMany({ orderBy: { visitDate: "asc" } })).toEqual([
+      expect.objectContaining({ visitDate: "2026-07-12" }),
+      expect.objectContaining({ visitDate: "2026-07-12" }),
+      expect.objectContaining({ visitDate: "2026-07-13" })
+    ]);
+  });
+
+  it("rejects missing, invalid, administrator, expired, and revoked tokens without recording a user", async () => {
+    const adminToken = await loginAdmin();
+    const expiredToken = await loginClient(app, "expired-user");
+    advanceClock(testClientAuthConfig.sessionTtlSeconds * 1000 + 1);
+
+    const expired = await postPageView({ token: expiredToken });
+    clockNow = new Date("2026-07-12T08:30:00.000Z");
+    const revokedToken = await loginClient(app, "revoked-user");
+    await revokeClientSession(prisma, {
+      tokenHash: hashClientSessionToken(revokedToken),
+      reason: "manual",
+      now: clockNow
     });
-    expect(overview.statusCode).toBe(200);
-    expect(overview.json().data).toMatchObject({
-      todayPv: 10,
-      weekPv: 10,
-      monthPv: 10,
-      estimated: true,
-      sampleRate: 0.1,
-      sampleWeight: 10
+
+    const responses = [
+      await postPageView({}),
+      await postPageView({ token: "invalid-client-token" }),
+      await postPageView({ token: adminToken }),
+      expired,
+      await postPageView({ token: revokedToken })
+    ];
+
+    expect(responses.map((response) => response.statusCode)).toEqual([401, 401, 401, 401, 401]);
+    expect(await prisma.dailyUserVisit.count()).toBe(0);
+  });
+
+  it("uses Beijing day, Monday week start, month start, and excludes future and legacy rows", async () => {
+    expect(shanghaiDateKey(new Date("2026-07-12T15:59:59.999Z"))).toBe("2026-07-12");
+    expect(shanghaiDateKey(new Date("2026-07-12T16:00:00.000Z"))).toBe("2026-07-13");
+    expect(shanghaiAnalyticsPeriod(new Date("2026-07-15T12:00:00.000Z"))).toEqual({
+      today: "2026-07-15",
+      tomorrow: "2026-07-16",
+      weekStart: "2026-07-13",
+      monthStart: "2026-07-01"
+    });
+
+    for (const [visitDate, openidHash] of [
+      ["2026-06-30", "previous-month"],
+      ["2026-07-01", "month-start"],
+      ["2026-07-12", "previous-week"],
+      ["2026-07-13", "week-start"],
+      ["2026-07-15", "today-a"],
+      ["2026-07-15", "today-b"],
+      ["2026-07-16", "future"]
+    ] as const) {
+      await prisma.dailyUserVisit.create({
+        data: { appId: testClientAuthConfig.wechat.appId, openidHash, visitDate }
+      });
+    }
+    await prisma.pageViewEvent.create({
+      data: { pagePath: "/legacy", anonymousFingerprint: "legacy", sampleWeight: 999 }
+    });
+
+    expect(await dailyUserVisitOverview(prisma, new Date("2026-07-15T12:00:00.000Z"))).toEqual({
+      todayUniqueUsers: 2,
+      weekDailyUniqueUsers: 3,
+      monthDailyUniqueUsers: 5
     });
   });
 
-  it("deduplicates the same anonymous fingerprint, page, and scene inside the configured window", async () => {
-    await createApp({ sampleRate: 1, retentionDays: 90, dedupeWindowSeconds: 30 });
+  it("keeps AppIDs separate and relies on the database unique key for concurrent idempotency", async () => {
+    const now = new Date("2026-07-12T08:30:00.000Z");
+    await Promise.all(
+      Array.from({ length: 20 }, () =>
+        recordDailyUserVisit(prisma, { appId: "wx-app-a", openidHash: "same-hash", now })
+      )
+    );
+    await recordDailyUserVisit(prisma, { appId: "wx-app-b", openidHash: "same-hash", now });
 
-    expect((await postPageView({ pagePath: "/pages/index/index", scene: "home" })).statusCode).toBe(200);
-    advanceClock(29_000);
-    expect((await postPageView({ pagePath: "/pages/index/index", scene: "home" })).statusCode).toBe(200);
-    expect(await prisma.pageViewEvent.count()).toBe(1);
-
-    advanceClock(2_000);
-    expect((await postPageView({ pagePath: "/pages/index/index", scene: "home" })).statusCode).toBe(200);
-    expect(await prisma.pageViewEvent.count()).toBe(2);
-
-    expect((await postPageView({ pagePath: "/pages/index/index", scene: "detail" })).statusCode).toBe(200);
-    expect(await prisma.pageViewEvent.count()).toBe(3);
+    expect(await prisma.dailyUserVisit.count()).toBe(2);
+    await expect(
+      prisma.dailyUserVisit.create({
+        data: { appId: "wx-app-a", openidHash: "same-hash", visitDate: "2026-07-12" }
+      })
+    ).rejects.toMatchObject({ code: "P2002" });
   });
 
-  it("enforces page and scene boundaries and clamps normalized user-agent storage", async () => {
-    await createApp({ sampleRate: 1, retentionDays: 90, dedupeWindowSeconds: 30 });
+  it("keeps request validation compatibility without storing page, scene, IP, or User-Agent", async () => {
     const maxPagePath = `/${"p".repeat(analyticsFieldLimits.pagePathMaxLength - 1)}`;
     const maxScene = "s".repeat(analyticsFieldLimits.sceneMaxLength);
-    const longUserAgent = `  ${"Browser ".repeat(80)}  `;
-
-    const accepted = await postPageView({
-      pagePath: maxPagePath,
-      scene: maxScene,
-      userAgent: longUserAgent
-    });
-    expect(accepted.statusCode).toBe(200);
-    const row = await prisma.pageViewEvent.findFirstOrThrow();
-    expect(row.pagePath).toBe(maxPagePath);
-    expect(row.scene).toBe(maxScene);
-    expect(row.userAgent).toHaveLength(analyticsFieldLimits.userAgentMaxLength);
+    expect((await postPageView({ token: clientToken, pagePath: maxPagePath, scene: maxScene })).statusCode).toBe(200);
 
     const tooLongPage = await postPageView({
-      pagePath: `/${"p".repeat(analyticsFieldLimits.pagePathMaxLength)}`,
-      scene: "home"
+      token: clientToken,
+      pagePath: `/${"p".repeat(analyticsFieldLimits.pagePathMaxLength)}`
     });
-    expect(tooLongPage.statusCode).toBe(400);
-    expect(tooLongPage.json().error.code).toBe("VALIDATION_ERROR");
-
     const tooLongScene = await postPageView({
-      pagePath: "/pages/index/index",
+      token: clientToken,
       scene: "s".repeat(analyticsFieldLimits.sceneMaxLength + 1)
     });
+    expect(tooLongPage.statusCode).toBe(400);
     expect(tooLongScene.statusCode).toBe(400);
-    expect(tooLongScene.json().error.code).toBe("VALIDATION_ERROR");
+    expect(await prisma.dailyUserVisit.count()).toBe(1);
   });
 
-  it("aggregates dashboard PV by sample weight", async () => {
-    await createApp();
+  it("cleans expired daily and legacy analytics while preserving retention-boundary rows", async () => {
+    const now = new Date("2026-07-12T12:00:00.000Z");
+    await prisma.dailyUserVisit.createMany({
+      data: [
+        { appId: "wx", openidHash: "expired", visitDate: "2026-04-12" },
+        { appId: "wx", openidHash: "boundary", visitDate: "2026-04-13" }
+      ]
+    });
     await prisma.pageViewEvent.createMany({
       data: [
-        {
-          pagePath: "/today",
-          anonymousFingerprint: "today-a",
-          sampleWeight: 10,
-          createdAt: new Date("2026-07-12T07:00:00.000Z")
-        },
-        {
-          pagePath: "/today",
-          anonymousFingerprint: "today-b",
-          sampleWeight: 10,
-          createdAt: new Date("2026-07-12T07:10:00.000Z")
-        },
-        {
-          pagePath: "/week",
-          anonymousFingerprint: "week-a",
-          sampleWeight: 10,
-          createdAt: new Date("2026-07-08T07:00:00.000Z")
-        },
-        {
-          pagePath: "/month",
-          anonymousFingerprint: "month-a",
-          sampleWeight: 10,
-          createdAt: new Date("2026-07-02T07:00:00.000Z")
-        }
+        { pagePath: "/expired", anonymousFingerprint: "expired", createdAt: new Date("2026-04-12T11:59:59.999Z") },
+        { pagePath: "/boundary", anonymousFingerprint: "boundary", createdAt: new Date("2026-04-13T12:00:00.000Z") }
       ]
     });
 
-    const token = await login();
-    const overview = await app.inject({
-      method: "GET",
-      url: "/api/admin/dashboard/overview",
-      headers: { authorization: `Bearer ${token}` }
-    });
-
-    expect(overview.statusCode).toBe(200);
-    expect(overview.json().data).toMatchObject({
-      todayPv: 20,
-      weekPv: 30,
-      monthPv: 40
-    });
-  });
-
-  it("keeps retention boundary records and deletes only events older than retention days", async () => {
-    await createApp();
-    const now = new Date("2026-07-12T00:00:00.000Z");
-    await prisma.pageViewEvent.createMany({
-      data: [
-        {
-          pagePath: "/expired",
-          anonymousFingerprint: "expired",
-          sampleWeight: 10,
-          createdAt: new Date("2026-04-12T23:59:59.999Z")
-        },
-        {
-          pagePath: "/boundary",
-          anonymousFingerprint: "boundary",
-          sampleWeight: 10,
-          createdAt: new Date("2026-04-13T00:00:00.000Z")
-        },
-        {
-          pagePath: "/inside",
-          anonymousFingerprint: "inside",
-          sampleWeight: 10,
-          createdAt: new Date("2026-04-13T00:00:00.001Z")
-        }
-      ]
-    });
-
+    await expect(countExpiredDailyUserVisits(prisma, { now, retentionDays: 90 })).resolves.toBe(1);
     await expect(countExpiredPageViewEvents(prisma, { now, retentionDays: 90 })).resolves.toBe(1);
-    await expect(cleanupExpiredPageViewEvents(prisma, { now, retentionDays: 90 })).resolves.toEqual({
-      deletedCount: 1
-    });
-    await expect(prisma.pageViewEvent.findMany({ orderBy: { pagePath: "asc" } })).resolves.toEqual([
-      expect.objectContaining({ pagePath: "/boundary" }),
-      expect.objectContaining({ pagePath: "/inside" })
+    await expect(cleanupExpiredDailyUserVisits(prisma, { now, retentionDays: 90 })).resolves.toEqual({ deletedCount: 1 });
+    await expect(cleanupExpiredPageViewEvents(prisma, { now, retentionDays: 90 })).resolves.toEqual({ deletedCount: 1 });
+    await expect(prisma.dailyUserVisit.findMany()).resolves.toEqual([
+      expect.objectContaining({ openidHash: "boundary" })
+    ]);
+    await expect(prisma.pageViewEvent.findMany()).resolves.toEqual([
+      expect.objectContaining({ pagePath: "/boundary" })
     ]);
   });
 });

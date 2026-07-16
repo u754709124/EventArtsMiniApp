@@ -328,6 +328,18 @@ model PageViewEvent {
   @@map("page_view_events")
 }
 
+model DailyUserVisit {
+  id         Int      @id @default(autoincrement())
+  appId      String
+  openidHash String
+  visitDate  String
+  createdAt  DateTime @default(now())
+
+  @@unique([appId, openidHash, visitDate])
+  @@index([visitDate])
+  @@map("daily_user_visits")
+}
+
 model OperationLog {
   id        Int      @id @default(autoincrement())
   action    String

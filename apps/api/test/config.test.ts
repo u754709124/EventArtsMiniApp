@@ -128,7 +128,6 @@ describe("API configuration", () => {
           LOGIN_RATE_LIMIT_MAX_FAILURES: "5",
           ANALYTICS_RATE_LIMIT_WINDOW_MS: "60000",
           ANALYTICS_RATE_LIMIT_MAX_REQUESTS: "60",
-          PAGE_VIEW_SAMPLE_RATE: "0.1",
           PAGE_VIEW_RETENTION_DAYS: "90"
         }
       });
@@ -145,7 +144,7 @@ describe("API configuration", () => {
       });
       expect(config.rateLimit.login).toEqual({ windowMs: 900000, maxFailures: 5 });
       expect(config.rateLimit.analytics).toEqual({ windowMs: 60000, maxRequests: 60 });
-      expect(config.analytics).toMatchObject({ sampleRate: 0.1, retentionDays: 90 });
+      expect(config.analytics).toEqual({ retentionDays: 90 });
     });
   });
 

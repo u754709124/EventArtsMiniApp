@@ -110,9 +110,8 @@ import {
   type ApiLoggerOptions
 } from "./logging";
 import {
-  defaultPageViewAnalyticsConfig,
-  recordPageViewEvent,
-  weightedPageViewCount,
+  dailyUserVisitOverview,
+  recordDailyUserVisit,
   type PageViewAnalyticsConfig
 } from "./analytics";
 import {
@@ -159,7 +158,7 @@ type BuildOptions = {
   backupHooks?: BackupServiceHooks;
   rateLimit?: AppRateLimitConfig;
   rateLimitStore?: RateLimitStore;
-  analytics?: PageViewAnalyticsConfig;
+  analytics?: ApiConfig["analytics"] | PageViewAnalyticsConfig;
   clientAuth?: ApiConfig["clientAuth"];
   weChatLoginCodeVerifier?: WeChatLoginCodeVerifier;
 };
@@ -535,21 +534,6 @@ async function legacyCaseMediaFromDetailPage(prisma: AppPrismaClient, detailPage
   });
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfWeek(date: Date) {
-  const day = date.getDay() || 7;
-  const start = startOfDay(date);
-  start.setDate(start.getDate() - day + 1);
-  return start;
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
 async function assetUrl(prisma: AppPrismaClient, id: number | null | undefined, publicBaseUrl: string) {
   if (!id) return "";
   const asset = await prisma.mediaAsset.findUnique({ where: { id } });
@@ -794,7 +778,6 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   const uploadLimits = getUploadLimits();
   const currentTime = options.now ?? (() => new Date());
   const rateLimitConfig = options.rateLimit ?? defaultAppRateLimit;
-  const analyticsConfig = options.analytics ?? defaultPageViewAnalyticsConfig;
   const clientAuthConfig = options.clientAuth ?? defaultTestClientAuthConfig();
   const weChatLoginCodeVerifier =
     options.weChatLoginCodeVerifier ?? createClientAuthVerifier(clientAuthConfig);
@@ -1276,20 +1259,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   app.get("/api/admin/dashboard/overview", { preHandler: requireAdmin }, async (_request, reply) => {
-    const now = currentTime();
-    const [todayPv, weekPv, monthPv] = await Promise.all([
-      weightedPageViewCount(prisma, startOfDay(now)),
-      weightedPageViewCount(prisma, startOfWeek(now)),
-      weightedPageViewCount(prisma, startOfMonth(now))
-    ]);
+    const overview = await dailyUserVisitOverview(prisma, currentTime());
     return reply.send(
       ok({
-        todayPv,
-        weekPv,
-        monthPv,
-        estimated: analyticsConfig.sampleRate < 1,
-        sampleRate: analyticsConfig.sampleRate,
-        sampleWeight: Math.max(1, Math.round(1 / analyticsConfig.sampleRate))
+        todayUniqueUsers: overview.todayUniqueUsers,
+        weekDailyUniqueUsers: overview.weekDailyUniqueUsers,
+        monthDailyUniqueUsers: overview.monthDailyUniqueUsers
       })
     );
   });
@@ -1757,30 +1732,33 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok(items.map((item) => serializeMenuItem(item, options.publicBaseUrl))));
   });
 
-  app.post("/api/client/track/page-view", async (request, reply) => {
+  app.post("/api/client/track/page-view", { logLevel: "silent" }, async (request: ClientRequest, reply) => {
     const limitDecision = await rateLimiter.consume(
       analyticsRateLimitKey(trustedClientIp(request)),
       analyticsLimiterPolicy
     );
     if (!limitDecision.allowed) {
-      logSecurityEvent(request, "analytics_rate_limited", {
-        clientIp: trustedClientIp(request),
-        retryAfterSeconds: limitDecision.retryAfterSeconds,
-        resetAt: limitDecision.resetAt
-      }, "warn");
+      app.log.warn({
+        event: "security",
+        securityEvent: "analytics_rate_limited",
+        requestId: request.id,
+        method: request.method,
+        url: request.url,
+        route: request.routeOptions.url,
+        details: {
+          retryAfterSeconds: limitDecision.retryAfterSeconds,
+          resetAt: limitDecision.resetAt
+        }
+      }, "security event");
       return sendRateLimitError(reply, limitDecision);
     }
 
     const parsed = pageViewRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "页面统计参数错误");
-    await recordPageViewEvent(prisma, {
-      pagePath: parsed.data.pagePath,
-      scene: parsed.data.scene,
-      userAgent: request.headers["user-agent"],
-      clientIp: trustedClientIp(request),
-      now: currentTime(),
-      hmacSecret: options.jwtSecret,
-      config: analyticsConfig
+    await recordDailyUserVisit(prisma, {
+      appId: request.clientSession!.appId,
+      openidHash: request.clientSession!.openidHash,
+      now: currentTime()
     });
     return reply.send(ok({}));
   });

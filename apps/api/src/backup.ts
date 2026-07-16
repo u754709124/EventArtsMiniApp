@@ -523,6 +523,7 @@ async function tableCounts(prisma: AppPrismaClient) {
     "detail_page_configs",
     "detail_page_banner_media",
     "detail_page_content_media",
+    "daily_user_visits",
     "page_view_events",
     "operation_logs"
   ];

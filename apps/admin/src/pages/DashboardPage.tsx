@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Space, Spin, message } from "antd";
+import { Card, Space, Spin, Typography, message } from "antd";
 import type { DashboardOverviewResponse } from "@event-arts/shared";
 import { PageHeader } from "../components/PageHeader";
 import { request } from "../api";
@@ -18,29 +18,31 @@ export function DashboardPage() {
   return (
     <div className="page-stack">
       <PageHeader title="数据看板" breadcrumbs={["数据看板"]} />
+      <Typography.Paragraph type="secondary">
+        按北京时间统计，同一微信用户每天仅计一次；本周和本月为每日去重用户数累计。
+      </Typography.Paragraph>
       <Spin spinning={loading}>
         <Space size={16} wrap>
           <Card
             className="metric-card"
             data-testid="dashboard-pv-today"
-            title={data?.estimated ? "今日估算浏览人次" : "今日浏览人次"}
+            title="今日去重用户数"
           >
-            <strong>{data?.todayPv ?? 0}</strong>
-            {data?.estimated ? <span>估算</span> : null}
+            <strong>{data?.todayUniqueUsers ?? 0}</strong>
           </Card>
           <Card
             className="metric-card"
             data-testid="dashboard-pv-week"
-            title={data?.estimated ? "本周估算浏览人次" : "本周浏览人次"}
+            title="本周每日去重累计"
           >
-            <strong>{data?.weekPv ?? 0}</strong>
+            <strong>{data?.weekDailyUniqueUsers ?? 0}</strong>
           </Card>
           <Card
             className="metric-card"
             data-testid="dashboard-pv-month"
-            title={data?.estimated ? "本月估算浏览人次" : "本月浏览人次"}
+            title="本月每日去重累计"
           >
-            <strong>{data?.monthPv ?? 0}</strong>
+            <strong>{data?.monthDailyUniqueUsers ?? 0}</strong>
           </Card>
         </Space>
       </Spin>

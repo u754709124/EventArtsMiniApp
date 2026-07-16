@@ -1435,8 +1435,8 @@ describe("media upload and references", () => {
   });
 });
 
-describe("page-view analytics", () => {
-  it("records page views and increases dashboard PV", async () => {
+describe("daily WeChat user analytics", () => {
+  it("records one valid client user and increases the daily unique-user overview", async () => {
     const token = await login();
     const before = await app.inject({
       method: "GET",
@@ -1456,8 +1456,12 @@ describe("page-view analytics", () => {
       headers: { authorization: `Bearer ${token}` }
     });
 
-    expect(after.json().data.todayPv).toBe(before.json().data.todayPv + 1);
-    expect(after.json().data.weekPv).toBeGreaterThanOrEqual(after.json().data.todayPv);
-    expect(after.json().data.monthPv).toBeGreaterThanOrEqual(after.json().data.weekPv);
+    expect(after.json().data.todayUniqueUsers).toBe(before.json().data.todayUniqueUsers + 1);
+    expect(after.json().data.weekDailyUniqueUsers).toBeGreaterThanOrEqual(
+      after.json().data.todayUniqueUsers
+    );
+    expect(after.json().data.monthDailyUniqueUsers).toBeGreaterThanOrEqual(
+      after.json().data.weekDailyUniqueUsers
+    );
   });
 });

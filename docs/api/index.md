@@ -31,7 +31,7 @@ CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 或 IP 白名单�
 
 管理员 token 有效期为 2 小时，JWT 内含 `jti`，每次受保护请求都会校验服务器端 session 状态。登出、修改密码和全量恢复会写撤销状态；被撤销、过期或不存在的 session 即使 JWT 未过期也不能继续访问后台接口。
 
-应用层限流使用固定窗口策略。登录限流默认由 `LOGIN_RATE_LIMIT_WINDOW_MS=900000` 和 `LOGIN_RATE_LIMIT_MAX_FAILURES=5` 控制；匿名页面统计限流默认由 `ANALYTICS_RATE_LIMIT_WINDOW_MS=60000` 和 `ANALYTICS_RATE_LIMIT_MAX_REQUESTS=60` 控制。
+应用层限流使用固定窗口策略。登录限流默认由 `LOGIN_RATE_LIMIT_WINDOW_MS=900000` 和 `LOGIN_RATE_LIMIT_MAX_FAILURES=5` 控制；客户端用户统计限流默认由 `ANALYTICS_RATE_LIMIT_WINDOW_MS=60000` 和 `ANALYTICS_RATE_LIMIT_MAX_REQUESTS=60` 控制。
 
 ## Client
 
@@ -79,7 +79,7 @@ CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 或 IP 白名单�
 | `CLIENT_SESSION_TTL_SECONDS` | `1800` | 客户端会话有效期，默认 30 分钟 |
 | `WECHAT_CODE2SESSION_TIMEOUT_MS` | `3000` | 服务端调用微信 `code2Session` 的上游超时 |
 
-`POST /api/client/track/page-view` 请求体为 `{ "pagePath": string, "scene"?: string }`。`pagePath` trim 后最长 256 字符，`scene` trim 后最长 64 字符；User-Agent 会规范化并最多保存 256 字符。服务端使用可信客户端 IP 与规范化 User-Agent 生成每日轮换 HMAC 匿名指纹，不保存原始 IP。页面访问默认按 10% 确定性采样，入库记录携带 `sampleWeight=10`，同一匿名指纹、页面和场景在 30 秒内只计一次。
+`POST /api/client/track/page-view` 请求体继续兼容 `{ "pagePath": string, "scene"?: string }`；`pagePath` trim 后为 1–256 字符，`scene` 若提供则 trim 后为 1–64 字符，成功响应继续使用空对象数据的统一信封。该接口必须携带有效客户端会话；统计身份只取服务端微信登录校验后会话中的 `appId + openidHash`。`pagePath` 和 `scene` 只做兼容校验，不参与去重，也不写入新日统计表。同一 AppID 下同一微信用户在同一北京时间自然日只计一次，无论页面、场景、客户端会话或请求次数如何；跨日可再次计数。写入由数据库复合唯一约束和原子 upsert 保证并发幂等。新统计不存储原始 openid、unionid、微信 code、token、IP 或 User-Agent；旧匿名页面事件不回填且不参与新指标。
 
 案例详情的兼容 `media` 从独立详情页派生；小程序以公共 `/api/client/detail-pages/:id` 返回的 `blocks` 为准，不直接渲染兼容列表。
 
@@ -274,7 +274,7 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 - `GET /api/admin/detail-pages/:id/references`
 - `POST /api/admin/detail-pages/preview`
 
-`GET /api/admin/dashboard/overview` 返回兼容字段 `todayPv`、`weekPv`、`monthPv`，这些值按 `sampleWeight` 加权聚合，表示估算浏览人次；响应可包含 `estimated`、`sampleRate` 和 `sampleWeight` 说明采样语义。
+`GET /api/admin/dashboard/overview` 返回 `{ "todayUniqueUsers": number, "weekDailyUniqueUsers": number, "monthDailyUniqueUsers": number }`。`todayUniqueUsers` 是当前北京时间自然日的去重微信用户数；`weekDailyUniqueUsers` 是本周周一至今天的每日去重用户数之和；`monthDailyUniqueUsers` 是本月第一日至今天的每日去重用户数之和。同一用户跨日会在周期累计中再次贡献一次。该接口只聚合 `daily_user_visits`，不包含旧匿名事件，不返回 PV、估算值或采样参数。
 
 公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
 
