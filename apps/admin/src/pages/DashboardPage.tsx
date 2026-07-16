@@ -26,21 +26,21 @@ export function DashboardPage() {
           <Card
             className="metric-card"
             data-testid="dashboard-pv-today"
-            title="今日去重用户数"
+            title="今日浏览量"
           >
             <strong>{data?.todayUniqueUsers ?? 0}</strong>
           </Card>
           <Card
             className="metric-card"
             data-testid="dashboard-pv-week"
-            title="本周每日去重累计"
+            title="本周浏览量"
           >
             <strong>{data?.weekDailyUniqueUsers ?? 0}</strong>
           </Card>
           <Card
             className="metric-card"
             data-testid="dashboard-pv-month"
-            title="本月每日去重累计"
+            title="本月浏览量"
           >
             <strong>{data?.monthDailyUniqueUsers ?? 0}</strong>
           </Card>

@@ -348,9 +348,9 @@ test("未登录访问后台跳转登录", async ({ page }) => {
 
 test("登录成功进入看板并展示 PV", async ({ page }) => {
   await loginAdminUi(page);
-  await expect(page.getByTestId("dashboard-pv-today")).toContainText(/\d+/);
-  await expect(page.getByTestId("dashboard-pv-week")).toContainText(/\d+/);
-  await expect(page.getByTestId("dashboard-pv-month")).toContainText(/\d+/);
+  await expect(page.getByTestId("dashboard-pv-today")).toContainText(/今日浏览量.*\d+/s);
+  await expect(page.getByTestId("dashboard-pv-week")).toContainText(/本周浏览量.*\d+/s);
+  await expect(page.getByTestId("dashboard-pv-month")).toContainText(/本月浏览量.*\d+/s);
 });
 
 test("修改密码后撤销旧 token 并要求重新登录", async ({ page, request }) => {
