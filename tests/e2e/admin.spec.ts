@@ -487,6 +487,9 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   });
 
   dashboardData = edgeOneReadyOverview(2);
+  if (dashboardData.edgeOne.status !== "ready") throw new Error("E2E fixture must be ready");
+  dashboardData.edgeOne.last24Hours.trafficBytes = 750_000_000;
+  dashboardData.edgeOne.last24Hours.requestCount = 999;
   const leaveOnlySecret = ["leave", "only", Date.now()].join("-");
   await page.getByTestId("edgeone-secret-key").fill(leaveOnlySecret);
   page.once("dialog", (dialog) => dialog.accept());
@@ -503,10 +506,13 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
       storageValues.some((value) => value.includes(secret));
   }, leaveOnlySecret)).toBe(false);
   await page.goto(adminPath("/dashboard"));
-  await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("2.00 GB");
-  await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("2.00 M");
+  await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("750.00 MB");
+  await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("999 次");
   await expect(page.getByTestId("dashboard-edgeone-package-traffic")).toContainText("4.00 GB / 20.00 GB");
   await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("6.00 M / 40.00 M");
+  await expect(page.getByLabel("EdgeOne 配置信息")).toContainText("Zone zone-e2e");
+  await expect(page.getByLabel("EdgeOne 配置信息")).toContainText("套餐 plan-e2e");
+  await expect(page.getByText("最近成功刷新：", { exact: false })).toBeVisible();
 
   const refresh = page.getByTestId("dashboard-refresh-all");
   await expect(refresh).toHaveAccessibleName("刷新全部");
@@ -516,6 +522,8 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   });
   const requestsBeforeRefresh = dashboardRequests;
   dashboardData = edgeOneReadyOverview(5);
+  if (dashboardData.edgeOne.status !== "ready") throw new Error("E2E fixture must be ready");
+  dashboardData.edgeOne.last24Hours.requestCount = 125_000;
   await refresh.evaluate((button) => {
     (button as HTMLButtonElement).click();
     (button as HTMLButtonElement).click();
@@ -524,17 +532,28 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   await expect(page.getByTestId("dashboard-pv-week")).toContainText("6");
   await expect(page.getByTestId("dashboard-pv-month")).toContainText("7");
   await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("5.00 GB");
+  await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("125.00 K");
   await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("15.00 M / 100.00 M");
   expect(dashboardRequests).toBe(requestsBeforeRefresh + 1);
 
-  for (const [width, columns] of [[1440, 4], [1024, 4], [768, 2], [375, 1]] as const) {
+  for (const [width, columns] of [[1440, 4], [1024, 2], [768, 2], [375, 1]] as const) {
     await page.setViewportSize({ width, height: 900 });
     const renderedColumns = await page.locator(".dashboard-metric-grid--edgeone").evaluate((element) =>
       getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length
     );
     expect(renderedColumns).toBe(columns);
     await expectNoDocumentHorizontalScroll(page);
+    if (process.env.EDGEONE_VISUAL_OUTPUT_DIR) {
+      await page.screenshot({
+        path: path.join(process.env.EDGEONE_VISUAL_OUTPUT_DIR, `edgeone-ready-${width}.png`),
+        fullPage: true
+      });
+    }
   }
+
+  dashboardData = edgeOneReadyOverview(5);
+  await page.goto(adminPath("/dashboard"));
+  await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("5.00 M");
 });
 
 test("修改密码后撤销旧 token 并要求重新登录", async ({ page, request }) => {

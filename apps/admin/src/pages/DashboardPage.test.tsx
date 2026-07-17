@@ -104,8 +104,27 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-edgeone-last24-requests").textContent).toContain("2.00 M");
     expect(screen.getByTestId("dashboard-edgeone-package-traffic").textContent).toContain("4.00 GB / 20.00 GB");
     expect(screen.getByTestId("dashboard-edgeone-package-requests").textContent).toContain("6.00 M / 40.00 M");
+    expect(screen.getByLabelText("EdgeOne 配置信息").textContent).toContain("Zone zone-demo");
+    expect(screen.getByLabelText("EdgeOne 配置信息").textContent).toContain("套餐 plan-demo");
     expect(screen.getByText("官方计费数据可能延迟约 3 小时")).toBeTruthy();
     expect(screen.getByText(/最近成功刷新/).textContent).toContain("北京时间");
+  });
+
+  it("adapts the recent traffic and request units without changing package units", async () => {
+    const overview = readyOverview(1);
+    if (overview.edgeOne.status !== "ready") throw new Error("测试数据必须为 ready");
+    overview.edgeOne.last24Hours.trafficBytes = 999_000_000;
+    overview.edgeOne.last24Hours.requestCount = 999;
+    overview.edgeOne.package.trafficUsedBytes = 500_000_000;
+    overview.edgeOne.package.requestUsed = 500;
+    apiMocks.request.mockResolvedValueOnce(overview);
+
+    renderPage();
+
+    expect(await screen.findByLabelText("999.00 MB")).toBeTruthy();
+    expect(screen.getByLabelText("999 次")).toBeTruthy();
+    expect(screen.getByTestId("dashboard-edgeone-package-traffic").textContent).toContain("0.50 GB / 10.00 GB");
+    expect(screen.getByTestId("dashboard-edgeone-package-requests").textContent).toContain("0.00 M / 20.00 M");
   });
 
   it("uses one aggregate request to refresh all seven cards and suppresses overlapping clicks", async () => {
@@ -115,9 +134,10 @@ describe("DashboardPage", () => {
       .mockReturnValueOnce(pendingRefresh.promise);
 
     renderPage();
-    await screen.findByText("1.00 GB");
+    await screen.findByLabelText("1.00 GB");
 
     const refresh = screen.getByTestId("dashboard-refresh-all") as HTMLButtonElement;
+    await waitFor(() => expect(refresh.disabled).toBe(false));
     fireEvent.click(refresh);
     fireEvent.click(refresh);
 
@@ -147,8 +167,10 @@ describe("DashboardPage", () => {
       } satisfies DashboardOverviewResponse);
 
     renderPage();
-    await screen.findByText("2.00 GB");
-    fireEvent.click(screen.getByTestId("dashboard-refresh-all"));
+    await screen.findByLabelText("2.00 GB");
+    const refresh = screen.getByTestId("dashboard-refresh-all") as HTMLButtonElement;
+    await waitFor(() => expect(refresh.disabled).toBe(false));
+    fireEvent.click(refresh);
 
     await waitFor(() => expect(screen.getByTestId("dashboard-pv-today").textContent).toContain("9"));
     expect(screen.getByTestId("dashboard-edgeone-last24-traffic").textContent).toContain("2.00 GB");
@@ -173,5 +195,25 @@ describe("DashboardPage", () => {
     const configure = await screen.findByRole("button", { name: /前往系统配置/ });
     fireEvent.click(configure);
     await screen.findByText("系统配置目标页");
+  });
+
+  it("shows an EdgeOne-only initial error inside the EdgeOne panel", async () => {
+    apiMocks.request.mockResolvedValueOnce({
+      todayUniqueUsers: 1,
+      weekDailyUniqueUsers: 2,
+      monthDailyUniqueUsers: 3,
+      edgeOne: {
+        status: "error",
+        code: "EDGEONE_UPSTREAM_ERROR",
+        message: "腾讯云暂时不可用"
+      }
+    } satisfies DashboardOverviewResponse);
+
+    renderPage();
+
+    const error = await screen.findByTestId("dashboard-edgeone-error");
+    expect(error.textContent).toContain("腾讯云暂时不可用");
+    expect(screen.getByRole("button", { name: "重新加载" })).toBeTruthy();
+    expect(screen.getByText("官方计费数据可能延迟约 3 小时")).toBeTruthy();
   });
 });

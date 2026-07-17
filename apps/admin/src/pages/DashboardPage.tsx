@@ -1,28 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, Empty, Skeleton, Typography, message } from "antd";
-import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Alert, Button, Card, Empty, Skeleton, Tag, Typography, message } from "antd";
+import {
+  ApiOutlined,
+  ClockCircleOutlined,
+  CloudOutlined,
+  DatabaseOutlined,
+  InfoCircleOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
+  ThunderboltOutlined
+} from "@ant-design/icons";
 import type { DashboardOverviewResponse, EdgeOneDashboardState } from "@event-arts/shared";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { request } from "../api";
-
-const decimalGigabyte = 1_000_000_000;
-const decimalMillion = 1_000_000;
-
-function formatDecimal(value: number, divisor: number, unit: string) {
-  return `${(value / divisor).toLocaleString("zh-CN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })} ${unit}`;
-}
-
-function formatTraffic(value: number) {
-  return formatDecimal(value, decimalGigabyte, "GB");
-}
-
-function formatRequests(value: number) {
-  return formatDecimal(value, decimalMillion, "M");
-}
+import {
+  formatLast24Requests,
+  formatLast24Traffic,
+  formatPackageRequests,
+  formatPackageTraffic,
+  type DashboardMetricDisplay
+} from "./dashboard-formatters";
 
 function formatBeijingDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -65,36 +64,93 @@ function MetricCard({
   );
 }
 
+function EdgeOneMetricCard({
+  testid,
+  title,
+  icon,
+  metric,
+  capacity,
+  description
+}: {
+  testid: string;
+  title: string;
+  icon: ReactNode;
+  metric: DashboardMetricDisplay;
+  capacity?: DashboardMetricDisplay;
+  description: string;
+}) {
+  return (
+    <article className="dashboard-edgeone-card" data-testid={testid}>
+      <header className="dashboard-edgeone-card__header">
+        <span className="dashboard-edgeone-card__icon" aria-hidden="true">{icon}</span>
+        <Typography.Text className="dashboard-edgeone-card__title">{title}</Typography.Text>
+      </header>
+      <div className="dashboard-edgeone-card__measurement" aria-label={capacity ? `${metric.text} / ${capacity.text}` : metric.text}>
+        <span className="dashboard-edgeone-card__primary">
+          <strong>{metric.value}</strong>
+          {" "}
+          <span>{metric.unit}</span>
+        </span>
+        {capacity && (
+          <span className="dashboard-edgeone-card__capacity" aria-hidden="true">
+            {" "}
+            <span>/</span>
+            {" "}
+            <strong>{capacity.value}</strong>
+            {" "}
+            <span>{capacity.unit}</span>
+          </span>
+        )}
+      </div>
+      <Typography.Text className="dashboard-edgeone-card__description">{description}</Typography.Text>
+    </article>
+  );
+}
+
 function EdgeOneReadyCards({ state }: { state: Extract<EdgeOneDashboardState, { status: "ready" }> }) {
+  const last24Traffic = formatLast24Traffic(state.last24Hours.trafficBytes);
+  const last24Requests = formatLast24Requests(state.last24Hours.requestCount);
+  const packageTrafficUsed = formatPackageTraffic(state.package.trafficUsedBytes);
+  const packageTrafficCapacity = formatPackageTraffic(state.package.trafficCapacityBytes);
+  const packageRequestsUsed = formatPackageRequests(state.package.requestUsed);
+  const packageRequestsCapacity = formatPackageRequests(state.package.requestCapacity);
+
   return (
     <>
       <div className="dashboard-metric-grid dashboard-metric-grid--edgeone">
-        <MetricCard
+        <EdgeOneMetricCard
           testid="dashboard-edgeone-last24-traffic"
           title="近 24 小时流量"
-          value={formatTraffic(state.last24Hours.trafficBytes)}
+          icon={<CloudOutlined />}
+          metric={last24Traffic}
           description={`${formatBeijingDateTime(state.last24Hours.startTime)} 至 ${formatBeijingDateTime(state.last24Hours.endTime)}`}
         />
-        <MetricCard
+        <EdgeOneMetricCard
           testid="dashboard-edgeone-last24-requests"
           title="近 24 小时请求数"
-          value={formatRequests(state.last24Hours.requestCount)}
+          icon={<ApiOutlined />}
+          metric={last24Requests}
           description="HTTP/HTTPS 请求"
         />
-        <MetricCard
+        <EdgeOneMetricCard
           testid="dashboard-edgeone-package-traffic"
           title="套餐流量"
-          value={`${formatTraffic(state.package.trafficUsedBytes)} / ${formatTraffic(state.package.trafficCapacityBytes)}`}
+          icon={<DatabaseOutlined />}
+          metric={packageTrafficUsed}
+          capacity={packageTrafficCapacity}
           description={`${formatBeijingDate(state.package.periodStart)} 至 ${formatBeijingDate(state.package.periodEnd)}`}
         />
-        <MetricCard
+        <EdgeOneMetricCard
           testid="dashboard-edgeone-package-requests"
           title="套餐请求次数"
-          value={`${formatRequests(state.package.requestUsed)} / ${formatRequests(state.package.requestCapacity)}`}
-          description={`套餐 ${state.package.planId}`}
+          icon={<SafetyCertificateOutlined />}
+          metric={packageRequestsUsed}
+          capacity={packageRequestsCapacity}
+          description="当前套餐周期内累计"
         />
       </div>
-      <Typography.Paragraph className="dashboard-updated-at" type="secondary">
+      <Typography.Paragraph className="dashboard-edgeone-footer" type="secondary">
+        <ClockCircleOutlined aria-hidden="true" />
         最近成功刷新：{formatBeijingDateTime(state.fetchedAt)}（北京时间）
       </Typography.Paragraph>
     </>
@@ -224,17 +280,32 @@ export function DashboardPage() {
             </div>
           </section>
 
-          <section className="dashboard-section" aria-labelledby="dashboard-edgeone-title">
-            <div className="dashboard-section__heading">
-              <Typography.Title id="dashboard-edgeone-title" level={3}>EdgeOne</Typography.Title>
-              <Typography.Text type="secondary">单 Zone 套餐与近 24 小时用量</Typography.Text>
+          <section className="dashboard-edgeone-panel" aria-labelledby="dashboard-edgeone-title">
+            <div className="dashboard-edgeone-header">
+              <div className="dashboard-edgeone-brand">
+                <span className="dashboard-edgeone-brand__icon" aria-hidden="true">
+                  <ThunderboltOutlined />
+                </span>
+                <div>
+                  <Typography.Title id="dashboard-edgeone-title" level={3}>EdgeOne</Typography.Title>
+                  <Typography.Text type="secondary">单 Zone 套餐与近 24 小时用量</Typography.Text>
+                </div>
+              </div>
+              {edgeOne?.status === "ready" && (
+                <div className="dashboard-edgeone-meta" aria-label="EdgeOne 配置信息">
+                  <Tag title={`Zone ${edgeOne.zoneId}`}>
+                    Zone <span>{edgeOne.zoneId}</span>
+                  </Tag>
+                  <Tag title={`套餐 ${edgeOne.package.planId}`}>
+                    套餐 <span>{edgeOne.package.planId}</span>
+                  </Tag>
+                </div>
+              )}
             </div>
-            <Alert
-              className="dashboard-edgeone-delay"
-              type="info"
-              showIcon
-              title="官方计费数据可能延迟约 3 小时"
-            />
+            <div className="dashboard-edgeone-delay" role="note">
+              <InfoCircleOutlined aria-hidden="true" />
+              <span>官方计费数据可能延迟约 3 小时</span>
+            </div>
             {edgeOneRefreshError && edgeOne?.status === "ready" && (
               <Alert
                 data-testid="dashboard-edgeone-stale-warning"
@@ -247,7 +318,7 @@ export function DashboardPage() {
             )}
             {edgeOne?.status === "ready" && <EdgeOneReadyCards state={edgeOne} />}
             {edgeOne?.status === "not_configured" && (
-              <Card>
+              <div className="dashboard-edgeone-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description="尚未配置 EdgeOne CAM 凭证与 ZoneId"
@@ -256,17 +327,19 @@ export function DashboardPage() {
                     前往系统配置
                   </Button>
                 </Empty>
-              </Card>
+              </div>
             )}
             {edgeOne?.status === "error" && (
-              <Alert
-                data-testid="dashboard-edgeone-error"
-                type="error"
-                showIcon
-                title="EdgeOne 数据加载失败"
-                description={edgeOne.message}
-                action={<Button onClick={() => void loadDashboard("refresh")}>重新加载</Button>}
-              />
+              <div className="dashboard-edgeone-state">
+                <Alert
+                  data-testid="dashboard-edgeone-error"
+                  type="error"
+                  showIcon
+                  title="EdgeOne 数据加载失败"
+                  description={edgeOne.message}
+                  action={<Button onClick={() => void loadDashboard("refresh")}>重新加载</Button>}
+                />
+              </div>
             )}
           </section>
         </Skeleton>

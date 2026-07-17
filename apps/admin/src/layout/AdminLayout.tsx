@@ -33,8 +33,10 @@ export function AdminLayout() {
   const routePathname = stripAdminBasename(location.pathname);
   const routeMatch = matchAdminRoute(routePathname);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [responsiveCollapsed, setResponsiveCollapsed] = useState(false);
   const [openKeys, setOpenKeys] = useState(() => readOpenKeys().length ? readOpenKeys() : defaultOpenKeys());
   const clickGuard = useRepeatClickGuard();
+  const siderCollapsed = collapsed || responsiveCollapsed;
 
   useEffect(() => {
     localStorage.setItem(collapsedKey, String(collapsed));
@@ -82,14 +84,21 @@ export function AdminLayout() {
 
   return (
     <Layout className="admin-layout">
-      <Layout.Sider width={248} collapsedWidth={72} collapsed={collapsed} theme="light">
-        <Tooltip title={collapsed ? "喜缘 CMS" : ""} placement="right">
-          <div className={collapsed ? "brand is-collapsed" : "brand"}>{collapsed ? "喜" : "喜缘 CMS"}</div>
+      <Layout.Sider
+        width={248}
+        collapsedWidth={72}
+        collapsed={siderCollapsed}
+        breakpoint="sm"
+        onBreakpoint={setResponsiveCollapsed}
+        theme="light"
+      >
+        <Tooltip title={siderCollapsed ? "喜缘 CMS" : ""} placement="right">
+          <div className={siderCollapsed ? "brand is-collapsed" : "brand"}>{siderCollapsed ? "喜" : "喜缘 CMS"}</div>
         </Tooltip>
         <Menu
           mode="inline"
           selectedKeys={routeMatch.selectedKeys}
-          openKeys={collapsed ? [] : openKeys}
+          openKeys={siderCollapsed ? [] : openKeys}
           items={menuItems}
           onOpenChange={(keys) => {
             const next = validOpenKeys(keys);
@@ -106,13 +115,13 @@ export function AdminLayout() {
         />
         <Button
           data-testid="sidebar-collapse"
-          aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          aria-label={siderCollapsed ? "展开侧边栏" : "收起侧边栏"}
           className="sidebar-collapse"
           type="text"
-          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={() => clickGuard("admin:sidebar:collapse", () => setCollapsed((value) => !value))}
         >
-          {collapsed ? "" : "收起菜单"}
+          {siderCollapsed ? "" : "收起菜单"}
         </Button>
       </Layout.Sider>
       <Layout className="admin-main">
