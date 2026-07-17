@@ -273,7 +273,7 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 
 首次保存必须同时提供 SecretId 和 SecretKey；后续省略任一凭证表示沿用当前密文对应的值。服务端先用候选凭证验证 `DescribePlans` 中目标 Zone 只归属于一个有效套餐，再验证 `DescribeBillingData` 的 `acc_flux`、`smt_flux`、`sec_request_clean` 三个指标；全部成功后才在单一事务中写入密文和操作日志。验证或写入失败时旧配置逐字段保持不变。
 
-错误状态：格式或首次凭证缺失为 `400`；无效凭证、权限不足、Zone/套餐/周期不可用为安全化 `422`；腾讯云网络、限流或上游异常为 `502`；本地主密钥缺失、错误或密文不可认证为 `503`。错误响应和日志不包含 SDK 原始签名、请求、SecretId 或 SecretKey。
+错误状态：格式或首次凭证缺失为 `400`；无效凭证、权限不足、Zone/套餐/周期不可用为安全化 `422`；腾讯云网络、限流或上游异常为 `502`；本地主密钥缺失、错误或密文不可认证为 `503`。公开错误响应不包含腾讯云错误码或 RequestId；服务端失败日志只记录操作名、本地 request ID、稳定业务错误码及经白名单校验的腾讯云错误码/RequestId，不记录 SDK 原始 message、stack、请求参数、SecretId 或 SecretKey。
 
 Dashboard 响应保留三个本地指标，并增加 `edgeOne` 联合状态：
 
@@ -309,7 +309,7 @@ Dashboard 响应保留三个本地指标，并增加 `edgeOne` 联合状态：
 
 `edgeOne.status` 还可能是 `{ "status": "not_configured" }`，或 `{ "status": "error", "code": string, "message": string }`。EdgeOne 局部错误不会改变三个本地统计字段，也不会把整个聚合响应改为 5xx。
 
-近 24 小时使用滚动窗口，流量为 `acc_flux + smt_flux`，请求数为 `sec_request_clean`。套餐流量地区系数为 `CH=1`、`NA/EU=1.71`、`AS1=2.49`、`AS2=2.68`、`AS3=2.78`、`MidEast/AF/SA=2.91`；流量额度严格只取 `SecTrafficCapacity`，请求额度严格只取 `SecRequestCapacity`，不得与 `AccTrafficCapacity`、`SmartTrafficCapacity` 等字段相加。预付费按 `EnabledTime` 锚定的订阅月；下月不存在同一日期时按腾讯云规则补齐 31 天，例如 3 月 31 日至 5 月 1 日。企业后付费按 `Asia/Shanghai` 自然月；未知地区、周期或异常数值返回 error，不做估算。API 返回原始 Byte/请求次数，Admin 用十进制 GB/M 保留两位小数；腾讯云计费数据可能延迟约 3 小时。
+近 24 小时取“最近一个已完整结束的北京时间整点”向前精确 24 小时，三个指标均使用 `hour` 粒度；流量为 `acc_flux + smt_flux`，请求数为 `sec_request_clean`。发送给腾讯云的时间固定为无毫秒的 `YYYY-MM-DDTHH:mm:ss+08:00`。套餐查询继续使用 `day`，保留实际订阅周期起点和当前结束点的秒级边界，不扩成自然日。套餐流量地区系数为 `CH=1`、`NA/EU=1.71`、`AS1=2.49`、`AS2=2.68`、`AS3=2.78`、`MidEast/AF/SA=2.91`；流量额度严格只取 `SecTrafficCapacity`，请求额度严格只取 `SecRequestCapacity`，不得与 `AccTrafficCapacity`、`SmartTrafficCapacity` 等字段相加。预付费按 `EnabledTime` 锚定的订阅月；下月不存在同一日期时按腾讯云规则补齐 31 天，例如 3 月 31 日至 5 月 1 日。企业后付费按 `Asia/Shanghai` 自然月；未知地区、周期或异常数值返回 error，不做估算。API 返回原始 Byte/请求次数，Admin 用十进制 GB/M 保留两位小数；腾讯云计费数据可能延迟约 3 小时。
 
 API 服务端环境变量 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY` 必须是规范 Base64 编码的 32 字节随机密钥。生产缺失或非法时启动失败；开发/测试缺失时禁止保存配置。推荐使用 `openssl rand -base64 32` 生成，并在发布代码前通过部署 secret 管理配置。
 

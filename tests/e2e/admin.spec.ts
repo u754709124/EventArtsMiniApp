@@ -432,6 +432,22 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   await page.goto(adminPath("/dashboard"));
   await expect(page.getByText("尚未配置 EdgeOne CAM 凭证与 ZoneId")).toBeVisible();
   await expect(page.getByText("官方计费数据可能延迟约 3 小时")).toBeVisible();
+  const topLevelMenuTestIds = await page.locator(".ant-menu-root > li").evaluateAll((items) =>
+    items.map((item) => item.querySelector("[data-testid]")?.getAttribute("data-testid"))
+  );
+  expect(topLevelMenuTestIds).toEqual([
+    "sidebar-dashboard",
+    "sidebar-group-home",
+    "sidebar-group-content",
+    "sidebar-group-assets",
+    "sidebar-group-account",
+    "sidebar-system-config"
+  ]);
+  await page.getByTestId("sidebar-system-config").click();
+  await expect(page).toHaveURL(/\/admin\/system-config$/);
+  await expect(page.getByRole("heading", { level: 2, name: "系统配置" })).toBeVisible();
+  await page.goto(adminPath("/dashboard"));
+  await expect(page.getByText("尚未配置 EdgeOne CAM 凭证与 ZoneId")).toBeVisible();
   await page.getByRole("button", { name: /前往系统配置/ }).click();
   await expect(page).toHaveURL(/\/admin\/system-config$/);
   await expect(page.getByRole("heading", { level: 2, name: "系统配置" })).toBeVisible();

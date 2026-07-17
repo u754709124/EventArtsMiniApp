@@ -40,7 +40,8 @@
 - API Vitest 使用 Fastify `app.inject()` 覆盖图片/MP4、真实 MIME、MD5 不一致、并发去重、名称标准化、标签筛选、元数据编辑、案例顺序、引用保护、清理和旧库迁移失败原子性。
 - 新增独立 `system_config`，不复用客户端 `site_config`。SecretId/SecretKey 分字段使用随机 12 字节 IV 的 AES-256-GCM 密文封套、字段 AAD 和认证标签；生产主密钥缺失或非法时启动失败，开发/测试缺失时禁止保存。
 - 新增服务端官方 EdgeOne Node.js SDK adapter、候选配置写前验证、`GET|PUT /api/admin/system-config/edgeone` 和 Dashboard `edgeOne` 联合状态。自动化只使用可注入 fake，不访问腾讯云或真实 CAM。
-- 近 24 小时为 `acc_flux+smt_flux` 与 `sec_request_clean`；套餐流量按地区系数折算，流量/请求分母严格只取 `SecTrafficCapacity`/`SecRequestCapacity`。预付费按 `EnabledTime` 订阅月，下月无同日时按官方规则补齐 31 天；企业后付费按北京时间自然月，未知数据失败关闭。
+- 近 24 小时以最近完整北京时间整点结束，向前精确 24 小时，`acc_flux+smt_flux` 与 `sec_request_clean` 均使用 `hour`；腾讯云请求时间为无毫秒的 `+08:00` ISO8601。套餐查询保持 `day` 和实际订阅周期秒级边界；套餐流量按地区系数折算，流量/请求分母严格只取 `SecTrafficCapacity`/`SecRequestCapacity`。预付费按 `EnabledTime` 订阅月，下月无同日时按官方规则补齐 31 天；企业后付费按北京时间自然月，未知数据失败关闭。
+- EdgeOne 失败日志只保留操作名、本地 request ID、稳定业务错误码以及经校验的腾讯云错误码/RequestId；公开响应不返回上游诊断，SDK 原始 message、stack、请求和 CAM 凭证不进入日志。
 - SQLite 全量备份自动包含 `system_config` 密文；备份测试确认明文不在快照中、原主密钥可解密、错误主密钥无法认证，并把该表纳入导入预检行数影响摘要。
 - 验证通过：`pnpm lint`、`pnpm test`、`pnpm --filter api build`、`pnpm --filter api db:push`、`pnpm --filter api db:seed`。
 

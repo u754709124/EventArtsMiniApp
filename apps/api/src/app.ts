@@ -137,7 +137,9 @@ import {
 import {
   asEdgeOneDomainError,
   createEdgeOneService,
+  edgeOneUpstreamDiagnosticFields,
   edgeOneErrorStatus,
+  type EdgeOneDomainError,
   type EdgeOneClientFactory
 } from "./edgeone";
 
@@ -281,6 +283,28 @@ function sendRateLimitError(reply: FastifyReply, decision: RateLimitDenied) {
     .header("Retry-After", String(decision.retryAfterSeconds))
     .headers(jsonHeaders)
     .send(fail("RATE_LIMITED", "请求过于频繁，请稍后再试"));
+}
+
+type EdgeOneOperation =
+  | "dashboard_overview"
+  | "system_config_read"
+  | "system_config_update";
+
+function logEdgeOneOperationFailure(
+  request: FastifyRequest,
+  operation: EdgeOneOperation,
+  error: EdgeOneDomainError
+) {
+  request.log.warn(
+    {
+      event: "edgeone_operation_failed",
+      operation,
+      requestId: request.id,
+      businessCode: error.code,
+      ...edgeOneUpstreamDiagnosticFields(error)
+    },
+    "EdgeOne operation failed"
+  );
 }
 
 function loginRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLimitPolicy {
@@ -1279,9 +1303,16 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok({ revokedSessionCount: result.revokedSessionCount }));
   });
 
-  app.get("/api/admin/dashboard/overview", { preHandler: [setNoStore, requireAdmin] }, async (_request, reply) => {
+  app.get("/api/admin/dashboard/overview", { preHandler: [setNoStore, requireAdmin] }, async (request, reply) => {
     const overview = await dailyUserVisitOverview(prisma, currentTime());
-    const edgeOne = await edgeOneService.dashboardState();
+    let edgeOne: Awaited<ReturnType<typeof edgeOneService.dashboardState>>;
+    try {
+      edgeOne = await edgeOneService.dashboardState();
+    } catch (error) {
+      const safe = asEdgeOneDomainError(error);
+      logEdgeOneOperationFailure(request, "dashboard_overview", safe);
+      edgeOne = { status: "error" as const, code: safe.code, message: safe.publicMessage };
+    }
     return reply.header("Cache-Control", "no-store").send(
       ok({
         todayUniqueUsers: overview.todayUniqueUsers,
@@ -1292,11 +1323,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     );
   });
 
-  app.get("/api/admin/system-config/edgeone", { preHandler: [setNoStore, requireAdmin] }, async (_request, reply) => {
+  app.get("/api/admin/system-config/edgeone", { preHandler: [setNoStore, requireAdmin] }, async (request, reply) => {
     try {
       return reply.send(ok(await edgeOneService.getConfig()));
     } catch (error) {
       const safe = asEdgeOneDomainError(error);
+      logEdgeOneOperationFailure(request, "system_config_read", safe);
       return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
     }
   });
@@ -1316,6 +1348,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       return reply.send(ok(result.config));
     } catch (error) {
       const safe = asEdgeOneDomainError(error);
+      logEdgeOneOperationFailure(request, "system_config_update", safe);
       return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
     }
   });

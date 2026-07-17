@@ -11,18 +11,26 @@ import type {
   EdgeOneCredentials,
   EdgeOnePlan
 } from "../src/edgeone";
+import { createApiLoggerOptions } from "../src/logging";
 import { readDecryptedEdgeOneSystemConfig } from "../src/system-config";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import { resetTestAdmin, testAdminCredentials } from "./fixtures";
 
 const encryptionKey = Buffer.alloc(32, 71);
-const now = new Date("2026-07-16T12:00:00.000Z");
+const now = new Date("2026-07-16T12:34:56.789Z");
 const zoneId = "zone-test";
 const secretId = "AKIDEDGEONETEST1234";
 const secretKey = "EDGEONE_TEST_SECRET_KEY";
+const rawSdkMessageMarker = "RAW_EDGEONE_SDK_MESSAGE_MARKER";
 
 type FakeMode =
-  "ready" | "zone_not_found" | "invalid_credentials" | "billing_error" | "dashboard_deferred";
+  | "ready"
+  | "zone_not_found"
+  | "invalid_credentials"
+  | "billing_error"
+  | "invalid_billing_data"
+  | "dashboard_deferred";
+type LogEntry = Record<string, unknown>;
 
 function fakeBillingResponse(request: DescribeBillingDataRequest): DescribeBillingDataResponse {
   const packageQuery = request.Interval === "day";
@@ -74,10 +82,35 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let mode: FakeMode;
 let observedCredentials: EdgeOneCredentials[];
 let billingRequests: DescribeBillingDataRequest[];
+let logs: LogEntry[];
 let deferredBillingResponses: Array<{
   request: DescribeBillingDataRequest;
   resolve: (response: DescribeBillingDataResponse) => void;
 }>;
+
+function createLogCapture() {
+  logs = [];
+  return {
+    write(message: string) {
+      for (const line of message.split("\n")) {
+        if (!line.trim()) continue;
+        logs.push(JSON.parse(line) as LogEntry);
+      }
+    }
+  };
+}
+
+function logText() {
+  return logs.map((entry) => JSON.stringify(entry)).join("\n");
+}
+
+function edgeOneFailureLog(operation: string) {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const entry = logs[index]!;
+    if (entry.event === "edgeone_operation_failed" && entry.operation === operation) return entry;
+  }
+  return undefined;
+}
 
 const fakeClientFactory: EdgeOneClientFactory = (credentials) => {
   observedCredentials.push({ ...credentials });
@@ -97,8 +130,19 @@ const fakeClientFactory: EdgeOneClientFactory = (credentials) => {
           deferredBillingResponses.push({ request, resolve });
         });
       }
+      if (mode === "invalid_billing_data") {
+        return { Data: null, RequestId: "request-invalid-data-456" };
+      }
       if (mode === "billing_error") {
-        throw { code: "RequestLimitExceeded", message: credentials.secretKey };
+        throw {
+          code: "InvalidParameter.InvalidInterval",
+          requestId: "request-invalid-interval-123",
+          message:
+            `${rawSdkMessageMarker} secretId=${credentials.secretId} ` +
+            `secretKey=${credentials.secretKey}`,
+          stack: `SDK stack ${rawSdkMessageMarker}`,
+          request
+        };
       }
       return fakeBillingResponse(request);
     }
@@ -117,12 +161,16 @@ async function loginAdmin() {
 
 async function putConfig(
   token: string,
-  payload: { zoneId: string; secretId?: string; secretKey?: string }
+  payload: { zoneId: string; secretId?: string; secretKey?: string },
+  requestId?: string
 ) {
   return app.inject({
     method: "PUT",
     url: "/api/admin/system-config/edgeone",
-    headers: { authorization: `Bearer ${token}` },
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(requestId ? { "x-request-id": requestId } : {})
+    },
     payload
   });
 }
@@ -144,6 +192,7 @@ beforeEach(async () => {
     uploadDir,
     publicBaseUrl: "http://127.0.0.1:3001",
     now: () => new Date(now),
+    logger: createApiLoggerOptions({ stream: createLogCapture(), level: "info" }),
     edgeOne: { credentialEncryptionKey: encryptionKey, clientFactory: fakeClientFactory }
   });
 });
@@ -210,6 +259,29 @@ describe("EdgeOne system-config admin API", () => {
       "smt_flux",
       "sec_request_clean"
     ]);
+    expect(
+      billingRequests.map(({ StartTime, EndTime, Interval }) => ({
+        StartTime,
+        EndTime,
+        Interval
+      }))
+    ).toEqual([
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        Interval: "hour"
+      },
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        Interval: "hour"
+      },
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        Interval: "hour"
+      }
+    ]);
 
     const raw = await prisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } });
     expect(JSON.stringify(raw)).not.toContain(secretId);
@@ -263,19 +335,40 @@ describe("EdgeOne system-config admin API", () => {
     expect(await prisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } })).toEqual(before);
 
     mode = "billing_error";
-    const failedBilling = await putConfig(token, {
-      zoneId,
-      secretId: "AKID_REJECTED_VALUE",
-      secretKey: "REJECTED_SECRET_KEY"
-    });
+    const failedBilling = await putConfig(
+      token,
+      {
+        zoneId,
+        secretId: "AKID_REJECTED_VALUE",
+        secretKey: "REJECTED_SECRET_KEY"
+      },
+      "edgeone-config-failure-1"
+    );
     expect(failedBilling.statusCode).toBe(502);
     expect(failedBilling.json().error.code).toBe("EDGEONE_UPSTREAM_UNAVAILABLE");
     expect(failedBilling.body).not.toContain("REJECTED_SECRET_KEY");
+    expect(failedBilling.body).not.toContain("InvalidParameter.InvalidInterval");
+    expect(failedBilling.body).not.toContain("request-invalid-interval-123");
     expect(billingRequests.slice(-3).map((request) => request.MetricName)).toEqual([
       "acc_flux",
       "smt_flux",
       "sec_request_clean"
     ]);
+    expect(edgeOneFailureLog("system_config_update")).toMatchObject({
+      event: "edgeone_operation_failed",
+      operation: "system_config_update",
+      requestId: "edgeone-config-failure-1",
+      businessCode: "EDGEONE_UPSTREAM_UNAVAILABLE",
+      upstreamCode: "InvalidParameter.InvalidInterval",
+      upstreamRequestId: "request-invalid-interval-123"
+    });
+    const capturedLogs = logText();
+    expect(capturedLogs).not.toContain("AKID_REJECTED_VALUE");
+    expect(capturedLogs).not.toContain("REJECTED_SECRET_KEY");
+    expect(capturedLogs).not.toContain(rawSdkMessageMarker);
+    expect(capturedLogs).not.toContain("SDK stack");
+    expect(capturedLogs).not.toContain('"MetricName"');
+    expect(capturedLogs).not.toContain('"ZoneIds"');
     expect(await prisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } })).toEqual(before);
 
     mode = "ready";
@@ -361,7 +454,7 @@ describe("EdgeOne dashboard aggregation", () => {
       fetchedAt: now.toISOString(),
       last24Hours: {
         startTime: "2026-07-15T12:00:00.000Z",
-        endTime: now.toISOString(),
+        endTime: "2026-07-16T12:00:00.000Z",
         trafficBytes: 300,
         requestCount: 30
       },
@@ -378,6 +471,24 @@ describe("EdgeOne dashboard aggregation", () => {
       }
     });
     expect(billingRequests).toHaveLength(6);
+    const rollingRequests = billingRequests.filter((request) => request.Interval === "hour");
+    const packageRequests = billingRequests.filter((request) => request.Interval === "day");
+    expect(rollingRequests).toHaveLength(3);
+    expect(
+      rollingRequests.every(
+        (request) =>
+          request.StartTime === "2026-07-15T20:00:00+08:00" &&
+          request.EndTime === "2026-07-16T20:00:00+08:00"
+      )
+    ).toBe(true);
+    expect(packageRequests).toHaveLength(3);
+    expect(
+      packageRequests.every(
+        (request) =>
+          request.StartTime === "2026-07-15T08:00:00+08:00" &&
+          request.EndTime === "2026-07-16T20:34:56+08:00"
+      )
+    ).toBe(true);
     expect(response.body).not.toContain(secretId);
     expect(response.body).not.toContain(secretKey);
   });
@@ -430,7 +541,10 @@ describe("EdgeOne dashboard aggregation", () => {
     const response = await app.inject({
       method: "GET",
       url: "/api/admin/dashboard/overview",
-      headers: { authorization: `Bearer ${token}` }
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-request-id": "edgeone-dashboard-failure-1"
+      }
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
@@ -443,6 +557,48 @@ describe("EdgeOne dashboard aggregation", () => {
         message: "腾讯云 EdgeOne 服务暂时不可用，请稍后重试"
       }
     });
+    expect(response.body).not.toContain("InvalidParameter.InvalidInterval");
+    expect(response.body).not.toContain("request-invalid-interval-123");
     expect(response.body).not.toContain(secretKey);
+    expect(edgeOneFailureLog("dashboard_overview")).toMatchObject({
+      event: "edgeone_operation_failed",
+      operation: "dashboard_overview",
+      requestId: "edgeone-dashboard-failure-1",
+      businessCode: "EDGEONE_UPSTREAM_UNAVAILABLE",
+      upstreamCode: "InvalidParameter.InvalidInterval",
+      upstreamRequestId: "request-invalid-interval-123"
+    });
+    expect(logText()).not.toContain(secretId);
+    expect(logText()).not.toContain(secretKey);
+    expect(logText()).not.toContain(rawSdkMessageMarker);
+
+    mode = "invalid_billing_data";
+    const invalidData = await app.inject({
+      method: "GET",
+      url: "/api/admin/dashboard/overview",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-request-id": "edgeone-invalid-data-1"
+      }
+    });
+    expect(invalidData.statusCode).toBe(200);
+    expect(invalidData.json().data).toMatchObject({
+      todayUniqueUsers: 0,
+      weekDailyUniqueUsers: 0,
+      monthDailyUniqueUsers: 0,
+      edgeOne: {
+        status: "error",
+        code: "EDGEONE_INVALID_BILLING_DATA",
+        message: "腾讯云返回的计费数据不可用"
+      }
+    });
+    expect(invalidData.body).not.toContain("request-invalid-data-456");
+    expect(edgeOneFailureLog("dashboard_overview")).toMatchObject({
+      event: "edgeone_operation_failed",
+      operation: "dashboard_overview",
+      requestId: "edgeone-invalid-data-1",
+      businessCode: "EDGEONE_INVALID_BILLING_DATA",
+      upstreamRequestId: "request-invalid-data-456"
+    });
   });
 });

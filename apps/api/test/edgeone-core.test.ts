@@ -38,18 +38,31 @@ describe("Tencent EdgeOne SDK adapter", () => {
   it("pins the 2022-09-01 client profile to the official endpoint, POST, HTTPS and an explicit timeout", async () => {
     let receivedConfig: EdgeOneSdkClientConfig | undefined;
     const describePlans = vi.fn(async () => ({ TotalCount: 0, Plans: [] }));
+    const describeBillingData = vi.fn(async () => ({
+      Data: [],
+      RequestId: "request-adapter-123"
+    }));
     const factory = createTencentEdgeOneClientFactory({
       timeoutSeconds: 7,
       createSdkClient: (config) => {
         receivedConfig = config;
         return {
           DescribePlans: describePlans,
-          DescribeBillingData: vi.fn(async () => ({ Data: [] }))
+          DescribeBillingData: describeBillingData
         };
       }
     });
     const client = factory({ secretId: "AKID_TEST", secretKey: "SECRET_TEST" });
     await client.describePlans({ Limit: 200, Offset: 0 });
+    await expect(
+      client.describeBillingData({
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        ZoneIds: [zoneId],
+        MetricName: "acc_flux",
+        Interval: "hour"
+      })
+    ).resolves.toEqual({ Data: [], RequestId: "request-adapter-123" });
 
     expect(receivedConfig).toEqual({
       credential: { secretId: "AKID_TEST", secretKey: "SECRET_TEST" },
@@ -66,7 +79,7 @@ describe("Tencent EdgeOne SDK adapter", () => {
     expect(describePlans).toHaveBeenCalledWith({ Limit: 200, Offset: 0 });
   });
 
-  it("maps credential, permission and unknown SDK failures without exposing raw messages", () => {
+  it("maps SDK failures with strictly allow-listed diagnostics and no raw message", () => {
     expect(
       mapEdgeOneSdkError({ code: "AuthFailure.SignatureFailure", message: "SECRET_TEST" })
     ).toMatchObject({ code: "EDGEONE_INVALID_CREDENTIALS", kind: "validation" });
@@ -76,6 +89,36 @@ describe("Tencent EdgeOne SDK adapter", () => {
     expect(mapEdgeOneSdkError(new Error("socket contained SECRET_TEST"))).toMatchObject({
       code: "EDGEONE_UPSTREAM_UNAVAILABLE",
       kind: "upstream"
+    });
+
+    const rawMessage = "RAW_SDK_MESSAGE_WITH_TEST_SECRET";
+    const mapped = mapEdgeOneSdkError({
+      code: "invalid code with spaces",
+      Code: "InvalidParameter.InvalidInterval",
+      requestId: "invalid request id with spaces",
+      RequestId: "request-safe-123",
+      message: rawMessage,
+      stack: `SDK stack ${rawMessage}`
+    });
+    expect(mapped).toMatchObject({
+      code: "EDGEONE_UPSTREAM_UNAVAILABLE",
+      kind: "upstream",
+      upstreamCode: "InvalidParameter.InvalidInterval",
+      upstreamRequestId: "request-safe-123"
+    });
+    expect(mapped.message).toBe("EDGEONE_UPSTREAM_UNAVAILABLE");
+    expect(mapped.stack).not.toContain(rawMessage);
+    expect(JSON.stringify(mapped)).not.toContain(rawMessage);
+
+    expect(
+      mapEdgeOneSdkError({
+        code: `A${"x".repeat(128)}`,
+        requestId: "请求-id",
+        message: rawMessage
+      })
+    ).toMatchObject({
+      upstreamCode: undefined,
+      upstreamRequestId: undefined
     });
   });
 });
@@ -293,7 +336,7 @@ describe("EdgeOne billing aggregation", () => {
     ]);
   });
 
-  it("uses acc_flux plus smt_flux and sec_request_clean for the rolling 24-hour window", async () => {
+  it("uses a shared complete-hour window and second-precision +08:00 timestamps for rolling usage", async () => {
     const requests: DescribeBillingDataRequest[] = [];
     const client: EdgeOneClient = {
       async describePlans() {
@@ -306,15 +349,106 @@ describe("EdgeOne billing aggregation", () => {
         };
       }
     };
-    const now = new Date("2026-07-16T12:00:00.000Z");
+    const now = new Date("2026-07-16T12:34:56.789Z");
     await expect(queryEdgeOneLast24Hours(client, zoneId, now)).resolves.toMatchObject({
       trafficBytes: 20,
       requestCount: 30,
       start: new Date("2026-07-15T12:00:00.000Z"),
-      end: now
+      end: new Date("2026-07-16T12:00:00.000Z")
     });
     expect(requests).toHaveLength(3);
-    expect(requests.every((request) => request.Interval === "5min" && !request.GroupBy)).toBe(true);
+    expect(
+      requests.map(({ StartTime, EndTime, MetricName, Interval, GroupBy }) => ({
+        StartTime,
+        EndTime,
+        MetricName,
+        Interval,
+        GroupBy
+      }))
+    ).toEqual([
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        MetricName: "acc_flux",
+        Interval: "hour",
+        GroupBy: undefined
+      },
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        MetricName: "smt_flux",
+        Interval: "hour",
+        GroupBy: undefined
+      },
+      {
+        StartTime: "2026-07-15T20:00:00+08:00",
+        EndTime: "2026-07-16T20:00:00+08:00",
+        MetricName: "sec_request_clean",
+        Interval: "hour",
+        GroupBy: undefined
+      }
+    ]);
+    expect(Date.parse(requests[0]!.EndTime) - Date.parse(requests[0]!.StartTime)).toBe(
+      24 * 60 * 60 * 1_000
+    );
+  });
+
+  it("keeps package subscription boundaries while removing only sub-second precision", async () => {
+    const requests: DescribeBillingDataRequest[] = [];
+    const client: EdgeOneClient = {
+      async describePlans() {
+        return { TotalCount: 0, Plans: [] };
+      },
+      async describeBillingData(request) {
+        requests.push(request);
+        return {
+          Data: [
+            {
+              Value: 0,
+              ZoneId: zoneId,
+              ...(request.GroupBy ? { RegionId: "CH" } : {})
+            }
+          ]
+        };
+      }
+    };
+
+    await expect(
+      queryEdgeOnePackageUsage(client, {
+        zoneId,
+        start: new Date("2026-07-01T03:04:05.678Z"),
+        end: new Date("2026-07-04T06:07:08.999Z")
+      })
+    ).resolves.toEqual({ trafficUsedBytes: 0, requestUsed: 0 });
+    expect(
+      requests.map(({ StartTime, EndTime, Interval }) => ({ StartTime, EndTime, Interval }))
+    ).toEqual([
+      {
+        StartTime: "2026-07-01T11:04:05+08:00",
+        EndTime: "2026-07-04T14:07:08+08:00",
+        Interval: "day"
+      },
+      {
+        StartTime: "2026-07-01T11:04:05+08:00",
+        EndTime: "2026-07-04T14:07:08+08:00",
+        Interval: "day"
+      },
+      {
+        StartTime: "2026-07-01T11:04:05+08:00",
+        EndTime: "2026-07-04T14:07:08+08:00",
+        Interval: "day"
+      }
+    ]);
+
+    requests.length = 0;
+    await expect(
+      queryEdgeOnePackageUsage(client, {
+        zoneId,
+        start: new Date("2026-07-01T03:04:05.100Z"),
+        end: new Date("2026-07-01T03:04:05.999Z")
+      })
+    ).resolves.toEqual({ trafficUsedBytes: 0, requestUsed: 0 });
+    expect(requests).toEqual([]);
   });
 
   it("fails closed for null data, negative values, unsafe values and unknown regions", async () => {
@@ -323,7 +457,7 @@ describe("EdgeOne billing aggregation", () => {
         return { TotalCount: 0, Plans: [] };
       },
       async describeBillingData() {
-        return { Data: Data as never };
+        return { Data: Data as never, RequestId: "request-invalid-data-123" };
       }
     });
     const range = {
@@ -332,7 +466,8 @@ describe("EdgeOne billing aggregation", () => {
       end: new Date("2026-07-02T00:00:00.000Z")
     };
     await expect(queryEdgeOnePackageUsage(clientForData(null), range)).rejects.toMatchObject({
-      code: "EDGEONE_INVALID_BILLING_DATA"
+      code: "EDGEONE_INVALID_BILLING_DATA",
+      upstreamRequestId: "request-invalid-data-123"
     });
     await expect(
       queryEdgeOnePackageUsage(

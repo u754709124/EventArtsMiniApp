@@ -1,5 +1,5 @@
 import { teo } from "tencentcloud-sdk-nodejs-teo";
-import { mapEdgeOneSdkError } from "./errors";
+import { mapEdgeOneSdkError, sanitizeEdgeOneUpstreamRequestId } from "./errors";
 import type {
   DescribeBillingDataRequest,
   DescribeBillingDataResponse,
@@ -70,7 +70,10 @@ export function createTencentEdgeOneClientFactory(
       async describeBillingData(request) {
         try {
           const response = await sdkClient.DescribeBillingData(request);
-          return { Data: response.Data };
+          return {
+            Data: response.Data,
+            RequestId: sanitizeEdgeOneUpstreamRequestId(response.RequestId)
+          };
         } catch (error) {
           throw mapEdgeOneSdkError(error);
         }

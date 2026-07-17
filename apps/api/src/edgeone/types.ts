@@ -53,6 +53,7 @@ export type DescribeBillingDataRequest = {
 
 export type DescribeBillingDataResponse = {
   Data?: EdgeOneBillingPoint[] | null;
+  RequestId?: string | null;
 };
 
 export interface EdgeOneClient {

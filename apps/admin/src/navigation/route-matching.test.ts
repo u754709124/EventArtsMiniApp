@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { adminMenuConfig } from "./menu-config";
 import { matchAdminRoute, validOpenKeys } from "./route-matching";
 
 describe("admin route matching", () => {
+  it("keeps system configuration as the final unique top-level item", () => {
+    const topLevelKeys = adminMenuConfig.map((item) => item.key);
+
+    expect(topLevelKeys).toEqual(["dashboard", "home", "content", "assets", "account", "system-config"]);
+    expect(adminMenuConfig.at(-1)?.key).toBe("system-config");
+    expect(topLevelKeys.filter((key) => key === "system-config")).toHaveLength(1);
+  });
+
   it("matches nested create/edit routes to their list menu leaf", () => {
     expect(matchAdminRoute("/artists/new")).toMatchObject({
       selectedKeys: ["artists"],

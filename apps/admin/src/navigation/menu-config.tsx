@@ -46,15 +46,6 @@ export const dashboardMenu: AdminMenuLeaf = {
 export const adminMenuConfig: AdminMenuItem[] = [
   dashboardMenu,
   {
-    key: "system-config",
-    label: "系统配置",
-    icon: <SettingOutlined />,
-    path: "/system-config",
-    matchPaths: ["/system-config"],
-    breadcrumb: "系统配置",
-    testid: "sidebar-system-config"
-  },
-  {
     key: "home",
     label: "首页运营",
     icon: <HomeOutlined />,
@@ -182,6 +173,15 @@ export const adminMenuConfig: AdminMenuItem[] = [
         testid: "sidebar-change-password"
       }
     ]
+  },
+  {
+    key: "system-config",
+    label: "系统配置",
+    icon: <SettingOutlined />,
+    path: "/system-config",
+    matchPaths: ["/system-config"],
+    breadcrumb: "系统配置",
+    testid: "sidebar-system-config"
   }
 ];
 

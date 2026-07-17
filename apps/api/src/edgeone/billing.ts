@@ -1,4 +1,4 @@
-import { EdgeOneDomainError, mapEdgeOneSdkError } from "./errors";
+import { EdgeOneDomainError, mapEdgeOneSdkError, sanitizeEdgeOneUpstreamRequestId } from "./errors";
 import type {
   EdgeOneBillingMetric,
   EdgeOneBillingPoint,
@@ -19,15 +19,65 @@ export const edgeOneRegionTrafficFactors = {
 } as const;
 
 const maxBillingRangeMs = 31 * 24 * 60 * 60 * 1000;
+const hourMs = 60 * 60 * 1000;
+const shanghaiOffsetMs = 8 * hourMs;
 
-type BillingInterval = "5min" | "hour" | "day";
+type BillingInterval = "hour" | "day";
 
-function invalidBillingData(): never {
+function invalidBillingData(upstreamRequestId?: unknown): never {
   throw new EdgeOneDomainError(
     "upstream",
     "EDGEONE_INVALID_BILLING_DATA",
-    "腾讯云返回的计费数据不可用"
+    "腾讯云返回的计费数据不可用",
+    { upstreamRequestId: sanitizeEdgeOneUpstreamRequestId(upstreamRequestId) }
   );
+}
+
+function truncateToSecond(value: Date) {
+  const time = value.getTime();
+  if (!Number.isFinite(time)) return invalidBillingData();
+  return new Date(Math.floor(time / 1_000) * 1_000);
+}
+
+function normalizedBillingRange(start: Date, end: Date, allowEmpty = false) {
+  const normalizedStart = truncateToSecond(start);
+  const normalizedEnd = truncateToSecond(end);
+  const duration = normalizedEnd.getTime() - normalizedStart.getTime();
+  if (duration < 0 || (!allowEmpty && duration === 0) || duration > maxBillingRangeMs) {
+    return invalidBillingData();
+  }
+  return { start: normalizedStart, end: normalizedEnd };
+}
+
+export function floorEdgeOneBillingHour(value: Date) {
+  const time = value.getTime();
+  if (!Number.isFinite(time)) return invalidBillingData();
+  return new Date(Math.floor(time / hourMs) * hourMs);
+}
+
+function padDateTimePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+export function formatEdgeOneBillingTime(value: Date) {
+  const normalized = truncateToSecond(value);
+  const shanghai = new Date(normalized.getTime() + shanghaiOffsetMs);
+  const year = shanghai.getUTCFullYear();
+  if (year < 0 || year > 9_999) return invalidBillingData();
+  return [
+    String(year).padStart(4, "0"),
+    "-",
+    padDateTimePart(shanghai.getUTCMonth() + 1),
+    "-",
+    padDateTimePart(shanghai.getUTCDate()),
+    "T",
+    padDateTimePart(shanghai.getUTCHours()),
+    ":",
+    padDateTimePart(shanghai.getUTCMinutes()),
+    ":",
+    padDateTimePart(shanghai.getUTCSeconds()),
+    "+08:00"
+  ].join("");
 }
 
 function assertValidRange(start: Date, end: Date) {
@@ -42,7 +92,11 @@ function assertValidRange(start: Date, end: Date) {
   }
 }
 
-function valueForPoint(point: EdgeOneBillingPoint | null | undefined, zoneId: string) {
+function valueForPoint(
+  point: EdgeOneBillingPoint | null | undefined,
+  zoneId: string,
+  upstreamRequestId?: string
+) {
   if (
     !point ||
     !Number.isSafeInteger(point.Value) ||
@@ -50,7 +104,7 @@ function valueForPoint(point: EdgeOneBillingPoint | null | undefined, zoneId: st
     (point.ZoneId !== undefined && point.ZoneId !== null && point.ZoneId !== zoneId) ||
     (point.Time !== undefined && point.Time !== null && !Number.isFinite(Date.parse(point.Time)))
   ) {
-    return invalidBillingData();
+    return invalidBillingData(upstreamRequestId);
   }
   return point.Value as number;
 }
@@ -67,12 +121,13 @@ async function queryMetric(
     weightedByRegion: boolean;
   }
 ) {
-  assertValidRange(options.start, options.end);
+  const range = normalizedBillingRange(options.start, options.end);
+  assertValidRange(range.start, range.end);
   let response;
   try {
     response = await client.describeBillingData({
-      StartTime: options.start.toISOString(),
-      EndTime: options.end.toISOString(),
+      StartTime: formatEdgeOneBillingTime(range.start),
+      EndTime: formatEdgeOneBillingTime(range.end),
       ZoneIds: [options.zoneId],
       MetricName: options.metric,
       Interval: options.interval,
@@ -81,34 +136,38 @@ async function queryMetric(
   } catch (error) {
     throw mapEdgeOneSdkError(error);
   }
-  if (!Array.isArray(response.Data)) return invalidBillingData();
+  const upstreamRequestId = sanitizeEdgeOneUpstreamRequestId(response.RequestId);
+  if (!Array.isArray(response.Data)) return invalidBillingData(upstreamRequestId);
 
   let total = 0;
   for (const point of response.Data) {
-    const value = valueForPoint(point, options.zoneId);
+    const value = valueForPoint(point, options.zoneId, upstreamRequestId);
     let factor = 1;
     if (options.weightedByRegion) {
       if (typeof point.RegionId !== "string" || !(point.RegionId in edgeOneRegionTrafficFactors)) {
-        return invalidBillingData();
+        return invalidBillingData(upstreamRequestId);
       }
       factor =
         edgeOneRegionTrafficFactors[point.RegionId as keyof typeof edgeOneRegionTrafficFactors];
     }
     total += value * factor;
-    if (!Number.isFinite(total) || total > Number.MAX_SAFE_INTEGER) return invalidBillingData();
+    if (!Number.isFinite(total) || total > Number.MAX_SAFE_INTEGER) {
+      return invalidBillingData(upstreamRequestId);
+    }
   }
   return total;
 }
 
 export async function queryEdgeOneLast24Hours(client: EdgeOneClient, zoneId: string, now: Date) {
-  const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const end = floorEdgeOneBillingHour(now);
+  const start = new Date(end.getTime() - 24 * hourMs);
   const [accTraffic, smartTraffic, requestCount] = await Promise.all([
     queryMetric(client, {
       zoneId,
       metric: "acc_flux",
       start,
-      end: now,
-      interval: "5min",
+      end,
+      interval: "hour",
       groupByRegion: false,
       weightedByRegion: false
     }),
@@ -116,8 +175,8 @@ export async function queryEdgeOneLast24Hours(client: EdgeOneClient, zoneId: str
       zoneId,
       metric: "smt_flux",
       start,
-      end: now,
-      interval: "5min",
+      end,
+      interval: "hour",
       groupByRegion: false,
       weightedByRegion: false
     }),
@@ -125,41 +184,45 @@ export async function queryEdgeOneLast24Hours(client: EdgeOneClient, zoneId: str
       zoneId,
       metric: "sec_request_clean",
       start,
-      end: now,
-      interval: "5min",
+      end,
+      interval: "hour",
       groupByRegion: false,
       weightedByRegion: false
     })
   ]);
   const trafficBytes = accTraffic + smartTraffic;
   if (!Number.isSafeInteger(trafficBytes)) return invalidBillingData();
-  return { start, end: now, trafficBytes, requestCount };
+  return { start, end, trafficBytes, requestCount };
 }
 
 export async function queryEdgeOnePackageUsage(
   client: EdgeOneClient,
   options: { zoneId: string; start: Date; end: Date }
 ) {
-  if (options.start.getTime() === options.end.getTime()) {
+  const range = normalizedBillingRange(options.start, options.end, true);
+  if (range.start.getTime() === range.end.getTime()) {
     return { trafficUsedBytes: 0, requestUsed: 0 };
   }
   const [accTraffic, smartTraffic, requestUsed] = await Promise.all([
     queryMetric(client, {
-      ...options,
+      zoneId: options.zoneId,
+      ...range,
       metric: "acc_flux",
       interval: "day",
       groupByRegion: true,
       weightedByRegion: true
     }),
     queryMetric(client, {
-      ...options,
+      zoneId: options.zoneId,
+      ...range,
       metric: "smt_flux",
       interval: "day",
       groupByRegion: true,
       weightedByRegion: true
     }),
     queryMetric(client, {
-      ...options,
+      zoneId: options.zoneId,
+      ...range,
       metric: "sec_request_clean",
       interval: "day",
       groupByRegion: false,

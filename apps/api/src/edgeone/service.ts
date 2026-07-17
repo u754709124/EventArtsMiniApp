@@ -16,7 +16,7 @@ import {
   queryEdgeOneLast24Hours,
   queryEdgeOnePackageUsage
 } from "./billing";
-import { asEdgeOneDomainError, EdgeOneDomainError } from "./errors";
+import { EdgeOneDomainError } from "./errors";
 import { findUniqueAvailablePlan } from "./plans";
 import { resolveEdgeOnePlanPeriod } from "./period";
 import { defaultEdgeOneClientFactory } from "./sdk-client";
@@ -129,56 +129,51 @@ export function createEdgeOneService(options: EdgeOneServiceOptions) {
   }
 
   async function dashboardState(): Promise<EdgeOneDashboardState> {
-    try {
-      const configured = await readDecryptedEdgeOneSystemConfig(
-        options.prisma,
-        options.credentialEncryptionKey
-      );
-      if (!configured) return { status: "not_configured" };
+    const configured = await readDecryptedEdgeOneSystemConfig(
+      options.prisma,
+      options.credentialEncryptionKey
+    );
+    if (!configured) return { status: "not_configured" };
 
-      const now = currentTime();
-      const client = clientFactory({
-        secretId: configured.secretId,
-        secretKey: configured.secretKey
-      });
-      const plan = await findUniqueAvailablePlan(client, configured.zoneId);
-      const capacities = edgeOnePackageCapacities(plan);
-      const period = resolveEdgeOnePlanPeriod(plan, now);
-      const [last24Hours, packageUsage] = await Promise.all([
-        queryEdgeOneLast24Hours(client, configured.zoneId, now),
-        queryEdgeOnePackageUsage(client, {
-          zoneId: configured.zoneId,
-          start: period.start,
-          end: now
-        })
-      ]);
-
-      return {
-        status: "ready",
+    const now = currentTime();
+    const client = clientFactory({
+      secretId: configured.secretId,
+      secretKey: configured.secretKey
+    });
+    const plan = await findUniqueAvailablePlan(client, configured.zoneId);
+    const capacities = edgeOnePackageCapacities(plan);
+    const period = resolveEdgeOnePlanPeriod(plan, now);
+    const [last24Hours, packageUsage] = await Promise.all([
+      queryEdgeOneLast24Hours(client, configured.zoneId, now),
+      queryEdgeOnePackageUsage(client, {
         zoneId: configured.zoneId,
-        fetchedAt: now.toISOString(),
-        last24Hours: {
-          startTime: last24Hours.start.toISOString(),
-          endTime: last24Hours.end.toISOString(),
-          trafficBytes: last24Hours.trafficBytes,
-          requestCount: last24Hours.requestCount
-        },
-        package: {
-          planId: requirePlanString(plan, "PlanId"),
-          planType: requirePlanString(plan, "PlanType"),
-          planStatus: requirePlanString(plan, "Status"),
-          periodStart: period.start.toISOString(),
-          periodEnd: period.end.toISOString(),
-          trafficUsedBytes: packageUsage.trafficUsedBytes,
-          trafficCapacityBytes: capacities.trafficCapacityBytes,
-          requestUsed: packageUsage.requestUsed,
-          requestCapacity: capacities.requestCapacity
-        }
-      };
-    } catch (error) {
-      const safe = asEdgeOneDomainError(error);
-      return { status: "error", code: safe.code, message: safe.publicMessage };
-    }
+        start: period.start,
+        end: now
+      })
+    ]);
+
+    return {
+      status: "ready",
+      zoneId: configured.zoneId,
+      fetchedAt: now.toISOString(),
+      last24Hours: {
+        startTime: last24Hours.start.toISOString(),
+        endTime: last24Hours.end.toISOString(),
+        trafficBytes: last24Hours.trafficBytes,
+        requestCount: last24Hours.requestCount
+      },
+      package: {
+        planId: requirePlanString(plan, "PlanId"),
+        planType: requirePlanString(plan, "PlanType"),
+        planStatus: requirePlanString(plan, "Status"),
+        periodStart: period.start.toISOString(),
+        periodEnd: period.end.toISOString(),
+        trafficUsedBytes: packageUsage.trafficUsedBytes,
+        trafficCapacityBytes: capacities.trafficCapacityBytes,
+        requestUsed: packageUsage.requestUsed,
+        requestCapacity: capacities.requestCapacity
+      }
+    };
   }
 
   return { getConfig, updateConfig, dashboardState };
