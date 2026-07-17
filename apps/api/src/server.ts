@@ -25,7 +25,10 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
       cors: config.cors,
       rateLimit: config.rateLimit,
       analytics: config.analytics,
-      clientAuth: config.clientAuth
+      clientAuth: config.clientAuth,
+      edgeOne: {
+        credentialEncryptionKey: config.edgeOne.credentialEncryptionKey
+      }
     });
     await app.listen({ port: config.server.port, host: config.server.host });
     app.log.info({
@@ -40,7 +43,10 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
         clientAuth: config.clientAuth,
         cors: config.cors,
         rateLimit: config.rateLimit,
-        analytics: config.analytics
+        analytics: config.analytics,
+        edgeOne: {
+          credentialEncryptionKeyConfigured: Boolean(config.edgeOne.credentialEncryptionKey)
+        }
       })
     }, "API listening");
     return { app, prisma, config };

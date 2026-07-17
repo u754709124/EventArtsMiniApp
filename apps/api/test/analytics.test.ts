@@ -80,6 +80,7 @@ async function getOverview() {
     todayUniqueUsers: number;
     weekDailyUniqueUsers: number;
     monthDailyUniqueUsers: number;
+    edgeOne: { status: "not_configured" };
   };
 }
 
@@ -126,7 +127,8 @@ describe("daily WeChat user analytics", () => {
     expect(await getOverview()).toEqual({
       todayUniqueUsers: 1,
       weekDailyUniqueUsers: 1,
-      monthDailyUniqueUsers: 1
+      monthDailyUniqueUsers: 1,
+      edgeOne: { status: "not_configured" }
     });
 
     const row = await prisma.dailyUserVisit.findFirstOrThrow();

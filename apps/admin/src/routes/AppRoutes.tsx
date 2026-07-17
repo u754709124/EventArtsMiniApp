@@ -14,6 +14,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { Protected } from "../pages/Protected";
 import { SiteConfigPage } from "../pages/SiteConfigPage";
+import { SystemConfigPage } from "../pages/SystemConfigPage";
 import { setSessionExpiredHandler } from "../api";
 import { ADMIN_BASENAME, isAdminLoginPathname } from "./admin-paths";
 
@@ -36,6 +37,7 @@ export const router = createBrowserRouter(
       children: [
         { index: true, element: <Navigate to="/dashboard" replace /> },
         { path: "dashboard", element: <DashboardPage /> },
+        { path: "system-config", element: <SystemConfigPage /> },
         { path: "site-config", element: <SiteConfigPage /> },
         { path: "announcements", element: <CrudPage config={configs.announcements} /> },
         { path: "banners", element: <CrudPage config={configs.banners} /> },

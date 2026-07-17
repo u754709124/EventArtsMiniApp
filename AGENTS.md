@@ -47,6 +47,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 ## Database and Migration Rules
 - Prisma schema is the source of truth.
 - SQLite is used for local development and tests.
+- EdgeOne CAM credentials belong only to the singleton server-side `SystemConfig`; never place them in client-facing `SiteConfig`. Database backups contain only AES-256-GCM ciphertext and require the original external encryption key to restore.
 - Seeds must be idempotent for demo content and must not create or overwrite administrators; create the first administrator with the explicit `admin:bootstrap` command.
 - Production deployments must not rely on any default administrator password; create the first administrator with `admin:bootstrap` and provide a strong production JWT secret.
 
@@ -63,6 +64,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Unauthenticated users are redirected to login.
 - All forms use required validation, success/error feedback, loading/error/empty states, paginated tables, and destructive confirmation.
 - Saving CMS content must immediately invalidate/refetch data used by admin and client pages.
+- EdgeOne v1 is limited to one Zone and one CAM credential pair. SecretKey may exist only in the current password input and a single API/SDK request; it must not enter URLs, browser storage, logs, errors, snapshots, or client caches. Resource prewarming remains out of scope.
 
 ## Supported Menus
 - `host`: 主持人

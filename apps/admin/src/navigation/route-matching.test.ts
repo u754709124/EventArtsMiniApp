@@ -34,6 +34,12 @@ describe("admin route matching", () => {
       breadcrumbs: ["账号安全", "备份与恢复"],
       title: "备份与恢复"
     });
+    expect(matchAdminRoute("/system-config")).toMatchObject({
+      selectedKeys: ["system-config"],
+      openKeys: [],
+      breadcrumbs: ["系统配置"],
+      title: "系统配置"
+    });
     expect(validOpenKeys(["home", "content", "account", "unknown"])).toEqual(["home", "content", "account"]);
   });
 

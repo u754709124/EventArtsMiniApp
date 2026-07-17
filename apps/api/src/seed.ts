@@ -21,6 +21,7 @@ const assetRoot = path.resolve(process.cwd(), "../../apps/miniapp/src/assets/gen
 
 async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.clientSession.deleteMany();
+  await prisma.systemConfig.deleteMany();
   await prisma.seedRecord.deleteMany();
   await prisma.operationLog.deleteMany();
   await prisma.dailyUserVisit.deleteMany();

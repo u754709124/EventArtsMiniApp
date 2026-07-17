@@ -26,4 +26,10 @@ describe("AdminLayout CSS contract", () => {
     expect(css).not.toMatch(/\.admin-layout\s*\{[^}]*overflow-x:\s*auto/s);
     expect(css).not.toMatch(/\.admin-content\s*\{[^}]*overflow-x:\s*auto/s);
   });
+
+  it("uses four, two, and one columns for EdgeOne metrics across desktop, tablet, and mobile", () => {
+    expect(rule(".dashboard-metric-grid--edgeone")).toMatch(/grid-template-columns:\s*repeat\(4,/);
+    expect(css).toMatch(/@media \(max-width:\s*900px\)[\s\S]*?\.dashboard-metric-grid--edgeone\s*\{[^}]*repeat\(2,/);
+    expect(css).toMatch(/@media \(max-width:\s*640px\)[\s\S]*?\.dashboard-metric-grid--local,\s*\.dashboard-metric-grid--edgeone\s*\{[^}]*grid-template-columns:\s*1fr/);
+  });
 });

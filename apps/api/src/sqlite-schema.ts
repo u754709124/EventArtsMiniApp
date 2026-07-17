@@ -93,6 +93,13 @@ const statements = [
     FOREIGN KEY(placeholderIconAssetId) REFERENCES media_assets(id),
     FOREIGN KEY(placeholderCaseAssetId) REFERENCES media_assets(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS system_config (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK(id = 1),
+    zoneId TEXT NOT NULL,
+    secretIdCiphertext TEXT NOT NULL,
+    secretKeyCiphertext TEXT NOT NULL,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE TABLE IF NOT EXISTS announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     summary TEXT NOT NULL,

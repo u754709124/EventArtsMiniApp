@@ -100,7 +100,9 @@ describe("public error wrapping", () => {
     app.post("/__test/unknown-error", async () => {
       throw new Error(
         "SQLITE_ERROR: SELECT * FROM admin_users WHERE password='OpenSesame' " +
-          "AND token=header-token at /private/tmp/event-arts/prod.db JWT_SECRET=top-secret"
+          "AND token=header-token at /private/tmp/event-arts/prod.db JWT_SECRET=top-secret " +
+          "secretId=edgeone-error-secret-id secretKey=edgeone-error-secret-key " +
+          "EDGEONE_CREDENTIAL_ENCRYPTION_KEY=edgeone-error-master-key"
       );
     });
 
@@ -143,6 +145,9 @@ describe("public error wrapping", () => {
     expect(text).not.toContain("nested-body-token");
     expect(text).not.toContain("OpenSesame");
     expect(text).not.toContain("top-secret");
+    expect(text).not.toContain("edgeone-error-secret-id");
+    expect(text).not.toContain("edgeone-error-secret-key");
+    expect(text).not.toContain("edgeone-error-master-key");
     expect(text).toContain(redactedValue);
   });
 
@@ -182,7 +187,13 @@ describe("centralized security log redaction", () => {
         body: request.body as Record<string, unknown>,
         config: {
           jwt: { secret: "jwt-secret-value" },
-          JWT_SECRET: "top-level-secret"
+          JWT_SECRET: "top-level-secret",
+          edgeOne: { credentialEncryptionKey: "edgeone-master-key-value" },
+          EDGEONE_CREDENTIAL_ENCRYPTION_KEY: "edgeone-env-master-key"
+        },
+        candidateCredentials: {
+          secretId: "edgeone-secret-id-value",
+          secretKey: "edgeone-secret-key-value"
         },
         backupArchive: "raw-backup-bytes-secret",
         visible: "kept"
@@ -223,6 +234,10 @@ describe("centralized security log redaction", () => {
       "nested-api-key-secret",
       "jwt-secret-value",
       "top-level-secret",
+      "edgeone-master-key-value",
+      "edgeone-env-master-key",
+      "edgeone-secret-id-value",
+      "edgeone-secret-key-value",
       "raw-backup-bytes-secret"
     ]) {
       expect(text).not.toContain(secret);

@@ -13,10 +13,12 @@ const validWechatAppSecret = Array.from(
   { length: 32 },
   (_, index) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[index % 32]
 ).join("");
+const validEdgeOneEncryptionKey = Buffer.alloc(32, 7).toString("base64");
 const productionWechatEnv = {
   WECHAT_MINIAPP_APP_ID: validWechatAppId,
   WECHAT_MINIAPP_APP_SECRET: validWechatAppSecret,
-  WECHAT_AUTH_VERIFIER_MODE: "wechat"
+  WECHAT_AUTH_VERIFIER_MODE: "wechat",
+  EDGEONE_CREDENTIAL_ENCRYPTION_KEY: validEdgeOneEncryptionKey
 };
 
 async function withTempRepository(envFile: string, test: (root: string) => Promise<void> | void) {
@@ -80,6 +82,57 @@ describe("API configuration", () => {
         source: "generated-development",
         secret: "generated-development-secret"
       });
+      expect(config.edgeOne.credentialEncryptionKey).toBeNull();
+    });
+  });
+
+  it("requires a canonical 32-byte Base64 EdgeOne encryption key in production", async () => {
+    await withTempRepository("", (root) => {
+      const baseProductionEnv = {
+        NODE_ENV: "production",
+        API_HOST: "127.0.0.1",
+        API_PORT: "3001",
+        DATABASE_URL: "file:./prod.db",
+        PUBLIC_BASE_URL: "https://api.example.com",
+        UPLOAD_DIR: "uploads",
+        BACKUP_DIR: "var/backups",
+        JWT_SECRET: strongProductionSecret,
+        CORS_ALLOWED_ORIGINS: "https://admin.example.com",
+        WECHAT_MINIAPP_APP_ID: validWechatAppId,
+        WECHAT_MINIAPP_APP_SECRET: validWechatAppSecret,
+        WECHAT_AUTH_VERIFIER_MODE: "wechat"
+      };
+
+      expect(() => loadApiConfig({ repositoryRoot: root, processEnv: baseProductionEnv })).toThrow(
+        /EDGEONE_CREDENTIAL_ENCRYPTION_KEY is required in production/
+      );
+      for (const invalidKey of ["not-base64", Buffer.alloc(31).toString("base64"), Buffer.alloc(33).toString("base64")]) {
+        expect(() => loadApiConfig({
+          repositoryRoot: root,
+          processEnv: { ...baseProductionEnv, EDGEONE_CREDENTIAL_ENCRYPTION_KEY: invalidKey }
+        })).toThrow(/canonical Base64 encoding of exactly 32 bytes/);
+      }
+
+      const config = loadApiConfig({
+        repositoryRoot: root,
+        processEnv: { ...baseProductionEnv, EDGEONE_CREDENTIAL_ENCRYPTION_KEY: validEdgeOneEncryptionKey }
+      });
+      expect(config.edgeOne.credentialEncryptionKey).toEqual(Buffer.alloc(32, 7));
+    });
+  });
+
+  it("allows an omitted EdgeOne encryption key outside production but rejects an invalid supplied value", async () => {
+    await withTempRepository("", (root) => {
+      expect(loadApiConfig({
+        repositoryRoot: root,
+        processEnv: { NODE_ENV: "test" },
+        developmentJwtSecretFactory: () => "generated-development-secret"
+      }).edgeOne.credentialEncryptionKey).toBeNull();
+
+      expect(() => loadApiConfig({
+        repositoryRoot: root,
+        processEnv: { NODE_ENV: "development", EDGEONE_CREDENTIAL_ENCRYPTION_KEY: "invalid" }
+      })).toThrow(/canonical Base64 encoding of exactly 32 bytes/);
     });
   });
 

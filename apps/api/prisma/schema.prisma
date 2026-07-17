@@ -69,6 +69,16 @@ model SiteConfig {
   @@map("site_config")
 }
 
+model SystemConfig {
+  id                  Int      @id @default(1)
+  zoneId              String
+  secretIdCiphertext  String
+  secretKeyCiphertext String
+  updatedAt           DateTime @updatedAt
+
+  @@map("system_config")
+}
+
 model MediaAsset {
   id                       Int            @id @default(autoincrement())
   resourceName             String

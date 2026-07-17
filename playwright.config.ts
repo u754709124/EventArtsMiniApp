@@ -12,6 +12,7 @@ process.env.E2E_ADMIN_PASSWORD = e2eAdminPassword;
 
 const apiEnv = {
   ...process.env,
+  NODE_ENV: "test",
   API_HOST: "127.0.0.1",
   API_PORT: "3001",
   DATABASE_URL: `file:../.tmp/e2e-${process.pid}.db`,
@@ -51,6 +52,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         ...process.env,
+        NODE_ENV: "test",
         VITE_API_BASE_URL: ""
       }
     },
@@ -61,6 +63,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         ...process.env,
+        NODE_ENV: "test",
         TARO_APP_API_BASE_URL: apiBase
       }
     }

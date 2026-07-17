@@ -24,12 +24,17 @@ React + Vite + TypeScript + Ant Design。
 - [x] 所有媒体字段统一预览、导入/上传、hover 名称和解除关联
 - [x] 客户端元数据预检、分片 MD5、重复资源复用
 - [x] 图片/视频资源库、标签/使用状态筛选和未使用清理
+- [x] 独立 EdgeOne 系统配置页、密钥保留/清空语义和错误定位
+- [x] EdgeOne 四张卡片、刷新全部、局部失败旧数据保留和 4/2/1 响应式布局
 
 ## 已完成事项
 - 已实现 React + Vite + TypeScript + Ant Design 后台。
 - 已实现登录页、token 持久化、受保护布局、侧边栏、退出登录。
 - 已将后台导航调整为两级分组结构，并由单一配置驱动菜单、面包屑、页面标题和路由高亮；侧边栏支持收起和展开状态记忆。
-- 已实现数据看板，展示今日、本周、本月 PV。
+- 已实现数据看板，保留今日、本周、本月访问统计，并增加近 24 小时流量/请求、套餐流量/请求四张 EdgeOne 卡片。
+- 新增顶级“系统配置”菜单和 `/system-config` 路由；ZoneId、CAM SecretId、CAM SecretKey 使用可见标签，凭证为密码控件。读取时不回显凭证，保存成功或离页时清空，验证失败时保留当前输入供修正。
+- Dashboard 的“刷新全部”只发起一个聚合 GET 并同时刷新七张卡片；pending 时禁用按钮并同步阻止重复请求。全页失败和 EdgeOne 局部失败均有重试路径，后者保留上次成功 EdgeOne 值。
+- EdgeOne 区域固定提示官方计费数据可能延迟约 3 小时，并显示套餐周期与最近成功刷新时间；桌面/平板/移动端为 4/2/1 列。
 - 已实现首页配置，支持从资源库选择默认图和占位图。
 - 已实现公告、Banner、分类菜单抽屉表单，以及案例、人员独立新增/编辑页和分页表格。
 - 已增加通用页面头、分组表单、固定操作栏、未保存修改保护和编辑前完整记录 GET 回填。
@@ -42,10 +47,10 @@ React + Vite + TypeScript + Ant Design。
 - 本地上传先做格式、大小和可解析元数据校验，再在 Web Worker 分片计算 MD5；命中即复用，否则填写唯一资源名与标签后上传，图片尺寸不做硬性限制。
 - 未使用资源可单删或扫描后勾选批量清理，服务端重新引用检查后的跳过/失败项会展示汇总。
 - 已添加稳定 `data-testid` 供 Stage 5 Playwright 使用。
-- 验证通过：`pnpm --filter admin build`、`pnpm lint`、`pnpm test`。
+- 2026-07-17 EdgeOne 聚焦验证通过：Admin 组件/CSS/路由 4 个文件 14 项测试；Admin 全套 23 个文件 98 项测试；Admin production build 与本次变更定向 ESLint 通过。
 
 ## 对应 git commit hash
 50eced6
 
 ## 已知问题或设计取舍
-一期不做权限细分、忘记密码、趋势图。后台为单包 Ant Design 应用；已在后续收敛 Vite chunk warning 阈值，当前生产构建无 warning 输出。
+一期不做后台角色细分、忘记密码、趋势图或 EdgeOne 资源预热。后台为单包 Ant Design 应用；当前 production build 通过，但 Vite 对约 2 MB 的主 chunk 给出非阻塞体积 warning，后续可按路由拆包。

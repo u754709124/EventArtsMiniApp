@@ -608,10 +608,66 @@ export type ClientHomeResponse = {
   featuredArticles: ArticleListItemDto[];
 };
 
+const edgeOneCredentialInputSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine((value) => value === value.trim() && !/\s/.test(value), "凭证不能包含空白字符");
+
+export const edgeOneConfigUpdateRequestSchema = z
+  .object({
+    zoneId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "ZoneId 格式不正确"),
+    secretId: edgeOneCredentialInputSchema.max(128).optional(),
+    secretKey: edgeOneCredentialInputSchema.optional()
+  })
+  .strict();
+
+export type EdgeOneConfigUpdateRequest = z.infer<typeof edgeOneConfigUpdateRequestSchema>;
+
+export type EdgeOneConfigResponse = {
+  zoneId: string | null;
+  secretIdMasked: string | null;
+  secretIdConfigured: boolean;
+  secretKeyConfigured: boolean;
+  updatedAt: string | null;
+};
+
+export type EdgeOneDashboardState =
+  | { status: "not_configured" }
+  | { status: "error"; code: string; message: string }
+  | {
+      status: "ready";
+      zoneId: string;
+      fetchedAt: string;
+      last24Hours: {
+        startTime: string;
+        endTime: string;
+        trafficBytes: number;
+        requestCount: number;
+      };
+      package: {
+        planId: string;
+        planType: string;
+        planStatus: string;
+        periodStart: string;
+        periodEnd: string;
+        trafficUsedBytes: number;
+        trafficCapacityBytes: number;
+        requestUsed: number;
+        requestCapacity: number;
+      };
+    };
+
 export type DashboardOverviewResponse = {
   todayUniqueUsers: number;
   weekDailyUniqueUsers: number;
   monthDailyUniqueUsers: number;
+  edgeOne: EdgeOneDashboardState;
 };
 
 export const passwordPolicy = {

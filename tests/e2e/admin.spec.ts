@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { DashboardOverviewResponse, EdgeOneConfigResponse } from "@event-arts/shared";
 import sharp from "sharp";
 import { adminApi, adminPath, adminToken, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
@@ -19,6 +20,36 @@ type BackupSummary = {
 
 function assetUrl(url: string) {
   return new URL(url, apiBase).href;
+}
+
+function edgeOneReadyOverview(seed: number): DashboardOverviewResponse {
+  return {
+    todayUniqueUsers: seed,
+    weekDailyUniqueUsers: seed + 1,
+    monthDailyUniqueUsers: seed + 2,
+    edgeOne: {
+      status: "ready",
+      zoneId: "zone-e2e",
+      fetchedAt: "2026-07-16T08:00:00.000Z",
+      last24Hours: {
+        startTime: "2026-07-15T08:00:00.000Z",
+        endTime: "2026-07-16T08:00:00.000Z",
+        trafficBytes: seed * 1_000_000_000,
+        requestCount: seed * 1_000_000
+      },
+      package: {
+        planId: "plan-e2e",
+        planType: "prepaid",
+        planStatus: "normal",
+        periodStart: "2026-07-01T00:00:00.000+08:00",
+        periodEnd: "2026-08-01T00:00:00.000+08:00",
+        trafficUsedBytes: seed * 2_000_000_000,
+        trafficCapacityBytes: seed * 10_000_000_000,
+        requestUsed: seed * 3_000_000,
+        requestCapacity: seed * 20_000_000
+      }
+    }
+  };
 }
 
 async function expectLivePreviewContract(
@@ -351,6 +382,143 @@ test("登录成功进入看板并展示 PV", async ({ page }) => {
   await expect(page.getByTestId("dashboard-pv-today")).toContainText(/今日浏览量.*\d+/s);
   await expect(page.getByTestId("dashboard-pv-week")).toContainText(/本周浏览量.*\d+/s);
   await expect(page.getByTestId("dashboard-pv-month")).toContainText(/本月浏览量.*\d+/s);
+});
+
+test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", async ({ page }) => {
+  await loginAdminUi(page);
+
+  let dashboardData: DashboardOverviewResponse = {
+    todayUniqueUsers: 1,
+    weekDailyUniqueUsers: 2,
+    monthDailyUniqueUsers: 3,
+    edgeOne: { status: "not_configured" }
+  };
+  let dashboardRequests = 0;
+  let configData: EdgeOneConfigResponse = {
+    zoneId: null,
+    secretIdMasked: null,
+    secretIdConfigured: false,
+    secretKeyConfigured: false,
+    updatedAt: null
+  };
+  let submittedConfig: Record<string, unknown> | null = null;
+
+  await page.route("**/api/admin/dashboard/overview", async (route) => {
+    dashboardRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data: dashboardData, message: "ok" })
+    });
+  });
+  await page.route("**/api/admin/system-config/edgeone", async (route) => {
+    if (route.request().method() === "PUT") {
+      submittedConfig = route.request().postDataJSON() as Record<string, unknown>;
+      configData = {
+        zoneId: String(submittedConfig.zoneId),
+        secretIdMasked: "AKID****E2E1",
+        secretIdConfigured: true,
+        secretKeyConfigured: true,
+        updatedAt: "2026-07-16T08:00:00.000Z"
+      };
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data: configData, message: "ok" })
+    });
+  });
+
+  await page.goto(adminPath("/dashboard"));
+  await expect(page.getByText("尚未配置 EdgeOne CAM 凭证与 ZoneId")).toBeVisible();
+  await expect(page.getByText("官方计费数据可能延迟约 3 小时")).toBeVisible();
+  await page.getByRole("button", { name: /前往系统配置/ }).click();
+  await expect(page).toHaveURL(/\/admin\/system-config$/);
+  await expect(page.getByRole("heading", { level: 2, name: "系统配置" })).toBeVisible();
+
+  const inputSecretId = ["AKID", Date.now(), "E2E1"].join("");
+  const inputSecretKey = ["edgeone", "input", Date.now(), "e2e"].join("-");
+  await expect(page.getByTestId("edgeone-secret-id")).toHaveValue("");
+  await expect(page.getByTestId("edgeone-secret-key")).toHaveValue("");
+  await page.getByTestId("edgeone-zone-id").fill("zone-e2e");
+  await page.getByTestId("edgeone-secret-id").fill(inputSecretId);
+  await page.getByTestId("edgeone-secret-key").fill(inputSecretKey);
+  await page.getByTestId("edgeone-config-save").click();
+
+  await expect.poll(() => submittedConfig).toEqual({
+    zoneId: "zone-e2e",
+    secretId: inputSecretId,
+    secretKey: inputSecretKey
+  });
+  await expect(page.getByTestId("edgeone-secret-id")).toHaveValue("");
+  await expect(page.getByTestId("edgeone-secret-key")).toHaveValue("");
+  await expect(page.getByText(/AKID\*\*\*\*E2E1/)).toBeVisible();
+
+  const browserResidue = await page.evaluate(({ secretId, secretKey }) => {
+    const storageValues = [localStorage, sessionStorage].flatMap((storage) =>
+      Array.from({ length: storage.length }, (_, index) => storage.getItem(storage.key(index) ?? "") ?? "")
+    );
+    return {
+      urlContainsCredential: location.href.includes(secretId) || location.href.includes(secretKey),
+      htmlContainsCredential: document.documentElement.innerHTML.includes(secretId) || document.documentElement.innerHTML.includes(secretKey),
+      storageContainsCredential: storageValues.some((value) => value.includes(secretId) || value.includes(secretKey))
+    };
+  }, { secretId: inputSecretId, secretKey: inputSecretKey });
+  expect(browserResidue).toEqual({
+    urlContainsCredential: false,
+    htmlContainsCredential: false,
+    storageContainsCredential: false
+  });
+
+  dashboardData = edgeOneReadyOverview(2);
+  const leaveOnlySecret = ["leave", "only", Date.now()].join("-");
+  await page.getByTestId("edgeone-secret-key").fill(leaveOnlySecret);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("sidebar-dashboard").click();
+  await expect(page.getByTestId("dashboard-pv-today")).toContainText("2");
+  await page.goto(adminPath("/system-config"));
+  await expect(page.getByTestId("edgeone-secret-id")).toHaveValue("");
+  await expect(page.getByTestId("edgeone-secret-key")).toHaveValue("");
+  expect(await page.evaluate((secret) => {
+    const storageValues = [localStorage, sessionStorage].flatMap((storage) =>
+      Array.from({ length: storage.length }, (_, index) => storage.getItem(storage.key(index) ?? "") ?? "")
+    );
+    return location.href.includes(secret) || document.documentElement.innerHTML.includes(secret) ||
+      storageValues.some((value) => value.includes(secret));
+  }, leaveOnlySecret)).toBe(false);
+  await page.goto(adminPath("/dashboard"));
+  await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("2.00 GB");
+  await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("2.00 M");
+  await expect(page.getByTestId("dashboard-edgeone-package-traffic")).toContainText("4.00 GB / 20.00 GB");
+  await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("6.00 M / 40.00 M");
+
+  const refresh = page.getByTestId("dashboard-refresh-all");
+  await expect(refresh).toHaveAccessibleName("刷新全部");
+  expect(await refresh.evaluate((element) => ({ tag: element.tagName, tabIndex: (element as HTMLElement).tabIndex }))).toEqual({
+    tag: "BUTTON",
+    tabIndex: 0
+  });
+  const requestsBeforeRefresh = dashboardRequests;
+  dashboardData = edgeOneReadyOverview(5);
+  await refresh.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByTestId("dashboard-pv-today")).toContainText("5");
+  await expect(page.getByTestId("dashboard-pv-week")).toContainText("6");
+  await expect(page.getByTestId("dashboard-pv-month")).toContainText("7");
+  await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("5.00 GB");
+  await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("15.00 M / 100.00 M");
+  expect(dashboardRequests).toBe(requestsBeforeRefresh + 1);
+
+  for (const [width, columns] of [[1440, 4], [1024, 4], [768, 2], [375, 1]] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    const renderedColumns = await page.locator(".dashboard-metric-grid--edgeone").evaluate((element) =>
+      getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length
+    );
+    expect(renderedColumns).toBe(columns);
+    await expectNoDocumentHorizontalScroll(page);
+  }
 });
 
 test("修改密码后撤销旧 token 并要求重新登录", async ({ page, request }) => {
@@ -910,7 +1078,9 @@ test("文章管理支持分类输入、详情页引用、筛选、删除和菜�
 
   await page.goto(adminPath("/articles"));
   await page.getByTestId(`articles-row-${created.id}`).getByTestId("articles-delete").click();
-  const deleteConfirm = page.getByRole("dialog", { name: `确认删除「${created.title}」？` });
+  const deleteConfirm = page
+    .getByRole("dialog")
+    .filter({ hasText: `确认删除「${created.title}」？` });
   await expect(deleteConfirm).toBeVisible();
   await expect(deleteConfirm).toContainText(`记录 ID：${created.id}`);
   await deleteConfirm.getByRole("button", { name: /删\s*除/ }).click();
@@ -942,7 +1112,7 @@ test("表单本地上传允许非推荐尺寸，引用资源不可删除", async
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64")
   });
-  const uploadDialog = page.getByRole("dialog", { name: "上传资源" });
+  const uploadDialog = page.getByRole("dialog").filter({ hasText: "上传资源" });
   await expect(uploadDialog).toBeVisible();
   await expect(page.getByText(/实际尺寸：1×1/)).toBeVisible();
   await uploadDialog.getByRole("button", { name: /取\s*消/ }).click();
@@ -1023,7 +1193,7 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   await expect(page.getByRole("row", { name: new RegExp(source.backup.id) })).toBeVisible();
 
   await page.getByTestId(`backup-delete-${removable.backup.id}`).click();
-  const deleteDialog = page.getByRole("dialog", { name: "确认删除备份？" });
+  const deleteDialog = page.getByRole("dialog").filter({ hasText: "确认删除备份？" });
   await expect(deleteDialog).toBeVisible();
   await expect(deleteDialog).toContainText(removable.backup.id);
   await deleteDialog.getByRole("button", { name: /删\s*除\s*备\s*份/ }).click();
@@ -1032,7 +1202,7 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   expect(afterDelete.backups.some((backup) => backup.id === removable.backup.id)).toBe(false);
 
   await page.getByTestId("backup-create-open").click();
-  const createDialog = page.getByRole("dialog", { name: "创建备份" });
+  const createDialog = page.getByRole("dialog").filter({ hasText: "创建备份" });
   await expect(createDialog).toBeVisible();
   await createDialog.getByTestId("backup-create-note").fill(uiCreateNote);
   await createDialog.getByRole("button", { name: /创\s*建/ }).click();

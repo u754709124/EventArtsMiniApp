@@ -37,6 +37,7 @@ import {
   clientArticleListQuerySchema,
   clientWechatLoginRequestSchema,
   clientWechatLoginResponseSchema,
+  edgeOneConfigUpdateRequestSchema,
   fail,
   failWithRequestId,
   lookupMediaRequestSchema,
@@ -133,6 +134,12 @@ import {
   verifyClientSessionToken,
   type WeChatLoginCodeVerifier
 } from "./client-auth";
+import {
+  asEdgeOneDomainError,
+  createEdgeOneService,
+  edgeOneErrorStatus,
+  type EdgeOneClientFactory
+} from "./edgeone";
 
 type AppRateLimitConfig = {
   login: {
@@ -161,6 +168,10 @@ type BuildOptions = {
   analytics?: ApiConfig["analytics"] | PageViewAnalyticsConfig;
   clientAuth?: ApiConfig["clientAuth"];
   weChatLoginCodeVerifier?: WeChatLoginCodeVerifier;
+  edgeOne?: {
+    credentialEncryptionKey: Buffer | null;
+    clientFactory?: EdgeOneClientFactory;
+  };
 };
 
 type AdminRequest = FastifyRequest & {
@@ -793,6 +804,12 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     now: currentTime,
     hooks: options.backupHooks
   });
+  const edgeOneService = createEdgeOneService({
+    prisma,
+    credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey,
+    clientFactory: options.edgeOne?.clientFactory,
+    now: currentTime
+  });
   let backupCreateInProgress = false;
   let backupDonePromise: Promise<void> | null = null;
   let resolveBackupDone: (() => void) | null = null;
@@ -1008,6 +1025,10 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     } catch {
       return sendError(reply, 401, "UNAUTHORIZED", "请先登录");
     }
+  }
+
+  async function setNoStore(_request: FastifyRequest, reply: FastifyReply) {
+    reply.header("Cache-Control", "no-store");
   }
 
   async function requireClientSession(request: ClientRequest, reply: FastifyReply) {
@@ -1258,15 +1279,45 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok({ revokedSessionCount: result.revokedSessionCount }));
   });
 
-  app.get("/api/admin/dashboard/overview", { preHandler: requireAdmin }, async (_request, reply) => {
+  app.get("/api/admin/dashboard/overview", { preHandler: [setNoStore, requireAdmin] }, async (_request, reply) => {
     const overview = await dailyUserVisitOverview(prisma, currentTime());
-    return reply.send(
+    const edgeOne = await edgeOneService.dashboardState();
+    return reply.header("Cache-Control", "no-store").send(
       ok({
         todayUniqueUsers: overview.todayUniqueUsers,
         weekDailyUniqueUsers: overview.weekDailyUniqueUsers,
-        monthDailyUniqueUsers: overview.monthDailyUniqueUsers
+        monthDailyUniqueUsers: overview.monthDailyUniqueUsers,
+        edgeOne
       })
     );
+  });
+
+  app.get("/api/admin/system-config/edgeone", { preHandler: [setNoStore, requireAdmin] }, async (_request, reply) => {
+    try {
+      return reply.send(ok(await edgeOneService.getConfig()));
+    } catch (error) {
+      const safe = asEdgeOneDomainError(error);
+      return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
+    }
+  });
+
+  app.put("/api/admin/system-config/edgeone", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    const parsed = edgeOneConfigUpdateRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        firstZodIssueMessage(parsed.error, "EdgeOne 配置参数错误")
+      );
+    }
+    try {
+      const result = await edgeOneService.updateConfig(parsed.data, request.admin!.id);
+      return reply.send(ok(result.config));
+    } catch (error) {
+      const safe = asEdgeOneDomainError(error);
+      return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
+    }
   });
 
   app.get("/api/admin/backups", { preHandler: requireAdmin }, async (_request, reply) => {

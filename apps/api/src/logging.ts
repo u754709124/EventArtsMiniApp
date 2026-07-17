@@ -38,11 +38,11 @@ export type SecurityEventName =
   | "backup_restore_completed";
 
 const sensitiveKeyPattern =
-  /^(authorization|proxy-authorization|cookie|set-cookie|password|currentpassword|newpassword|confirmpassword|code|wechatcode|logincode|token|access_token|refresh_token|jwt|jwtsecret|secret|clientsecret|appsecret|sessionkey|session_key|openid|unionid|apikey|api_key|credential|credentials)$/i;
+  /^(authorization|proxy-authorization|cookie|set-cookie|password|currentpassword|newpassword|confirmpassword|code|wechatcode|logincode|token|access_token|refresh_token|jwt|jwtsecret|secret|secretid|secretkey|clientsecret|appsecret|sessionkey|session_key|openid|unionid|apikey|api_key|credential|credentials|candidatecredentials|edgeonecredentialencryptionkey)$/i;
 const sensitiveKeyFragmentPattern =
-  /(password|authorization|cookie|token|jwt|secret|session[-_]?key|openid|unionid|api[-_]?key|credential)/i;
+  /(password|authorization|cookie|token|jwt|secret|session[-_]?key|openid|unionid|api[-_]?key|credential|encryption[-_]?key|master[-_]?key)/i;
 const sensitiveTextPattern =
-  /\b(authorization|password|currentPassword|newPassword|confirmPassword|code|wechatCode|loginCode|token|jwt|jwt_secret|secret|appSecret|sessionKey|session_key|openid|unionid|api_key|apikey)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;}\]]+)/gi;
+  /\b(authorization|password|currentPassword|newPassword|confirmPassword|code|wechatCode|loginCode|token|jwt|jwt_secret|secret|secretId|secretKey|appSecret|sessionKey|session_key|openid|unionid|api_key|apikey|EDGEONE_CREDENTIAL_ENCRYPTION_KEY)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;}\]]+)/gi;
 
 export const apiLogRedactPaths = [
   "req.headers.authorization",
@@ -60,6 +60,12 @@ export const apiLogRedactPaths = [
   "headers.cookie",
   "headers['set-cookie']",
   "headers['x-api-key']",
+  "req.body.secretId",
+  "req.body.secretKey",
+  "req.body.candidateCredentials",
+  "request.body.secretId",
+  "request.body.secretKey",
+  "request.body.candidateCredentials",
   "body.password",
   "body.currentPassword",
   "body.newPassword",
@@ -70,6 +76,10 @@ export const apiLogRedactPaths = [
   "body.loginCode",
   "body.jwt",
   "body.secret",
+  "body.secretId",
+  "body.secretKey",
+  "body.candidateCredentials",
+  "body.EDGEONE_CREDENTIAL_ENCRYPTION_KEY",
   "body.JWT_SECRET",
   "body.sessionKey",
   "body.session_key",
@@ -78,6 +88,9 @@ export const apiLogRedactPaths = [
   "config.jwt.secret",
   "config.JWT_SECRET",
   "config.secret",
+  "config.edgeOne.credentialEncryptionKey",
+  "config.EDGEONE_CREDENTIAL_ENCRYPTION_KEY",
+  "candidateCredentials",
   "config.clientAuth.wechat.appSecret",
   "config.wechat.appSecret",
   "config.WECHAT_MINIAPP_APP_SECRET",
@@ -95,12 +108,19 @@ export const apiLogRedactPaths = [
   "details.body.loginCode",
   "details.body.jwt",
   "details.body.secret",
+  "details.body.secretId",
+  "details.body.secretKey",
+  "details.body.candidateCredentials",
+  "details.body.EDGEONE_CREDENTIAL_ENCRYPTION_KEY",
   "details.body.sessionKey",
   "details.body.session_key",
   "details.body.openid",
   "details.body.unionid",
   "details.config.jwt.secret",
   "details.config.JWT_SECRET",
+  "details.config.edgeOne.credentialEncryptionKey",
+  "details.config.EDGEONE_CREDENTIAL_ENCRYPTION_KEY",
+  "details.candidateCredentials",
   "details.config.clientAuth.wechat.appSecret",
   "details.config.wechat.appSecret",
   "details.config.WECHAT_MINIAPP_APP_SECRET"

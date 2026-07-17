@@ -28,6 +28,7 @@ CI=true pnpm install
 - `API_PORT`：API 监听端口，默认 `3001`
 - `API_HOST`：API 监听地址，默认 `127.0.0.1`；`NODE_ENV=production` 只允许 loopback，禁止 `0.0.0.0` 或公网地址
 - `JWT_SECRET`：管理员 JWT 密钥，生产环境必须替换
+- `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`：EdgeOne CAM 凭证主密钥；必须是规范 Base64 编码的 32 字节随机值，生产必填且必须独立于数据库备份保管
 - `DATABASE_URL`：SQLite 数据库地址，默认 `file:./dev.db`
 - `UPLOAD_DIR`：本地上传目录，默认指向仓库根目录 `uploads`
 - `MAX_IMAGE_UPLOAD_BYTES`：图片上传上限，默认 `10MB`
@@ -107,6 +108,47 @@ ADMIN_HOST=127.0.0.1 ADMIN_PORT=4173 pnpm start:admin
 该服务只服务 `apps/admin/dist`，支持 `/admin/*` SPA 刷新 fallback；缺失的真实静态资源仍返回 404。
 生产模式下 API 和 Admin 会在监听端口前拒绝非 loopback host；不要用 `API_HOST=0.0.0.0` 或 `ADMIN_HOST=0.0.0.0` 作为部署捷径。
 
+## EdgeOne Admin 看板
+
+后台新增独立“系统配置”页面和 EdgeOne 看板区域。v1 只管理一个 Zone 和一组 CAM 子账号凭证；系统配置不复用面向小程序的 `SiteConfig`。看板用一次聚合请求同时刷新原有三张小程序访问卡片和以下四项：
+
+- 近 24 小时流量：滚动窗口内 `acc_flux + smt_flux`，按十进制 GB 展示。
+- 近 24 小时请求数：滚动窗口内 `sec_request_clean`，按百万次 M 展示。
+- 套餐流量：地区用量按 `CH=1`、`NA/EU=1.71`、`AS1=2.49`、`AS2=2.68`、`AS3=2.78`、`MidEast/AF/SA=2.91` 折算，分母只取 `SecTrafficCapacity`。
+- 套餐请求：分母只取 `SecRequestCapacity`。预付费按 `EnabledTime` 锚定的订阅月；若下月不存在同一日期，按腾讯云规则将该周期补齐为 31 天（例如 3 月 31 日至 5 月 1 日）。企业后付费按北京时间自然月。
+
+未知地区、无法识别的周期或异常数值会显示不可用，不做估算；已用量允许超过套餐额度。腾讯云官方计费数据可能延迟约 3 小时，页面的“最近成功刷新”时间不代表计费数据实时性。本期不包含资源预热、缓存刷新、多 Zone、加量包或账单金额。
+
+生产部署必须先生成并配置主密钥，再发布代码：
+
+```bash
+openssl rand -base64 32
+```
+
+把输出通过部署平台的 secret 管理能力设置为 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`，不要写入源码、日志或数据库。生产环境缺失或格式错误时 API 启动失败；开发/测试缺失时可以启动，但不能保存 EdgeOne 配置。代码发布后由管理员进入“系统配置”，输入 ZoneId、SecretId 和 SecretKey，服务端会在写库前验证套餐归属和计费查询权限。
+
+CAM 子账号最小权限如下；`DescribePlans` 只能使用全资源，`DescribeBillingData` 只授权目标 Zone，不授予资源预热、配置修改或 EdgeOne 全量管理权限：
+
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["teo:DescribePlans"],
+      "resource": ["*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["teo:DescribeBillingData"],
+      "resource": ["qcs::teo::uin/<主账号UIN>:zone/<ZoneId>"]
+    }
+  ]
+}
+```
+
+资源授权最终以[腾讯云 CAM 文档](https://cloud.tencent.com/document/product/598/99327)为准。数据库备份只包含 SecretId/SecretKey 密文，恢复后必须继续提供创建该密文时的原主密钥。主密钥不得只保存在同一份数据库备份中；若原主密钥丢失，旧密文无法恢复，也不支持在线轮换：应先停 API 并保留故障数据库副本，在离线维护窗口仅删除 `system_config` 单例记录，配置新的 32 字节主密钥后重启，再通过系统配置页重新录入 CAM 凭证。
+
 ## 人员列表参考资源
 
 人员列表参考图及其六张可复现的示例封面资源位于 `docs/design` 和 `apps/miniapp/src/assets/generated`。重新生成资源请运行：
@@ -121,7 +163,7 @@ pnpm assets:slice:artists
 
 详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员、案例、文章和“详情页直达”菜单可以共享同一详情页；被任一业务记录引用的详情页不能删除。
 
-后台信息架构按“数据看板 / 首页运营 / 内容管理 / 素材管理”分组，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
+后台信息架构包含“数据看板 / 系统配置 / 首页运营 / 内容管理 / 素材管理”，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
 
 小程序所有新入口统一跳转到：
 
@@ -194,6 +236,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 ## 生产注意事项
 
 - 使用 `admin:bootstrap` 创建首个管理员，并配置强 `JWT_SECRET`。
+- 在发布新代码前配置 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`，并把原主密钥纳入独立 secret 备份；恢复数据库时必须同时恢复同一主密钥。
 - 生产环境不要运行 `pnpm db:seed`；该命令会在写入前失败。
 - 上线前运行 `pnpm security:release-gate`；任一自动化 P0/P1 门禁失败都不得发布。
 - 推荐以 Nginx 作为唯一公网入口：`/admin/` 代理到 Admin 静态服务，`/api/` 和 `/uploads/` 代理到 API。

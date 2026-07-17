@@ -56,6 +56,9 @@ export type ApiConfig = {
   analytics: {
     retentionDays: number;
   };
+  edgeOne: {
+    credentialEncryptionKey: Buffer | null;
+  };
 };
 
 export type LoadApiConfigOptions = {
@@ -149,7 +152,8 @@ const rawEnvSchema = z.object({
   LOGIN_RATE_LIMIT_MAX_FAILURES: z.coerce.number().int().min(1).max(1_000).default(5),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   ANALYTICS_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).max(100_000).default(60),
-  PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90)
+  PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+  EDGEONE_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().optional()
 });
 
 export function getRepositoryRoot() {
@@ -368,6 +372,28 @@ function resolveJwtSecret(
   return { secret: developmentJwtSecretFactory(), source: "generated-development" as const };
 }
 
+function resolveEdgeOneCredentialEncryptionKey(
+  rawValue: string | undefined,
+  env: RuntimeEnvironment,
+  issues: string[]
+) {
+  const value = rawValue?.trim() ?? "";
+  if (!value) {
+    if (env === "production") {
+      issues.push("EDGEONE_CREDENTIAL_ENCRYPTION_KEY is required in production");
+    }
+    return null;
+  }
+
+  const isCanonicalBase64 = /^[A-Za-z0-9+/]{43}=$/.test(value);
+  const decoded = isCanonicalBase64 ? Buffer.from(value, "base64") : Buffer.alloc(0);
+  if (decoded.byteLength !== 32 || decoded.toString("base64") !== value) {
+    issues.push("EDGEONE_CREDENTIAL_ENCRYPTION_KEY must be canonical Base64 encoding of exactly 32 bytes");
+    return null;
+  }
+  return decoded;
+}
+
 export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
   const repositoryRoot = options.repositoryRoot ?? defaultRepositoryRoot;
   const envFilePath = options.envFilePath ?? getRepositoryEnvPath(repositoryRoot);
@@ -398,6 +424,11 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
     raw.NODE_ENV,
     issues,
     options.developmentJwtSecretFactory ?? (() => randomBytes(32).toString("base64url"))
+  );
+  const edgeOneCredentialEncryptionKey = resolveEdgeOneCredentialEncryptionKey(
+    raw.EDGEONE_CREDENTIAL_ENCRYPTION_KEY,
+    raw.NODE_ENV,
+    issues
   );
 
   if (issues.length) throw new ConfigValidationError(issues);
@@ -435,6 +466,9 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
     },
     analytics: {
       retentionDays: raw.PAGE_VIEW_RETENTION_DAYS
+    },
+    edgeOne: {
+      credentialEncryptionKey: edgeOneCredentialEncryptionKey
     }
   };
 }

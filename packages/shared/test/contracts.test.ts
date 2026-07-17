@@ -25,6 +25,7 @@ import {
   clientWechatLoginErrorCodeValues,
   clientWechatLoginRequestSchema,
   clientWechatLoginResponseSchema,
+  edgeOneConfigUpdateRequestSchema,
   fail,
   mediaFieldRules,
   mediaListQuerySchema,
@@ -46,6 +47,8 @@ import {
   type ArtistListItemDto,
   type ClientHomeResponse,
   type DashboardOverviewResponse,
+  type EdgeOneConfigResponse,
+  type EdgeOneDashboardState,
   type DetailPageConfigDto,
   type DetailPageReferenceDto
 } from "../src/index";
@@ -304,12 +307,38 @@ describe("shared contracts", () => {
     expect(() => pageViewRequestSchema.parse({ pagePath: "/pages/index/index", scene: "x".repeat(65) })).toThrow();
   });
 
-  it("defines the exact daily unique-user dashboard contract", () => {
+  it("defines the dashboard and safe EdgeOne system-config contracts", () => {
     expectTypeOf<DashboardOverviewResponse>().toEqualTypeOf<{
       todayUniqueUsers: number;
       weekDailyUniqueUsers: number;
       monthDailyUniqueUsers: number;
+      edgeOne: EdgeOneDashboardState;
     }>();
+    expectTypeOf<keyof EdgeOneConfigResponse>().toEqualTypeOf<
+      "zoneId" | "secretIdMasked" | "secretIdConfigured" | "secretKeyConfigured" | "updatedAt"
+    >();
+
+    expect(edgeOneConfigUpdateRequestSchema.parse({
+      zoneId: " zone-example_1 ",
+      secretId: "AKID_TEST_VALUE",
+      secretKey: "TEST_SECRET_KEY_VALUE"
+    })).toEqual({
+      zoneId: "zone-example_1",
+      secretId: "AKID_TEST_VALUE",
+      secretKey: "TEST_SECRET_KEY_VALUE"
+    });
+    expect(edgeOneConfigUpdateRequestSchema.parse({ zoneId: "zone-example_1" })).toEqual({
+      zoneId: "zone-example_1"
+    });
+    expect(() => edgeOneConfigUpdateRequestSchema.parse({
+      zoneId: "zone-example_1",
+      secretKey: " secret-with-whitespace "
+    })).toThrow();
+    expect(() => edgeOneConfigUpdateRequestSchema.parse({
+      zoneId: "zone-example_1",
+      secretKey: "TEST_SECRET_KEY_VALUE",
+      unexpected: true
+    })).toThrow();
   });
 
   it("defines backup manifest and delete/restore confirmation contracts", () => {

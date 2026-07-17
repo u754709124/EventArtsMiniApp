@@ -10,6 +10,10 @@ import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import type { BackupServiceHooks } from "../src/backup";
 import { createApiLoggerOptions } from "../src/logging";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
+import {
+  readDecryptedEdgeOneSystemConfig,
+  writeEdgeOneSystemConfig
+} from "../src/system-config/edgeone-config-store";
 import { resetTestAdmin, testAdminCredentials } from "./fixtures";
 
 type LogEntry = Record<string, unknown>;
@@ -143,6 +147,9 @@ describe("admin backup API", () => {
   });
 
   it("creates a versioned manifest with a VACUUM INTO database snapshot and safe upload file checksums", async () => {
+    const edgeOneEncryptionKey = Buffer.alloc(32, 7);
+    const edgeOneSecretId = ["BACKUP", "ONLY", "SECRET", "ID"].join("_");
+    const edgeOneSecretKey = ["BACKUP", "ONLY", "SECRET", "KEY"].join("_");
     await mkdir(path.join(uploadDir, "nested"), { recursive: true });
     await mkdir(path.join(uploadDir, ".tmp"), { recursive: true });
     await mkdir(path.join(uploadDir, ".trash"), { recursive: true });
@@ -161,6 +168,11 @@ describe("admin backup API", () => {
         openidHash: "backup-openid-hash",
         visitDate: "2026-07-12"
       }
+    });
+    await writeEdgeOneSystemConfig(prisma, edgeOneEncryptionKey, {
+      zoneId: "zone-backup-test",
+      secretId: edgeOneSecretId,
+      secretKey: edgeOneSecretKey
     });
     await startApp();
     const token = await login();
@@ -204,6 +216,18 @@ describe("admin backup API", () => {
       await expect(snapshotPrisma.dailyUserVisit.findFirstOrThrow({
         where: { appId: "wx-backup-test" }
       })).resolves.toMatchObject({ openidHash: "backup-openid-hash", visitDate: "2026-07-12" });
+      const snapshotConfig = await snapshotPrisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } });
+      expect(snapshotConfig).toMatchObject({ zoneId: "zone-backup-test" });
+      expect(snapshotConfig.secretIdCiphertext).not.toContain(edgeOneSecretId);
+      expect(snapshotConfig.secretKeyCiphertext).not.toContain(edgeOneSecretKey);
+      await expect(readDecryptedEdgeOneSystemConfig(snapshotPrisma, edgeOneEncryptionKey)).resolves.toMatchObject({
+        zoneId: "zone-backup-test",
+        secretId: edgeOneSecretId,
+        secretKey: edgeOneSecretKey
+      });
+      await expect(
+        readDecryptedEdgeOneSystemConfig(snapshotPrisma, Buffer.alloc(32, 8))
+      ).rejects.toThrow("could not be authenticated");
     } finally {
       await snapshotPrisma.$disconnect();
     }

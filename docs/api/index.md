@@ -237,6 +237,104 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 
 创建、删除、导入和恢复成功/失败均写 `operation_logs`，并通过结构化安全日志记录 `backup_create_*`、`backup_delete_*`、`backup_import_*`、`backup_restore_*` 事件；日志包含来源、操作者、结果和 requestId，但不记录归档内容、敏感请求体、Authorization、Cookie、JWT 或部署 secret。
 
+`system_config` 随 SQLite 快照一起备份，但其中只有 AES-256-GCM 密文；备份归档不包含 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`。恢复带有 EdgeOne 配置的数据库时必须向 API 提供创建密文时的同一主密钥，否则旧凭证不可解密。主密钥应通过数据库备份之外的 secret 管理系统独立恢复。
+
+## Admin EdgeOne Configuration And Usage
+
+以下接口均需要管理员 Bearer token，并返回 `Cache-Control: no-store`：
+
+- `GET /api/admin/system-config/edgeone`
+- `PUT /api/admin/system-config/edgeone`
+- `GET /api/admin/dashboard/overview`
+
+`GET /api/admin/system-config/edgeone` 只返回安全元数据：
+
+```json
+{
+  "zoneId": "zone-example",
+  "secretIdMasked": "AKID****1234",
+  "secretIdConfigured": true,
+  "secretKeyConfigured": true,
+  "updatedAt": "2026-07-16T08:00:00.000Z"
+}
+```
+
+未配置时 `zoneId`、`secretIdMasked`、`updatedAt` 为 `null`，两个 configured 字段为 `false`。接口永远不返回完整 SecretId、SecretKey、密文封套或主密钥。
+
+`PUT /api/admin/system-config/edgeone` 请求体：
+
+```json
+{
+  "zoneId": "zone-example",
+  "secretId": "<CAM SecretId，仅首次或轮换时提交>",
+  "secretKey": "<CAM SecretKey，仅首次或轮换时提交>"
+}
+```
+
+首次保存必须同时提供 SecretId 和 SecretKey；后续省略任一凭证表示沿用当前密文对应的值。服务端先用候选凭证验证 `DescribePlans` 中目标 Zone 只归属于一个有效套餐，再验证 `DescribeBillingData` 的 `acc_flux`、`smt_flux`、`sec_request_clean` 三个指标；全部成功后才在单一事务中写入密文和操作日志。验证或写入失败时旧配置逐字段保持不变。
+
+错误状态：格式或首次凭证缺失为 `400`；无效凭证、权限不足、Zone/套餐/周期不可用为安全化 `422`；腾讯云网络、限流或上游异常为 `502`；本地主密钥缺失、错误或密文不可认证为 `503`。错误响应和日志不包含 SDK 原始签名、请求、SecretId 或 SecretKey。
+
+Dashboard 响应保留三个本地指标，并增加 `edgeOne` 联合状态：
+
+```json
+{
+  "todayUniqueUsers": 1,
+  "weekDailyUniqueUsers": 5,
+  "monthDailyUniqueUsers": 18,
+  "edgeOne": {
+    "status": "ready",
+    "zoneId": "zone-example",
+    "fetchedAt": "2026-07-16T08:00:00.000Z",
+    "last24Hours": {
+      "startTime": "2026-07-15T08:00:00.000Z",
+      "endTime": "2026-07-16T08:00:00.000Z",
+      "trafficBytes": 2500000000,
+      "requestCount": 3200000
+    },
+    "package": {
+      "planId": "plan-example",
+      "planType": "prepaid",
+      "planStatus": "normal",
+      "periodStart": "2026-07-01T00:00:00.000Z",
+      "periodEnd": "2026-08-01T00:00:00.000Z",
+      "trafficUsedBytes": 9500000000,
+      "trafficCapacityBytes": 10000000000,
+      "requestUsed": 8000000,
+      "requestCapacity": 10000000
+    }
+  }
+}
+```
+
+`edgeOne.status` 还可能是 `{ "status": "not_configured" }`，或 `{ "status": "error", "code": string, "message": string }`。EdgeOne 局部错误不会改变三个本地统计字段，也不会把整个聚合响应改为 5xx。
+
+近 24 小时使用滚动窗口，流量为 `acc_flux + smt_flux`，请求数为 `sec_request_clean`。套餐流量地区系数为 `CH=1`、`NA/EU=1.71`、`AS1=2.49`、`AS2=2.68`、`AS3=2.78`、`MidEast/AF/SA=2.91`；流量额度严格只取 `SecTrafficCapacity`，请求额度严格只取 `SecRequestCapacity`，不得与 `AccTrafficCapacity`、`SmartTrafficCapacity` 等字段相加。预付费按 `EnabledTime` 锚定的订阅月；下月不存在同一日期时按腾讯云规则补齐 31 天，例如 3 月 31 日至 5 月 1 日。企业后付费按 `Asia/Shanghai` 自然月；未知地区、周期或异常数值返回 error，不做估算。API 返回原始 Byte/请求次数，Admin 用十进制 GB/M 保留两位小数；腾讯云计费数据可能延迟约 3 小时。
+
+API 服务端环境变量 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY` 必须是规范 Base64 编码的 32 字节随机密钥。生产缺失或非法时启动失败；开发/测试缺失时禁止保存配置。推荐使用 `openssl rand -base64 32` 生成，并在发布代码前通过部署 secret 管理配置。
+
+CAM 最小策略：
+
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["teo:DescribePlans"],
+      "resource": ["*"]
+    },
+    {
+      "effect": "allow",
+      "action": ["teo:DescribeBillingData"],
+      "resource": ["qcs::teo::uin/<主账号UIN>:zone/<ZoneId>"]
+    }
+  ]
+}
+```
+
+不授予预热、配置修改或 EdgeOne 全量管理权限；资源表达式以[腾讯云 CAM 文档](https://cloud.tencent.com/document/product/598/99327)为准。
+
 ## Media Field Rules
 
 | 字段                                    | 类型       | 推荐尺寸 / 约束                                      |
@@ -254,6 +352,7 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 
 - `POST /api/admin/auth/login`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`
 - `GET /api/admin/dashboard/overview`
+- `GET|PUT /api/admin/system-config/edgeone`
 - `GET|POST /api/admin/backups`
 - `POST /api/admin/backups/import`
 - `POST /api/admin/backups/:id/restore`
@@ -274,7 +373,7 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 - `GET /api/admin/detail-pages/:id/references`
 - `POST /api/admin/detail-pages/preview`
 
-`GET /api/admin/dashboard/overview` 返回 `{ "todayUniqueUsers": number, "weekDailyUniqueUsers": number, "monthDailyUniqueUsers": number }`。`todayUniqueUsers` 是当前北京时间自然日的去重微信用户数；`weekDailyUniqueUsers` 是本周周一至今天的每日去重用户数之和；`monthDailyUniqueUsers` 是本月第一日至今天的每日去重用户数之和。同一用户跨日会在周期累计中再次贡献一次。该接口只聚合 `daily_user_visits`，不包含旧匿名事件，不返回 PV、估算值或采样参数。
+`GET /api/admin/dashboard/overview` 的三个本地字段中，`todayUniqueUsers` 是当前北京时间自然日的去重微信用户数；`weekDailyUniqueUsers` 是本周周一至今天的每日去重用户数之和；`monthDailyUniqueUsers` 是本月第一日至今天的每日去重用户数之和。同一用户跨日会在周期累计中再次贡献一次。本地部分只聚合 `daily_user_visits`，不包含旧匿名事件，不返回 PV、估算值或采样参数；EdgeOne 字段见前述联合状态契约。
 
 公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
 

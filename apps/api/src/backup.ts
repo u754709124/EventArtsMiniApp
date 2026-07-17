@@ -513,6 +513,7 @@ async function tableCounts(prisma: AppPrismaClient) {
     "media_assets",
     "media_asset_tags",
     "site_config",
+    "system_config",
     "announcements",
     "banners",
     "menu_items",

@@ -232,6 +232,9 @@ describe("admin backup import preflight", () => {
         mediaFiles: "ok"
       }
     });
+    expect(body.data.preflight.impact.tables).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: "system_config", currentRows: 0, candidateRows: 0 })
+    ]));
     expect(body.data.manifest).toBeUndefined();
     const text = JSON.stringify(body);
     expect(text).not.toContain(backupDir);
