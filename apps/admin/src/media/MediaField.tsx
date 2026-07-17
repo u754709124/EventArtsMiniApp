@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { CloseOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Modal, Popover, Space, Tooltip, message } from "antd";
+import { Button, Modal, Popover, Space, Tooltip } from "antd";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { mediaFieldRules, type MediaAssetDto, type MediaFieldKey } from "@event-arts/shared";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { MediaLibraryModal } from "./MediaLibraryModal";
 import { MediaUploadAction } from "./MediaUploadAction";
 
@@ -98,7 +99,7 @@ export function MediaField({
         if (active) setAssets(items);
       })
       .catch((error) => {
-        if (active) message.error(error instanceof Error ? error.message : "资源预览加载失败");
+        if (active) notify.error(error instanceof Error ? error.message : "资源预览加载失败");
       });
     return () => {
       active = false;

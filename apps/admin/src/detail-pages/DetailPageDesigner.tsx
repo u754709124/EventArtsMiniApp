@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, Form, Input, Select, Space, Spin, Tag, message } from "antd";
+import { Button, Card, Form, Input, Select, Space, Spin, Tag } from "antd";
 import type { DetailPageConfigDto, DetailPageReferenceDto, DetailPageType } from "@event-arts/shared";
 import { DetailPageTypeSchema, detailPageTypeDefinitions } from "@event-arts/shared";
 import { flushSync } from "react-dom";
@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { withAdminBasename } from "../routes/admin-paths";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { DetailBannerField, detailBannerFormRules } from "./DetailBannerField";
 import { DetailPageLivePreview } from "./DetailPageLivePreview";
 import { DetailPageTypeSelect } from "./DetailPageTypeSelect";
@@ -93,7 +94,7 @@ export function DetailPageDesigner() {
         setSaveStatus("已保存");
         setRevision((value) => value + 1);
       })
-      .catch((error) => message.error(error instanceof Error ? error.message : "详情页加载失败"))
+      .catch((error) => notify.error(error instanceof Error ? error.message : "详情页加载失败"))
       .finally(() => {
         setLoading(false);
         window.setTimeout(() => {
@@ -159,14 +160,14 @@ export function DetailPageDesigner() {
       setSaveStatus("已保存");
       setRevision((value) => value + 1);
       notifyReturn(saved.id);
-      message.success("保存成功");
+      notify.success("保存成功");
       if (isNew) navigate(`/detail-pages/${saved.id}/edit${returnToken ? `?returnToken=${encodeURIComponent(returnToken)}` : ""}`, { replace: true });
       window.setTimeout(() => {
         hydrating.current = false;
       }, 0);
     } catch (error) {
       setSaveStatus("保存失败");
-      message.error(error instanceof Error ? error.message : "保存失败");
+      notify.error(error instanceof Error ? error.message : "保存失败");
     } finally {
       setSaving(false);
     }

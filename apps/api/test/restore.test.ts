@@ -343,8 +343,32 @@ describe("admin backup restore", () => {
     await startApp();
     const firstToken = await login();
     const secondToken = await login();
+    const restoreAdmin = await prisma.adminUser.findUniqueOrThrow({
+      where: { username: testAdminCredentials.username }
+    });
+    const targetNotificationId = randomUUID();
+    const currentNotificationId = randomUUID();
+    await prisma.adminNotification.create({
+      data: {
+        adminId: restoreAdmin.id,
+        clientEventId: targetNotificationId,
+        level: "info",
+        message: "目标备份通知",
+        occurredAt: new Date()
+      }
+    });
     await prisma.operationLog.create({ data: { action: "TARGET_STATE", detail: "will-be-restored" } });
     const targetBackup = await createBackup(firstToken, "target");
+    await prisma.adminNotification.deleteMany({ where: { clientEventId: targetNotificationId } });
+    await prisma.adminNotification.create({
+      data: {
+        adminId: restoreAdmin.id,
+        clientEventId: currentNotificationId,
+        level: "warning",
+        message: "恢复前当前通知",
+        occurredAt: new Date()
+      }
+    });
     await prisma.operationLog.deleteMany({ where: { action: "TARGET_STATE" } });
     await prisma.operationLog.create({ data: { action: "CURRENT_STATE", detail: "will-disappear" } });
 
@@ -364,6 +388,12 @@ describe("admin backup restore", () => {
     await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "TARGET_STATE" } }))
       .resolves.toMatchObject({ detail: "will-be-restored" });
     await expect(prisma.operationLog.findFirst({ where: { action: "CURRENT_STATE" } })).resolves.toBeNull();
+    await expect(prisma.adminNotification.findFirstOrThrow({
+      where: { clientEventId: targetNotificationId }
+    })).resolves.toMatchObject({ level: "info", message: "目标备份通知" });
+    await expect(prisma.adminNotification.findFirst({
+      where: { clientEventId: currentNotificationId }
+    })).resolves.toBeNull();
     await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "RESTORE_BACKUP" } }))
       .resolves.toMatchObject({ createdBy: expect.any(Number) });
     const safetyManifest = await readManifest(restore.snapshotBackupId);

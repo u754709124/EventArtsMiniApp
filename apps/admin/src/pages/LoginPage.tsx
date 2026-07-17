@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Button, Card, Form, Input, message } from "antd";
+import { Button, Card, Form, Input } from "antd";
 import { useNavigate } from "react-router-dom";
 import { request, setToken } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -12,15 +13,15 @@ export function LoginPage() {
   async function onFinish(values: { username: string; password: string }) {
     setLoading(true);
     try {
-      const data = await request<{ token: string }>("/api/admin/auth/login", {
+      const data = await request<{ token: string; id: number; username: string }>("/api/admin/auth/login", {
         method: "POST",
         body: JSON.stringify(values)
       });
-      setToken(data.token);
-      message.success("登录成功");
+      setToken(data.token, { id: data.id, username: data.username });
+      notify.success("登录成功");
       navigate("/dashboard");
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "登录失败");
+      notify.error(error instanceof Error ? error.message : "登录失败", { persist: false });
     } finally {
       setLoading(false);
     }

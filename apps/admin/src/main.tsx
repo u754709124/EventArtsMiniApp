@@ -5,6 +5,7 @@ import zhCN from "antd/locale/zh_CN";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./routes/AppRoutes";
 import { adminTheme } from "./theme";
+import { NotificationProvider } from "./notifications/NotificationProvider";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -22,7 +23,9 @@ if (rootElement) {
     <React.StrictMode>
       <ConfigProvider locale={zhCN} theme={adminTheme}>
         <AntApp>
-          <RouterProvider router={router} />
+          <NotificationProvider>
+            <RouterProvider router={router} />
+          </NotificationProvider>
         </AntApp>
       </ConfigProvider>
     </React.StrictMode>

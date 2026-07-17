@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Button, Card, Input, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, Modal, Select, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { detailPageTypeDefinitions, detailPageTypeValues, type DetailPageSummaryDto } from "@event-arts/shared";
 import { useNavigate } from "react-router-dom";
 import { request } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 
 type DetailPageListResponse = {
   items: DetailPageSummaryDto[];
@@ -37,7 +38,7 @@ export function DetailPageList() {
       setItems(data.items);
       setTotal(data.total);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "详情页加载失败");
+      notify.error(error instanceof Error ? error.message : "详情页加载失败");
     } finally {
       setLoading(false);
     }
@@ -57,7 +58,7 @@ export function DetailPageList() {
       onOk() {
         return clickGuard(`detail-page:delete-confirm:${record.id}`, async () => {
           await request(`/api/admin/detail-pages/${record.id}`, { method: "DELETE" });
-          message.success("删除成功");
+          notify.success("删除成功");
           await load();
         });
       }

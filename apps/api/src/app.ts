@@ -11,6 +11,8 @@ import { z } from "zod";
 import {
   ActivityCaseCreateRequestSchema,
   ActivityCaseUpdateRequestSchema,
+  adminNotificationCreateRequestSchema,
+  adminNotificationListQuerySchema,
   ArticleCreateRequestSchema,
   ArticleUpdateRequestSchema,
   ArtistCreateRequestSchema,
@@ -82,6 +84,11 @@ import {
   revokeAdminSessionsForAdmin,
   type SessionClock
 } from "./admin-sessions";
+import {
+  ADMIN_NOTIFICATION_MAX_FUTURE_SKEW_MS,
+  createAdminNotification,
+  listAdminNotifications
+} from "./admin-notifications";
 import {
   createMediaAsset,
   deleteStoredFile,
@@ -1244,6 +1251,55 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   app.get("/api/admin/auth/me", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
     return reply.send(ok({ id: request.admin!.id, username: request.admin!.username }));
   });
+
+  app.post(
+    "/api/admin/notifications",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const parsed = adminNotificationCreateRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          firstZodIssueMessage(parsed.error, "消息参数错误")
+        );
+      }
+      const now = currentTime();
+      const occurredAt = new Date(parsed.data.occurredAt);
+      if (occurredAt.getTime() > now.getTime() + ADMIN_NOTIFICATION_MAX_FUTURE_SKEW_MS) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "消息发生时间不能晚于服务器时间 5 分钟");
+      }
+      const result = await createAdminNotification(prisma, {
+        adminId: request.admin!.id,
+        notification: parsed.data,
+        now
+      });
+      return reply.header("Cache-Control", "no-store").send(ok(result));
+    }
+  );
+
+  app.get(
+    "/api/admin/notifications",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const parsed = adminNotificationListQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          firstZodIssueMessage(parsed.error, "分页参数错误")
+        );
+      }
+      const result = await listAdminNotifications(prisma, {
+        adminId: request.admin!.id,
+        query: parsed.data,
+        now: currentTime()
+      });
+      return reply.header("Cache-Control", "no-store").send(ok(result));
+    }
+  );
 
   app.post("/api/admin/auth/change-password", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
     const parsed = adminChangePasswordRequestSchema.safeParse(request.body);

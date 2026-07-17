@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Form, Input, Modal, Space, message } from "antd";
+import { Button, Form, Input, Modal, Space } from "antd";
 import {
   buildActivityCaseTemplate,
   buildArtistProfileTemplate,
@@ -10,6 +10,7 @@ import {
 } from "@event-arts/shared";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { DetailBannerField, detailBannerFormRules } from "./DetailBannerField";
 import { DetailPagePreview } from "./DetailPagePreview";
 import { DetailPageTypeSelect } from "./DetailPageTypeSelect";
@@ -95,9 +96,9 @@ export function DetailPageConfigFields({
         ["detailPage", "richTextHtml"],
         hydrateTemplateMediaSources(template, assets)
       );
-      message.success("参考模板已应用，可继续编辑");
+      notify.success("参考模板已应用，可继续编辑");
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "参考模板应用失败");
+      notify.error(error instanceof Error ? error.message : "参考模板应用失败");
     } finally {
       setTemplateLoading(false);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Layout, Menu, Tooltip, message } from "antd";
-import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
+import { Button, Layout, Menu, Tooltip } from "antd";
+import { HistoryOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import type { ItemType } from "antd/es/menu/interface";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, request } from "../api";
@@ -9,6 +9,8 @@ import { defaultOpenKeys, matchAdminRoute, validOpenKeys } from "../navigation/r
 import { useUnsavedChanges } from "../forms/unsaved-changes";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { stripAdminBasename } from "../routes/admin-paths";
+import { NotificationHistoryDrawer } from "../notifications/NotificationHistoryDrawer";
+import { notify } from "../notifications/notification";
 
 const collapsedKey = "event-arts-admin-sider-collapsed";
 const openKeysKey = "event-arts-admin-menu-open-keys";
@@ -35,6 +37,7 @@ export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [responsiveCollapsed, setResponsiveCollapsed] = useState(false);
   const [openKeys, setOpenKeys] = useState(() => readOpenKeys().length ? readOpenKeys() : defaultOpenKeys());
+  const [historyOpen, setHistoryOpen] = useState(false);
   const clickGuard = useRepeatClickGuard();
   const siderCollapsed = collapsed || responsiveCollapsed;
 
@@ -75,7 +78,7 @@ export function AdminLayout() {
     try {
       await request<Record<string, never>>("/api/admin/auth/logout", { method: "POST" });
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "退出登录失败");
+      notify.error(error instanceof Error ? error.message : "退出登录失败");
       return;
     }
     clearToken();
@@ -127,6 +130,15 @@ export function AdminLayout() {
       <Layout className="admin-main">
         <Layout.Header className="admin-header">
           <div className="admin-header__account">
+            <Tooltip title="历史消息">
+              <Button
+                className="admin-header__history"
+                type="text"
+                icon={<HistoryOutlined />}
+                aria-label="查看最近 7 天历史消息"
+                onClick={() => setHistoryOpen(true)}
+              />
+            </Tooltip>
             <span>管理员</span>
             <Button data-testid="logout-button" icon={<LogoutOutlined />} onClick={() => clickGuard("admin:logout", logout)}>
               退出登录
@@ -137,6 +149,7 @@ export function AdminLayout() {
           <Outlet />
         </Layout.Content>
       </Layout>
+      <NotificationHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </Layout>
   );
 }

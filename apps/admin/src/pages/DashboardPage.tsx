@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, Button, Card, Empty, Skeleton, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Empty, Skeleton, Tag, Typography } from "antd";
 import {
   ApiOutlined,
   ClockCircleOutlined,
@@ -15,6 +15,7 @@ import type { DashboardOverviewResponse, EdgeOneDashboardState } from "@event-ar
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { request } from "../api";
+import { notify } from "../notifications/notification";
 import {
   formatLast24Requests,
   formatLast24Traffic,
@@ -194,14 +195,14 @@ export function DashboardPage() {
       setRefreshError(null);
       setEdgeOneRefreshError(preservePreviousEdgeOne ? nextEdgeOneErrorMessage : null);
       if (reason === "refresh" && next.edgeOne.status === "error") {
-        message.warning("本地统计已刷新，EdgeOne 数据刷新失败");
+        notify.warning("本地统计已刷新，EdgeOne 数据刷新失败");
       }
     } catch (error) {
       if (!mountedRef.current || requestSequence !== requestSequenceRef.current) return;
       const errorMessage = error instanceof Error ? error.message : "数据看板加载失败";
       if (dataRef.current) {
         setRefreshError(errorMessage);
-        message.error("刷新失败，当前继续显示上次成功数据");
+        notify.error("刷新失败，当前继续显示上次成功数据");
       } else {
         setLoadError(errorMessage);
       }

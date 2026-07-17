@@ -384,6 +384,84 @@ test("登录成功进入看板并展示 PV", async ({ page }) => {
   await expect(page.getByTestId("dashboard-pv-month")).toContainText(/本月浏览量.*\d+/s);
 });
 
+test("统一通知支持主题堆叠、进度补位和跨浏览器历史", async ({ page, browser }) => {
+  await page.route("**/api/admin/auth/logout", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: false,
+        error: { code: "E2E_LOGOUT_FAILURE", message: "E2E 退出失败" }
+      })
+    });
+  });
+
+  const loginPersisted = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === "/api/admin/notifications" &&
+    response.ok()
+  );
+  await loginAdminUi(page);
+  await loginPersisted;
+  const successToast = page.getByTestId("notification-toast").filter({ hasText: "登录成功" });
+  await expect(successToast).toHaveAttribute("data-level", "success");
+
+  await page.waitForTimeout(1_200);
+  const failurePersisted = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === "/api/admin/notifications" &&
+    response.ok()
+  );
+  await page.getByTestId("logout-button").click();
+  await failurePersisted;
+  const failureToast = page.getByTestId("notification-toast").filter({ hasText: "E2E 退出失败" });
+  await expect(failureToast).toHaveAttribute("data-level", "error");
+  await expect(page.getByTestId("notification-toast")).toHaveCount(2);
+  await expect(failureToast).toHaveClass(/is-visible/);
+  await page.waitForTimeout(250);
+
+  const cards = page.getByTestId("notification-toast");
+  const firstBox = await cards.nth(0).boundingBox();
+  const secondBox = await cards.nth(1).boundingBox();
+  expect(firstBox).not.toBeNull();
+  expect(secondBox).not.toBeNull();
+  expect(secondBox!.y - firstBox!.y - firstBox!.height).toBeGreaterThanOrEqual(8);
+
+  const progress = failureToast.locator(".notification-toast__progress");
+  const progressBefore = await progress.boundingBox();
+  await page.waitForTimeout(500);
+  const progressAfter = await progress.boundingBox();
+  expect(progressBefore).not.toBeNull();
+  expect(progressAfter).not.toBeNull();
+  expect(progressAfter!.width).toBeLessThan(progressBefore!.width);
+  expect(Math.abs(progressAfter!.x + progressAfter!.width - progressBefore!.x - progressBefore!.width)).toBeLessThanOrEqual(2);
+
+  const failureTopBefore = (await failureToast.boundingBox())!.y;
+  await expect(successToast).toBeHidden({ timeout: 6_000 });
+  await expect(failureToast).toBeVisible();
+  const failureTopAfter = (await failureToast.boundingBox())!.y;
+  expect(failureTopAfter).toBeLessThan(failureTopBefore);
+
+  await page.getByRole("button", { name: "查看最近 7 天历史消息" }).click();
+  const historyDrawer = page.getByRole("dialog", { name: "最近 7 天消息" });
+  await expect(historyDrawer).toContainText("登录成功");
+  await expect(historyDrawer).toContainText("E2E 退出失败");
+  await historyDrawer.getByRole("button", { name: /close|关闭/i }).click();
+
+  const secondContext = await browser.newContext({ baseURL: "http://127.0.0.1:5173" });
+  const secondPage = await secondContext.newPage();
+  try {
+    await loginAdminUi(secondPage);
+    await secondPage.getByRole("button", { name: "查看最近 7 天历史消息" }).click();
+    const secondHistory = secondPage.getByRole("dialog", { name: "最近 7 天消息" });
+    await expect(secondHistory).toContainText("E2E 退出失败");
+  } finally {
+    await secondContext.close();
+  }
+
+  await expect(failureToast).toBeHidden({ timeout: 7_000 });
+});
+
 test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", async ({ page }) => {
   await loginAdminUi(page);
 

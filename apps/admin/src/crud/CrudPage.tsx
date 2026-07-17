@@ -4,7 +4,7 @@ import { MenuOutlined } from "@ant-design/icons";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Card, Drawer, Empty, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from "antd";
+import { Button, Card, Drawer, Empty, Form, Input, Modal, Select, Space, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
@@ -12,6 +12,7 @@ import { firstValidationField, statusColor, statusLabel, type AnyRecord } from "
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
 
 type ListResponse = { items: AnyRecord[]; total?: number };
@@ -143,7 +144,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       setItems(allItems);
       setListTotal(total);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "加载失败");
+      notify.error(error instanceof Error ? error.message : "加载失败");
     } finally {
       setLoading(false);
     }
@@ -214,7 +215,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       setDirty(false);
     } catch (error) {
       setDrawerOpen(false);
-      message.error(error instanceof Error ? error.message : "加载记录失败");
+      notify.error(error instanceof Error ? error.message : "加载记录失败");
     } finally {
       setLoading(false);
       window.setTimeout(() => {
@@ -239,7 +240,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
         method: saveRequest.method,
         body: JSON.stringify(saveRequest.body)
       });
-      message.success("保存成功");
+      notify.success("保存成功");
       setDirty(false);
       await load();
       if (mode === "continue") {
@@ -257,7 +258,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
         setDrawerOpen(false);
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "保存失败");
+      notify.error(error instanceof Error ? error.message : "保存失败");
     } finally {
       setSaving(false);
     }
@@ -284,7 +285,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       onOk() {
         return clickGuard(`${config.testid}:delete-confirm:${record.id}`, async () => {
           await request(`${config.path}/${record.id}`, { method: "DELETE" });
-          message.success("删除成功");
+          notify.success("删除成功");
           await load();
         });
       }
@@ -306,11 +307,11 @@ export function CrudPage({ config }: { config: CrudConfig }) {
         method: "POST",
         body: JSON.stringify({ ids: nextItems.map(recordId) })
       });
-      message.success("排序已保存");
+      notify.success("排序已保存");
       await load();
     } catch (error) {
       setItems(previous);
-      message.error(error instanceof Error ? error.message : "排序保存失败");
+      notify.error(error instanceof Error ? error.message : "排序保存失败");
     } finally {
       setReordering(false);
     }

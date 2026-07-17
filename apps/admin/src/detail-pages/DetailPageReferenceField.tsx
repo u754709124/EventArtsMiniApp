@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Select, Space, Tooltip, message } from "antd";
+import { Button, Select, Space, Tooltip } from "antd";
 import { ExportOutlined, PlusOutlined } from "@ant-design/icons";
 import type { DetailPageOptionDto, DetailPageType } from "@event-arts/shared";
 import { request } from "../api";
 import { withAdminBasename } from "../routes/admin-paths";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import "./detail-page-reference.css";
 
 type OptionsResponse = { items: DetailPageOptionDto[] };
@@ -49,7 +50,7 @@ export function DetailPageReferenceField({
       if (sequence === loadSequence.current) setOptions(data.items);
       return data.items;
     } catch (error) {
-      if (sequence === loadSequence.current) message.error(error instanceof Error ? error.message : "详情页选项加载失败");
+      if (sequence === loadSequence.current) notify.error(error instanceof Error ? error.message : "详情页选项加载失败");
       return null;
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
@@ -68,7 +69,7 @@ export function DetailPageReferenceField({
     request<DetailPageOptionDto & { typeLabel: string }>(`/api/admin/detail-pages/${valueKey}`)
       .then((detail) => {
         if (detailPageType && detail.type !== detailPageType) {
-          message.warning("已选详情页类型不匹配，请重新选择");
+          notify.warning("已选详情页类型不匹配，请重新选择");
           onChange?.(null);
           return;
         }
@@ -79,7 +80,7 @@ export function DetailPageReferenceField({
       })
       .catch(() => {
         setOptions((current) => current.filter((option) => option.id !== valueKey));
-        message.warning("已选详情页不存在，请重新选择");
+        notify.warning("已选详情页不存在，请重新选择");
         onChange?.(null);
       });
   }, [detailPageType, disabled, onChange, options, valueKey]);
@@ -98,7 +99,7 @@ export function DetailPageReferenceField({
           if (items === null) return;
           const returned = items.find((item) => item.id === event.data.id);
           if (!returned || (detailPageType && returned.type !== detailPageType)) {
-            message.warning("新建详情页类型不匹配，请重新选择");
+            notify.warning("新建详情页类型不匹配，请重新选择");
             return;
           }
           onChange?.(returned.id);

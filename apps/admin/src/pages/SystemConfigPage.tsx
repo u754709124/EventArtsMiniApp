@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Form, Input, Skeleton, Typography, message } from "antd";
+import { Alert, Button, Form, Input, Skeleton, Typography } from "antd";
 import type { EdgeOneConfigResponse, EdgeOneConfigUpdateRequest } from "@event-arts/shared";
 import { ApiError, request } from "../api";
 import { FormActionBar } from "../components/FormActionBar";
@@ -8,6 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { firstValidationField } from "../forms/form-utils";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 
 type EdgeOneConfigFormValues = {
   zoneId: string;
@@ -89,7 +90,7 @@ export function SystemConfigPage() {
       setConfig(next);
       form.setFieldsValue({ zoneId: next.zoneId ?? "", secretId: "", secretKey: "" });
       setDirty(false);
-      message.success("EdgeOne 配置验证并保存成功");
+      notify.success("EdgeOne 配置验证并保存成功");
     } catch (error) {
       if (!mountedRef.current) return;
       const errorMessage = error instanceof Error ? error.message : "EdgeOne 配置保存失败";
@@ -99,7 +100,7 @@ export function SystemConfigPage() {
       } else {
         setSubmitError(errorMessage);
       }
-      message.error("验证失败，当前配置未被覆盖");
+      notify.error("验证失败，当前配置未被覆盖");
     } finally {
       if (mountedRef.current) setSaving(false);
     }

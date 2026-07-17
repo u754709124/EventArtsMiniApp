@@ -26,6 +26,8 @@ React + Vite + TypeScript + Ant Design。
 - [x] 图片/视频资源库、标签/使用状态筛选和未使用清理
 - [x] 独立 EdgeOne 系统配置页、密钥保留/清空语义和错误定位
 - [x] EdgeOne 四张卡片、刷新全部、局部失败旧数据保留和 4/2/1 响应式布局
+- [x] 四主题统一通知卡片、5 秒进度、堆叠补位和 reduced-motion
+- [x] 当前管理员七天历史抽屉与断网幂等补传
 
 ## 已完成事项
 - 已实现 React + Vite + TypeScript + Ant Design 后台。
@@ -47,7 +49,10 @@ React + Vite + TypeScript + Ant Design。
 - 本地上传先做格式、大小和可解析元数据校验，再在 Web Worker 分片计算 MD5；命中即复用，否则填写唯一资源名与标签后上传，图片尺寸不做硬性限制。
 - 未使用资源可单删或扫描后勾选批量清理，服务端重新引用检查后的跳过/失败项会展示汇总。
 - 已添加稳定 `data-testid` 供 Stage 5 Playwright 使用。
+- 已将后台 64 个操作提示和 1 个结果型信息弹窗迁移到统一通知中心；成功、失败、警告和信息使用独立图标/主题，卡片从右侧进退场并在上方卡片消失后向上补位。
+- Header 新增历史消息入口，服务端按管理员隔离固定保留滚动 7×24 小时；浏览器 outbox 仅负责断网待同步，登录、联网和会话恢复后使用稳定事件 ID 静默补传。
 - 2026-07-17 EdgeOne 聚焦验证通过：Admin 组件/CSS/路由 4 个文件 14 项测试；Admin 全套 23 个文件 98 项测试；Admin production build 与本次变更定向 ESLint 通过。
+- 2026-07-17 通知中心验收：shared 42 项、API 215 项、Miniapp 57 项、Admin 123 项及部署脚本 8 项单测全部通过；Admin production build、API/shared build、本次变更定向 ESLint 和 Admin E2E 21/21 通过。
 
 ## 对应 git commit hash
 50eced6

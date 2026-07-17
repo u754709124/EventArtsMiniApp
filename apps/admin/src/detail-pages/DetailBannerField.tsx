@@ -7,7 +7,7 @@ import {
   PlusOutlined,
   ReloadOutlined
 } from "@ant-design/icons";
-import { Button, Spin, message } from "antd";
+import { Button, Spin } from "antd";
 import {
   DndContext,
   KeyboardSensor,
@@ -17,6 +17,7 @@ import {
   useSensors,
   type DragEndEvent
 } from "@dnd-kit/core";
+import { notify } from "../notifications/notification";
 import {
   SortableContext,
   arrayMove,
@@ -198,7 +199,7 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
         try {
           return await request<MediaAssetDto>(`/api/admin/media-assets/${id}`);
         } catch (error) {
-          message.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
+          notify.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
           return { id, asset: null };
         }
       })
@@ -226,7 +227,7 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
       });
     } catch (error) {
       setFailedIds((current) => new Set(current).add(id));
-      message.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
+      notify.error(error instanceof Error ? error.message : `资源 #${id} 加载失败`);
     } finally {
       setRetryingIds((current) => {
         const next = new Set(current);
@@ -252,15 +253,15 @@ export function DetailBannerField({ value = [], onChange, disabled = false }: De
 
   function select(asset: MediaAssetDto) {
     if (asset.mediaType !== "image") {
-      message.warning("详情页 BANNER 只支持图片");
+      notify.warning("详情页 BANNER 只支持图片");
       return;
     }
     if (ids.includes(asset.id)) {
-      message.warning("该资源已在详情页 BANNER 中");
+      notify.warning("该资源已在详情页 BANNER 中");
       return;
     }
     if (ids.length >= detailBannerMaximum) {
-      message.warning("详情页 BANNER 最多选择 6 张");
+      notify.warning("详情页 BANNER 最多选择 6 张");
       return;
     }
     onChange?.([...ids, asset.id]);

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
-import { Button, Form, Input, Modal, Progress, Select, message } from "antd";
+import { Button, Form, Input, Modal, Progress, Select } from "antd";
 import { type MediaAssetDto, type MediaFieldKey, type MediaType, type MediaUploadConfigDto } from "@event-arts/shared";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { prepareMediaFile, validateMediaCandidate, type PreparedMediaFile } from "./media-file";
 import { resolveAllowedMediaTypes } from "./MediaLibraryModal";
 
@@ -69,7 +70,7 @@ export function MediaUploadAction({
           allowedTypes
         );
         if (problem) throw new Error(problem);
-        message.info("已存在相同资源，已直接复用");
+        notify.info("已存在相同资源，已直接复用");
         onAsset(duplicate.asset);
         return;
       }
@@ -77,7 +78,7 @@ export function MediaUploadAction({
       setResourceName(file.name);
       setTags([]);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "文件处理失败");
+      notify.error(error instanceof Error ? error.message : "文件处理失败");
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -103,11 +104,11 @@ export function MediaUploadAction({
         method: "POST",
         body: form
       });
-      message.success(result.reused ? "已复用已有资源" : "上传成功");
+      notify.success(result.reused ? "已复用已有资源" : "上传成功");
       setDraft(null);
       onAsset(result.asset);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "上传失败");
+      notify.error(error instanceof Error ? error.message : "上传失败");
     } finally {
       setBusy(false);
     }

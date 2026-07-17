@@ -31,6 +31,23 @@ CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 或 IP 白名单�
 
 管理员 token 有效期为 2 小时，JWT 内含 `jti`，每次受保护请求都会校验服务器端 session 状态。登出、修改密码和全量恢复会写撤销状态；被撤销、过期或不存在的 session 即使 JWT 未过期也不能继续访问后台接口。
 
+## Admin Notifications
+
+`POST /api/admin/notifications` 和 `GET /api/admin/notifications?page=1&pageSize=20` 都要求管理员 Bearer token，并返回统一成功/失败响应。通知请求只接受：
+
+```json
+{
+  "clientEventId": "4cb86b19-bdb3-4317-9dac-498fefdb6abf",
+  "level": "success",
+  "message": "保存成功",
+  "occurredAt": "2026-07-17T12:00:00.000Z"
+}
+```
+
+`level` 为 `success | error | warning | info`，消息最长 500 字符。服务端只使用鉴权会话中的管理员 ID，不接受客户端指定 `adminId`；`(adminId, clientEventId)` 唯一，因此断网重试不会生成重复历史。超过服务器时间 5 分钟的事件会被拒绝，早于滚动 7×24 小时的补传返回 `persisted: false, reason: "expired"`，客户端应丢弃。
+
+GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt DESC, id DESC` 排序；`pageSize` 最大 100。读写路径会清理过期记录，也可运行 `pnpm --filter api admin:notifications:cleanup -- --dry-run` 查看待清理数量，移除 `--dry-run` 后执行清理。通知表包含在全量备份、导入影响预检、恢复和 reset seed 中。
+
 应用层限流使用固定窗口策略。登录限流默认由 `LOGIN_RATE_LIMIT_WINDOW_MS=900000` 和 `LOGIN_RATE_LIMIT_MAX_FAILURES=5` 控制；客户端用户统计限流默认由 `ANALYTICS_RATE_LIMIT_WINDOW_MS=60000` 和 `ANALYTICS_RATE_LIMIT_MAX_REQUESTS=60` 控制。
 
 ## Client

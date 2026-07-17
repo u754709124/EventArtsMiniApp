@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Form, Input, Skeleton, message } from "antd";
+import { Alert, Button, Form, Input, Skeleton } from "antd";
 import { flushSync } from "react-dom";
 import { PageHeader } from "../components/PageHeader";
 import { FormActionBar } from "../components/FormActionBar";
@@ -9,6 +9,7 @@ import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { MediaField } from "../media/MediaField";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 
 export function SiteConfigPage() {
   const [form] = Form.useForm();
@@ -50,9 +51,9 @@ export function SiteConfigPage() {
     try {
       await request("/api/admin/site-config", { method: "PUT", body: JSON.stringify(values) });
       setDirty(false);
-      message.success("保存成功");
+      notify.success("保存成功");
     } catch (saveError) {
-      message.error(saveError instanceof Error ? saveError.message : "保存失败");
+      notify.error(saveError instanceof Error ? saveError.message : "保存失败");
     } finally {
       setSaving(false);
     }

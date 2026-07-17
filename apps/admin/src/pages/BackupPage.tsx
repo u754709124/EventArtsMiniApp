@@ -13,8 +13,7 @@ import {
   Table,
   Tag,
   Tooltip,
-  Typography,
-  message
+  Typography
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
@@ -23,6 +22,7 @@ import { clearToken, createBackup, deleteBackup, importBackupArchive, listBackup
 import { PageHeader } from "../components/PageHeader";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { useNavigate } from "react-router-dom";
+import { notify } from "../notifications/notification";
 
 const restoreConfirmation = "RESTORE_FULL_BACKUP";
 
@@ -123,12 +123,12 @@ export function BackupPage() {
     try {
       const values = await form.validateFields();
       await createBackup({ note: values.note?.trim() || undefined });
-      message.success("备份已创建");
+      notify.success("备份已创建");
       setCreateOpen(false);
       form.resetFields();
       await load();
     } catch (error) {
-      message.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setCreating(false);
     }
@@ -153,11 +153,11 @@ export function BackupPage() {
           setDeletingIds(targetIds);
           try {
             for (const backupId of targetIds) await deleteBackup(backupId);
-            message.success(targetIds.length === 1 ? "备份已删除" : "所选备份已删除");
+            notify.success(targetIds.length === 1 ? "备份已删除" : "所选备份已删除");
             setSelectedBackupIds((current) => current.filter((id) => !targetIds.includes(id)));
             await load();
           } catch (error) {
-            message.error(errorMessage(error));
+            notify.error(errorMessage(error));
             throw error;
           } finally {
             setDeletingIds([]);
@@ -174,10 +174,10 @@ export function BackupPage() {
     try {
       const result = await importBackupArchive(file);
       setImportResult(result);
-      message.success("导入预检通过");
+      notify.success("导入预检通过");
       await load();
     } catch (error) {
-      message.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -191,17 +191,17 @@ export function BackupPage() {
       const result = await restoreBackup(restoreTarget.id);
       finishRestore(result);
     } catch (error) {
-      message.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setRestoringBackupId(null);
     }
   }
 
   function finishRestore(result: BackupRestoreAcceptedResponse) {
+    notify.success(`恢复完成，安全快照 ${result.snapshotBackupId} 已创建，请重新登录`);
     clearToken();
     setRestoreTarget(null);
     setRestoreText("");
-    message.success(`恢复完成，安全快照 ${result.snapshotBackupId} 已创建，请重新登录`);
     navigate("/login", { replace: true });
   }
 

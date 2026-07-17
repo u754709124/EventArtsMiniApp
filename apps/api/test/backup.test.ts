@@ -176,6 +176,19 @@ describe("admin backup API", () => {
     });
     await startApp();
     const token = await login();
+    const backupAdmin = await prisma.adminUser.findUniqueOrThrow({
+      where: { username: testAdminCredentials.username }
+    });
+    const notificationEventId = randomUUID();
+    await prisma.adminNotification.create({
+      data: {
+        adminId: backupAdmin.id,
+        clientEventId: notificationEventId,
+        level: "success",
+        message: "备份前通知",
+        occurredAt: new Date()
+      }
+    });
 
     const backup = await createBackup(token, "手动备份");
     const manifest = await readManifest(backup.id);
@@ -216,6 +229,13 @@ describe("admin backup API", () => {
       await expect(snapshotPrisma.dailyUserVisit.findFirstOrThrow({
         where: { appId: "wx-backup-test" }
       })).resolves.toMatchObject({ openidHash: "backup-openid-hash", visitDate: "2026-07-12" });
+      await expect(snapshotPrisma.adminNotification.findFirstOrThrow({
+        where: { clientEventId: notificationEventId }
+      })).resolves.toMatchObject({
+        adminId: backupAdmin.id,
+        level: "success",
+        message: "备份前通知"
+      });
       const snapshotConfig = await snapshotPrisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } });
       expect(snapshotConfig).toMatchObject({ zoneId: "zone-backup-test" });
       expect(snapshotConfig.secretIdCiphertext).not.toContain(edgeOneSecretId);

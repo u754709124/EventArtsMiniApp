@@ -8,15 +8,32 @@ datasource db {
 }
 
 model AdminUser {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  passwordHash String
-  status       String   @default("enabled")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  sessions     AdminSession[]
+  id            Int                 @id @default(autoincrement())
+  username      String              @unique
+  passwordHash  String
+  status        String              @default("enabled")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  sessions      AdminSession[]
+  notifications AdminNotification[]
 
   @@map("admin_users")
+}
+
+model AdminNotification {
+  id            Int       @id @default(autoincrement())
+  adminId       Int
+  clientEventId String
+  level         String
+  message       String
+  occurredAt    DateTime
+  createdAt     DateTime  @default(now())
+  admin         AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, clientEventId])
+  @@index([adminId, occurredAt])
+  @@index([occurredAt])
+  @@map("admin_notifications")
 }
 
 model AdminSession {

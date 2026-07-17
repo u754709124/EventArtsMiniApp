@@ -36,6 +36,23 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS admin_sessions_adminId_idx ON admin_sessions(adminId)`,
   `CREATE INDEX IF NOT EXISTS admin_sessions_expiresAt_idx ON admin_sessions(expiresAt)`,
   `CREATE INDEX IF NOT EXISTS admin_sessions_revokedAt_idx ON admin_sessions(revokedAt)`,
+  `CREATE TABLE IF NOT EXISTS admin_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adminId INTEGER NOT NULL,
+    clientEventId TEXT NOT NULL,
+    level TEXT NOT NULL CHECK(level IN ('success', 'error', 'warning', 'info')),
+    message TEXT NOT NULL CHECK(length(message) BETWEEN 1 AND 500),
+    occurredAt DATETIME NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(adminId) REFERENCES admin_users(id) ON DELETE CASCADE,
+    UNIQUE(adminId, clientEventId)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS admin_notifications_adminId_clientEventId_key
+    ON admin_notifications(adminId, clientEventId)`,
+  `CREATE INDEX IF NOT EXISTS admin_notifications_adminId_occurredAt_idx
+    ON admin_notifications(adminId, occurredAt)`,
+  `CREATE INDEX IF NOT EXISTS admin_notifications_occurredAt_idx
+    ON admin_notifications(occurredAt)`,
   `CREATE TABLE IF NOT EXISTS client_sessions (
     id TEXT PRIMARY KEY,
     tokenHash TEXT NOT NULL UNIQUE,

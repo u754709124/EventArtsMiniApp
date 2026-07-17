@@ -1,4 +1,7 @@
 import type {
+  AdminNotificationCreateRequest,
+  AdminNotificationCreateResponse,
+  AdminNotificationListResponse,
   ApiResponse,
   BackupCreateRequest,
   BackupCreateResponse,
@@ -11,8 +14,37 @@ import { isAdminLoginPathname, withAdminBasename } from "./routes/admin-paths";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const tokenKey = "eventarts.admin.token";
+const identityKey = "eventarts.admin.identity";
 let sessionExpiredHandler: (() => void) | null = null;
 let handlingSessionExpiry = false;
+const sessionSubscribers = new Set<(identity: AdminIdentity | null) => void>();
+
+export type AdminIdentity = { id: number; username: string };
+
+function readIdentity(): AdminIdentity | null {
+  if (!getToken()) return null;
+  try {
+    const value = JSON.parse(localStorage.getItem(identityKey) ?? "null") as unknown;
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "id" in value &&
+      "username" in value &&
+      Number.isSafeInteger((value as AdminIdentity).id) &&
+      (value as AdminIdentity).id > 0 &&
+      typeof (value as AdminIdentity).username === "string"
+    ) {
+      return value as AdminIdentity;
+    }
+  } catch {
+    // Ignore invalid legacy storage.
+  }
+  return null;
+}
+
+function emitSession(identity: AdminIdentity | null) {
+  sessionSubscribers.forEach((subscriber) => subscriber(identity));
+}
 
 export class ApiError extends Error {
   constructor(
@@ -28,13 +60,33 @@ export function getToken() {
   return localStorage.getItem(tokenKey);
 }
 
-export function setToken(token: string) {
+export function setToken(token: string, identity?: AdminIdentity) {
   handlingSessionExpiry = false;
   localStorage.setItem(tokenKey, token);
+  if (identity) localStorage.setItem(identityKey, JSON.stringify(identity));
+  else localStorage.removeItem(identityKey);
+  emitSession(identity ?? readIdentity());
 }
 
 export function clearToken() {
   localStorage.removeItem(tokenKey);
+  localStorage.removeItem(identityKey);
+  emitSession(null);
+}
+
+export function getAdminIdentity() {
+  return readIdentity();
+}
+
+export function setAdminIdentity(identity: AdminIdentity) {
+  if (!getToken()) return;
+  localStorage.setItem(identityKey, JSON.stringify(identity));
+  emitSession(identity);
+}
+
+export function subscribeAdminSession(subscriber: (identity: AdminIdentity | null) => void) {
+  sessionSubscribers.add(subscriber);
+  return () => sessionSubscribers.delete(subscriber);
 }
 
 export function setSessionExpiredHandler(handler: (() => void) | null) {
@@ -62,19 +114,24 @@ function isProtectedAdminPath(path: string) {
 
 function handleSessionExpired(path: string, error: ApiError) {
   if (error.status !== 401 || error.code !== "UNAUTHORIZED" || !isProtectedAdminPath(path)) return;
-  clearToken();
   if (handlingSessionExpiry) return;
   handlingSessionExpiry = true;
-  if (sessionExpiredHandler) {
-    sessionExpiredHandler();
-    return;
-  }
-  if (typeof window !== "undefined" && !isAdminLoginPathname(window.location.pathname)) {
-    window.location.replace(withAdminBasename("/login"));
+  try {
+    if (sessionExpiredHandler) {
+      sessionExpiredHandler();
+    } else if (typeof window !== "undefined" && !isAdminLoginPathname(window.location.pathname)) {
+      window.location.replace(withAdminBasename("/login"));
+    }
+  } finally {
+    clearToken();
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}) {
+export async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { handleSessionExpiry?: boolean } = {}
+) {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
   const token = getToken();
@@ -106,10 +163,29 @@ export async function request<T>(path: string, init: RequestInit = {}) {
   const body = parsed;
   if (!body.success) {
     const error = new ApiError(body.error.message, body.error.code, response.status);
-    handleSessionExpired(path, error);
+    if (options.handleSessionExpiry !== false) handleSessionExpired(path, error);
     throw error;
   }
   return body.data;
+}
+
+export async function restoreAdminIdentity() {
+  if (!getToken()) return null;
+  const identity = await request<AdminIdentity>("/api/admin/auth/me");
+  setAdminIdentity(identity);
+  return identity;
+}
+
+export function persistAdminNotification(payload: AdminNotificationCreateRequest) {
+  return request<AdminNotificationCreateResponse>("/api/admin/notifications", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }, { handleSessionExpiry: false });
+}
+
+export function listAdminNotifications(page = 1, pageSize = 20) {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  return request<AdminNotificationListResponse>(`/api/admin/notifications?${params}`);
 }
 
 export function listBackups() {

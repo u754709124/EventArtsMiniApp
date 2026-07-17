@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, message } from "antd";
+import { Button, Card, Empty, Input, Modal, Select, Space, Table, Tabs, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
 import { request } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { MediaUploadAction } from "./MediaUploadAction";
+import { notify } from "../notifications/notification";
 
 type ListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
 
@@ -49,7 +50,7 @@ export function MediaPage() {
       setData(await request<ListResponse>(`/api/admin/media-assets?${params}`));
       loadTags();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "资源加载失败");
+      notify.error(error instanceof Error ? error.message : "资源加载失败");
     } finally {
       setLoading(false);
     }
@@ -71,11 +72,11 @@ export function MediaPage() {
         method: "PATCH",
         body: JSON.stringify({ resourceName: editName, tags: editTags })
       });
-      message.success("资源信息已更新");
+      notify.success("资源信息已更新");
       setEditing(null);
       await load(data.page);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "保存失败");
+      notify.error(error instanceof Error ? error.message : "保存失败");
     }
   }
 
@@ -95,10 +96,10 @@ export function MediaPage() {
         return clickGuard(`media:delete-confirm:${asset.id}`, async () => {
           try {
             await request(`/api/admin/media-assets/${asset.id}`, { method: "DELETE" });
-            message.success("删除成功");
+            notify.success("删除成功");
             await load(data.page);
           } catch (error) {
-            message.error(error instanceof Error ? error.message : "删除失败");
+            notify.error(error instanceof Error ? error.message : "删除失败");
           }
         });
       }
@@ -111,7 +112,7 @@ export function MediaPage() {
       setUnused(result.items);
       setSelectedUnused([]);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "扫描未使用资源失败");
+      notify.error(error instanceof Error ? error.message : "扫描未使用资源失败");
     }
   }
 
@@ -127,17 +128,19 @@ export function MediaPage() {
         body: JSON.stringify({ ids: selectedUnused })
       });
       const summary = `已删除 ${result.deletedIds.length} 项，跳过 ${result.skipped.length} 项，失败 ${result.failed.length} 项`;
-      message.success(summary);
+      notify.success(summary);
       if (result.skipped.length || result.failed.length) {
-        Modal.info({
-          title: "清理结果",
-          content: <div><p>{summary}</p><p>跳过：{result.skipped.map((item) => `#${item.id} ${item.reason}`).join("；") || "无"}</p><p>失败：{result.failed.map((item) => `#${item.id} ${item.reason}`).join("；") || "无"}</p></div>
-        });
+        notify.info([
+          "清理结果",
+          summary,
+          `跳过：${result.skipped.map((item) => `#${item.id} ${item.reason}`).join("；") || "无"}`,
+          `失败：${result.failed.map((item) => `#${item.id} ${item.reason}`).join("；") || "无"}`
+        ].join("\n"));
       }
       setUnused(null);
       await load(1);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "清理资源失败");
+      notify.error(error instanceof Error ? error.message : "清理资源失败");
     }
   }
 

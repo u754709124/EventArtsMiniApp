@@ -194,7 +194,7 @@ export async function chooseDetailMediaFromLibrary(
 }
 
 export async function waitForToast(page: Page, text: string | RegExp) {
-  await expect(page.getByText(text).last()).toBeVisible();
+  await expect(page.getByTestId("notification-toast").filter({ hasText: text }).last()).toBeVisible();
 }
 
 export async function fillNumber(page: Page, testid: string, value: number) {

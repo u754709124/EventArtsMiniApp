@@ -168,6 +168,18 @@ describe("SystemConfig persistence", () => {
 
   it("preserves SystemConfig during ordinary seed and removes it only during reset seed", async () => {
     const { prisma, uploadDir } = await createTestDatabase();
+    const admin = await prisma.adminUser.create({
+      data: { username: "seed-notification-admin", passwordHash: "test-only-hash" }
+    });
+    await prisma.adminNotification.create({
+      data: {
+        adminId: admin.id,
+        clientEventId: "4cb86b19-bdb3-4317-9dac-498fefdb6abf",
+        level: "success",
+        message: "普通 seed 应保留",
+        occurredAt: new Date()
+      }
+    });
     await writeEdgeOneSystemConfig(prisma, encryptionKey, {
       zoneId: "zone-test",
       secretId: "AKID_TEST_VALUE",
@@ -182,6 +194,7 @@ describe("SystemConfig persistence", () => {
       env: "test"
     });
     expect(await prisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } })).toEqual(before);
+    expect(await prisma.adminNotification.count({ where: { adminId: admin.id } })).toBe(1);
 
     await seedDatabase(prisma, {
       uploadDir,
@@ -191,6 +204,8 @@ describe("SystemConfig persistence", () => {
       reset: true
     });
     expect(await prisma.systemConfig.findUnique({ where: { id: 1 } })).toBeNull();
+    expect(await prisma.adminNotification.count({ where: { adminId: admin.id } })).toBe(0);
+    expect(await prisma.adminUser.findUnique({ where: { id: admin.id } })).not.toBeNull();
     await prisma.$disconnect();
   });
 });

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(import.meta.dirname, "../styles.css"), "utf8");
+const notificationCss = readFileSync(resolve(import.meta.dirname, "../notifications/notifications.css"), "utf8");
 
 function rule(selector: string) {
   const match = css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{(?<body>[^}]*)\\}`));
@@ -32,5 +33,13 @@ describe("AdminLayout CSS contract", () => {
     expect(css).toMatch(/@media \(max-width:\s*900px\)[\s\S]*?\.dashboard-metric-grid--edgeone\s*\{[^}]*repeat\(2,/);
     expect(css).toMatch(/@media \(max-width:\s*767px\)[\s\S]*?\.dashboard-metric-grid--edgeone\s*\{[^}]*grid-template-columns:\s*1fr/);
     expect(css).toMatch(/@media \(max-width:\s*640px\)[\s\S]*?\.dashboard-metric-grid--local\s*\{[^}]*grid-template-columns:\s*1fr/);
+  });
+
+  it("keeps the history action touch-friendly and notification motion accessible", () => {
+    expect(rule(".admin-header__history.ant-btn")).toMatch(/width:\s*44px/);
+    expect(rule(".admin-header__history.ant-btn")).toMatch(/height:\s*44px/);
+    expect(notificationCss).toMatch(/transform-origin:\s*right center/);
+    expect(notificationCss).toMatch(/animation:\s*notification-progress 5000ms linear forwards/);
+    expect(notificationCss).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/);
   });
 });

@@ -6,6 +6,7 @@ import {
   clearToken,
   createBackup,
   deleteBackup,
+  getAdminIdentity,
   getToken,
   importBackupArchive,
   request,
@@ -63,19 +64,23 @@ describe("admin API client", () => {
 
   it("clears expired protected sessions without treating login failures as expiry", async () => {
     const handler = vi.fn();
-    setToken("expired-token");
+    setToken("expired-token", { id: 7, username: "old-admin" });
     setSessionExpiredHandler(handler);
     stubFetch(new Response(JSON.stringify({
       success: false,
       error: { code: "UNAUTHORIZED", message: "登录已失效" }
     }), { status: 401 }));
 
+    handler.mockImplementation(() => {
+      expect(getAdminIdentity()).toEqual({ id: 7, username: "old-admin" });
+    });
     await expect(request("/api/admin/dashboard/overview")).rejects.toMatchObject({
       code: "UNAUTHORIZED",
       status: 401
     });
     expect(getToken()).toBeNull();
     expect(handler).toHaveBeenCalledTimes(1);
+    expect(getAdminIdentity()).toBeNull();
 
     stubFetch(new Response(JSON.stringify({
       success: false,
@@ -85,6 +90,13 @@ describe("admin API client", () => {
       code: "INVALID_CREDENTIALS"
     });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a stale stored identity when a token is set without one", () => {
+    setToken("first-token", { id: 1, username: "first" });
+    expect(getAdminIdentity()).toEqual({ id: 1, username: "first" });
+    setToken("legacy-token");
+    expect(getAdminIdentity()).toBeNull();
   });
 
   it("turns empty responses into readable API errors", async () => {

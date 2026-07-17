@@ -1,0 +1,125 @@
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  InfoCircleFilled,
+  WarningFilled
+} from "@ant-design/icons";
+import { Alert, Button, Drawer, Empty, Skeleton, Spin } from "antd";
+import { useEffect, useState } from "react";
+import type { AdminNotificationDto, AdminNotificationLevel } from "@event-arts/shared";
+import { listAdminNotifications } from "../api";
+
+const pageSize = 20;
+const labels: Record<AdminNotificationLevel, string> = {
+  success: "成功",
+  error: "失败",
+  warning: "警告",
+  info: "提示"
+};
+const icons = {
+  success: <CheckCircleFilled />,
+  error: <CloseCircleFilled />,
+  warning: <WarningFilled />,
+  info: <InfoCircleFilled />
+};
+
+export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [items, setItems] = useState<AdminNotificationDto[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(nextPage: number, append: boolean) {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listAdminNotifications(nextPage, pageSize);
+      setItems((current) => append
+        ? [...current, ...result.items.filter((item) => !current.some((existing) => existing.id === item.id))]
+        : result.items);
+      setPage(result.pagination.page);
+      setTotal(result.pagination.total);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "历史消息加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    setItems([]);
+    setPage(1);
+    setTotal(0);
+    void load(1, false);
+  }, [open]);
+
+  const hasMore = items.length < total;
+
+  return (
+    <Drawer
+      className="notification-history"
+      title="最近 7 天消息"
+      size={420}
+      open={open}
+      onClose={onClose}
+      destroyOnHidden
+    >
+      {error && !items.length ? (
+        <Alert
+          data-testid="notification-history-error"
+          type="error"
+          showIcon
+          title="历史消息加载失败"
+          description={error}
+          action={<Button onClick={() => void load(1, false)}>重试</Button>}
+        />
+      ) : (
+        <Skeleton loading={loading && !items.length} active>
+          {!items.length ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近 7 天暂无消息" />
+          ) : (
+            <>
+              <div className="notification-history__list" aria-busy={loading}>
+                {items.map((item) => (
+                  <article className={`notification-history__item notification-history__item--${item.level}`} key={item.id}>
+                    <span className="notification-history__icon" aria-hidden="true">{icons[item.level]}</span>
+                    <div>
+                      <div className="notification-history__meta">
+                        <strong>{labels[item.level]}</strong>
+                        <time dateTime={item.occurredAt}>
+                          {new Date(item.occurredAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
+                        </time>
+                      </div>
+                      <p>{item.message}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {error && (
+                <Alert
+                  className="notification-history__append-error"
+                  type="error"
+                  showIcon
+                  title="更多消息加载失败"
+                  action={<Button onClick={() => void load(page + 1, true)}>重试</Button>}
+                />
+              )}
+              {hasMore && !error && (
+                <Button
+                  className="notification-history__more"
+                  block
+                  disabled={loading}
+                  onClick={() => void load(page + 1, true)}
+                >
+                  {loading ? <><Spin size="small" /> 正在加载</> : "加载更多"}
+                </Button>
+              )}
+            </>
+          )}
+        </Skeleton>
+      )}
+    </Drawer>
+  );
+}

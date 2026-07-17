@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Form, Skeleton, message } from "antd";
+import { Alert, Button, Form, Skeleton } from "antd";
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
@@ -9,6 +9,7 @@ import { firstValidationField, type AnyRecord } from "../forms/form-utils";
 import { useDirtyFormGuard } from "../forms/unsaved-changes";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
 
 export function RecordFormPage({ config }: { config: CrudConfig }) {
@@ -84,7 +85,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
       setDirty(false);
       dirtyGuard.clearDirtyEntry(dirtyGuardKey);
     });
-    message.success("保存成功");
+    notify.success("保存成功");
     return saved;
   }
 
@@ -107,7 +108,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
     } catch (submitError) {
       const field = firstValidationField(submitError);
       if (field) form.scrollToField(field, { block: "center" });
-      else message.error(submitError instanceof Error ? submitError.message : "保存失败");
+      else notify.error(submitError instanceof Error ? submitError.message : "保存失败");
     } finally {
       setSaving(false);
     }

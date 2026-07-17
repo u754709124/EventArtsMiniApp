@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, Input, message } from "antd";
+import { Form, Input } from "antd";
 import { useNavigate } from "react-router-dom";
 import { passwordPolicy, type AdminChangePasswordRequest, type AdminPasswordChangedResponse } from "@event-arts/shared";
 import { clearToken, request } from "../api";
@@ -7,6 +7,7 @@ import { FormActionBar } from "../components/FormActionBar";
 import { FormSection } from "../components/FormSection";
 import { PageHeader } from "../components/PageHeader";
 import { firstValidationField } from "../forms/form-utils";
+import { notify } from "../notifications/notification";
 
 function passwordCharacterClassCount(value: string) {
   return [
@@ -39,9 +40,9 @@ export function ChangePasswordPage() {
         method: "POST",
         body: JSON.stringify(values)
       });
+      notify.success("密码已修改，请重新登录");
       clearToken();
       form.resetFields();
-      message.success("密码已修改，请重新登录");
       navigate("/login", { replace: true });
     } catch (error) {
       const field = firstValidationField(error);
@@ -49,7 +50,7 @@ export function ChangePasswordPage() {
         form.scrollToField(field, { block: "center" });
         return;
       }
-      message.error(error instanceof Error ? error.message : "修改密码失败");
+      notify.error(error instanceof Error ? error.message : "修改密码失败");
     } finally {
       setSaving(false);
     }

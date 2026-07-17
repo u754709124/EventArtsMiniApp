@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Tooltip, message } from "antd";
+import { Button, Tooltip } from "antd";
 import type { Editor } from "@tiptap/core";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { MediaAssetDto, MediaType } from "@event-arts/shared";
+import { notify } from "../notifications/notification";
 import { MediaPickerModal } from "./MediaPickerModal";
 import {
   createRichTextEditorExtensions,
@@ -217,7 +218,7 @@ export function RichTextEditorField({
     }
     const href = safeLinkHref(input);
     if (!href) {
-      message.warning("链接仅支持 http、https、mailto 或 tel 协议");
+      notify.warning("链接仅支持 http、https、mailto 或 tel 协议");
       return;
     }
     editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
@@ -234,12 +235,12 @@ export function RichTextEditorField({
   function insertAsset(asset: MediaAssetDto) {
     if (!editor || !pickerType) return;
     if (asset.mediaType !== pickerType) {
-      message.warning(pickerType === "image" ? "请选择图片资源" : "请选择视频资源");
+      notify.warning(pickerType === "image" ? "请选择图片资源" : "请选择视频资源");
       return;
     }
     const mediaAssetId = normalizeMediaAssetId(asset.id);
     if (!mediaAssetId || !isSafeAssetMediaSource(asset.url, true)) {
-      message.error("资源地址无效，请重新选择已登记资源");
+      notify.error("资源地址无效，请重新选择已登记资源");
       return;
     }
     trustedMediaRegistryRef.current?.trustPickerAsset({

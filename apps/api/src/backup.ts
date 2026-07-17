@@ -510,6 +510,7 @@ async function tableCounts(prisma: AppPrismaClient) {
   const tables = [
     "admin_users",
     "admin_sessions",
+    "admin_notifications",
     "media_assets",
     "media_asset_tags",
     "site_config",

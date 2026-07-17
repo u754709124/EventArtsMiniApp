@@ -1,5 +1,5 @@
-import { message } from "antd";
 import type { MediaAssetDto, MediaFieldKey, MediaType } from "@event-arts/shared";
+import { notify } from "../notifications/notification";
 import { MediaLibraryModal, resolveAllowedMediaTypes } from "../media/MediaLibraryModal";
 import { MediaUploadAction } from "../media/MediaUploadAction";
 
@@ -24,7 +24,7 @@ export function MediaPickerModal({
 
   function select(asset: MediaAssetDto) {
     if (!allowedTypes.includes(asset.mediaType)) {
-      message.warning("所选资源类型不符合当前字段要求");
+      notify.warning("所选资源类型不符合当前字段要求");
       return;
     }
     onSelect(asset);

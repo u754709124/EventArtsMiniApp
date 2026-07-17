@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, Empty, Input, Modal, Pagination, Select, Space, Spin, Tabs, Tag, message } from "antd";
+import { Button, Empty, Input, Modal, Pagination, Select, Space, Spin, Tabs, Tag } from "antd";
 import { mediaFieldRules, mediaTypeValues, type MediaAssetDto, type MediaFieldKey, type MediaType } from "@event-arts/shared";
 import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
+import { notify } from "../notifications/notification";
 
 type MediaListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
 
@@ -60,7 +61,7 @@ export function MediaLibraryModal({
     } catch (error) {
       if (sequence !== requestSequence.current) return;
       setData((current) => ({ ...current, items: [], total: 0, page }));
-      message.error(error instanceof Error ? error.message : "资源加载失败");
+      notify.error(error instanceof Error ? error.message : "资源加载失败");
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
@@ -72,7 +73,7 @@ export function MediaLibraryModal({
     setPage(1);
     void request<{ items: Array<{ label: string; count: number }> }>("/api/admin/media-assets/tags")
       .then((value) => setTags(value.items))
-      .catch((error) => message.error(error instanceof Error ? error.message : "标签加载失败"));
+      .catch((error) => notify.error(error instanceof Error ? error.message : "标签加载失败"));
   }, [open, fieldKey, allowedTypesKey]);
 
   useEffect(() => {
