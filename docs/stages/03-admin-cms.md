@@ -1,21 +1,27 @@
 # Stage 3 - Admin CMS
 
 ## 阶段目标
+
 实现后台登录、看板、首页配置、公告、Banner、菜单、案例、人员和资源管理。
 
 ## 功能范围
+
 React + Vite + TypeScript + Ant Design。
 
 ## 主要文件
+
 `apps/admin`。
 
 ## 数据结构或接口
+
 使用 `/api/admin/*` 接口和共享类型。
 
 ## 测试方式
+
 `pnpm --filter admin build`、`pnpm lint`、`pnpm test`；E2E 在 Stage 5 统一执行。
 
 ## 验收清单
+
 - [x] 登录态刷新保留
 - [x] 未登录跳转登录页
 - [x] 表单校验和反馈
@@ -26,10 +32,12 @@ React + Vite + TypeScript + Ant Design。
 - [x] 图片/视频资源库、标签/使用状态筛选和未使用清理
 - [x] 独立 EdgeOne 系统配置页、密钥保留/清空语义和错误定位
 - [x] EdgeOne 四张卡片、刷新全部、局部失败旧数据保留和 4/2/1 响应式布局
+- [x] 素材库未预热资源提交、状态筛选/轮询、手动对账和窄屏可恢复交互
 - [x] 四主题统一通知卡片、5 秒进度、堆叠补位和 reduced-motion
 - [x] 当前管理员七天历史抽屉与断网幂等补传
 
 ## 已完成事项
+
 - 已实现 React + Vite + TypeScript + Ant Design 后台。
 - 已实现登录页、token 持久化、受保护布局、侧边栏、退出登录。
 - 已将后台导航调整为两级分组结构，并由单一配置驱动菜单、面包屑、页面标题和路由高亮；侧边栏支持收起和展开状态记忆。
@@ -37,6 +45,7 @@ React + Vite + TypeScript + Ant Design。
 - 新增顶级“系统配置”菜单和 `/system-config` 路由；ZoneId、CAM SecretId、CAM SecretKey 使用可见标签，凭证为密码控件。读取时不回显凭证，保存成功或离页时清空，验证失败时保留当前输入供修正。
 - Dashboard 的“刷新全部”只发起一个聚合 GET 并同时刷新七张卡片；pending 时禁用按钮并同步阻止重复请求。全页失败和 EdgeOne 局部失败均有重试路径，后者保留上次成功 EdgeOne 值。
 - EdgeOne 区域固定提示官方计费数据可能延迟约 3 小时，并显示套餐周期与最近成功刷新时间；桌面/平板/移动端为 4/2/1 列。
+- 素材页的预热按钮必须二次确认；pending 时防重复提交，并显示本次提交、跳过、不合格和失败汇总。活跃任务最多轮询 12 次，页面隐藏或卸载后停止，失败时保留明确的刷新/重试入口。
 - 已实现首页配置，支持从资源库选择默认图和占位图。
 - 已实现公告、Banner、分类菜单抽屉表单，以及案例、人员独立新增/编辑页和分页表格。
 - 已增加通用页面头、分组表单、固定操作栏、未保存修改保护和编辑前完整记录 GET 回填。
@@ -55,7 +64,9 @@ React + Vite + TypeScript + Ant Design。
 - 2026-07-17 通知中心验收：shared 42 项、API 215 项、Miniapp 57 项、Admin 123 项及部署脚本 8 项单测全部通过；Admin production build、API/shared build、本次变更定向 ESLint 和 Admin E2E 21/21 通过。
 
 ## 对应 git commit hash
+
 50eced6
 
 ## 已知问题或设计取舍
-一期不做后台角色细分、忘记密码、趋势图或 EdgeOne 资源预热。后台为单包 Ant Design 应用；当前 production build 通过，但 Vite 对约 2 MB 的主 chunk 给出非阻塞体积 warning，后续可按路由拆包。
+
+一期不做后台角色细分、忘记密码、趋势图、EdgeOne 缓存刷新或多 Zone。后台为单包 Ant Design 应用；当前 production build 通过，但 Vite 对约 2 MB 的主 chunk 给出非阻塞体积 warning，后续可按路由拆包。

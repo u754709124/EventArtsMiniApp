@@ -35,7 +35,8 @@ export type SecurityEventName =
   | "backup_import_rejected"
   | "backup_restore_requested"
   | "backup_restore_failed"
-  | "backup_restore_completed";
+  | "backup_restore_completed"
+  | "edgeone_prefetch_rate_limited";
 
 const sensitiveKeyPattern =
   /^(authorization|proxy-authorization|cookie|set-cookie|password|currentpassword|newpassword|confirmpassword|code|wechatcode|logincode|token|access_token|refresh_token|jwt|jwtsecret|secret|secretid|secretkey|clientsecret|appsecret|sessionkey|session_key|openid|unionid|apikey|api_key|credential|credentials|candidatecredentials|edgeonecredentialencryptionkey)$/i;

@@ -1279,6 +1279,116 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await expect(page.getByText(/已删除 1 项/).last()).toBeVisible();
 });
 
+test("EdgeOne 预热仅提交一次并在窄屏显示可恢复状态", async ({ page }) => {
+  await loginAdminUi(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  let triggerCalls = 0;
+  let status: "processing" | "success" = "processing";
+  const asset = {
+    id: 901,
+    resourceName: "edgeone-prefetch.jpg",
+    originalName: "edgeone-prefetch.jpg",
+    filename: "edgeone-prefetch.jpg",
+    md5: "0123456789abcdef0123456789abcdef",
+    mimeType: "image/jpeg",
+    mediaType: "image",
+    url: "/uploads/edgeone-prefetch.jpg",
+    width: 710,
+    height: 290,
+    size: 1024,
+    storageType: "local",
+    createdBy: 1,
+    createdByName: "admin",
+    createdAt: "2026-07-17T00:00:00.000Z",
+    updatedAt: "2026-07-17T00:00:00.000Z",
+    tags: [],
+    inUse: false,
+    referenceCount: 0
+  };
+
+  await page.route("**/api/admin/media-assets/tags", (route) =>
+    route.fulfill({ json: { success: true, data: { items: [] }, message: "ok" } })
+  );
+  await page.route("**/api/admin/media-assets?*", (route) =>
+    route.fulfill({
+      json: { success: true, data: { items: [asset], total: 1, page: 1, pageSize: 20 }, message: "ok" }
+    })
+  );
+  await page.route("**/api/admin/edgeone/prefetch?*", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          items: [{
+            id: 1,
+            mediaAssetId: asset.id,
+            contentVersion: asset.md5,
+            targetUrl: "https://media.example.com/uploads/edgeone-prefetch.jpg",
+            mode: "default",
+            status,
+            attemptCount: 1,
+            nextRetryAt: null,
+            lastSubmittedAt: "2026-07-17T00:00:00.000Z",
+            completedAt: status === "success" ? "2026-07-17T00:00:10.000Z" : null,
+            safeErrorCode: null,
+            safeErrorMessage: null,
+            updatedAt: "2026-07-17T00:00:10.000Z"
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 100
+        },
+        message: "ok"
+      }
+    })
+  );
+  await page.route("**/api/admin/edgeone/prefetch/reconcile", async (route) => {
+    status = "success";
+    await route.fulfill({
+      json: {
+        success: true,
+        data: { scanned: 1, queried: 1, recovered: 0, retried: 0, failed: 0 },
+        message: "ok"
+      }
+    });
+  });
+  await page.route("**/api/admin/edgeone/prefetch", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    triggerCalls += 1;
+    await route.fulfill({
+      json: {
+        success: true,
+        data: {
+          submitted: 1,
+          skipped: 0,
+          ineligible: 0,
+          failed: 0,
+          items: [{ mediaAssetId: asset.id, status: "processing", outcome: "submitted", safeErrorCode: null }]
+        },
+        message: "ok"
+      }
+    });
+  });
+
+  await page.goto(adminPath("/media-assets"));
+  const trigger = page.getByTestId("media-edgeone-prefetch");
+  await trigger.dblclick();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  const confirm = page.getByRole("button", { name: "开始预热" });
+  await confirm.dblclick();
+  await expect(page.getByTestId("media-edgeone-prefetch-summary")).toContainText("本次提交 1");
+  expect(triggerCalls).toBe(1);
+
+  await page.getByTestId("media-edgeone-prefetch-refresh").click();
+  await expect(page.getByText("预热成功")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => JSON.stringify({
+    local: localStorage,
+    session: sessionStorage,
+    href: location.href
+  }))).not.toContain("PREFETCH_TEST_SECRET");
+});
+
 test("备份与恢复后台可走真实创建、删除、导入预检和恢复链路", async ({ page, request }) => {
   const runId = `E2E-${Date.now()}-${randomBytes(3).toString("hex")}`;
   const sourceNote = `${runId} 恢复源备份`;

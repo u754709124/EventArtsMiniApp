@@ -511,6 +511,8 @@ async function tableCounts(prisma: AppPrismaClient) {
     "admin_users",
     "admin_sessions",
     "admin_notifications",
+    "edgeone_prefetch_resources",
+    "edgeone_prefetch_attempts",
     "media_assets",
     "media_asset_tags",
     "site_config",

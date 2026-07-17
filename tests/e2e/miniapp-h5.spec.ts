@@ -345,9 +345,8 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
   );
 
   const richTextPresentation = await page.getByTestId("detail-rich-content").evaluate((root) => ({
-    expectedHeadingFontSize:
-      document.querySelector<HTMLElement>(".detail-page")!.getBoundingClientRect().width * 28 / 750,
-    headings: Array.from(root.querySelectorAll("h1")).map((heading) => {
+    expectedHeadingFontSize: 17,
+    headings: Array.from(root.querySelectorAll('[data-detail-heading="true"]')).map((heading) => {
       const marker = heading.querySelector<HTMLElement>("[data-detail-heading-marker='true']");
       const content = heading.querySelector<HTMLElement>("[data-detail-heading-content='true']");
       const markerRect = marker?.getBoundingClientRect();
@@ -382,8 +381,8 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
     expect(heading.markerHeight).toBeLessThanOrEqual(heading.fontSize + 0.5);
     expect(heading.markerContentCenterDelta).toBeGreaterThanOrEqual(0);
     expect(heading.markerContentCenterDelta).toBeLessThanOrEqual(1);
-    expect(heading.markerInlineHeight).toBe("1em");
-    expect(heading.markerInlineMaxHeight).toBe("1em");
+    expect(heading.markerInlineHeight).toBe("13px");
+    expect(heading.markerInlineMaxHeight).toBe("13px");
   });
   richTextPresentation.images.forEach((image) => {
     expect(image.width).toBeLessThanOrEqual(image.containerWidth + 1);

@@ -28,13 +28,14 @@
 
 ## EdgeOne CAM 与凭证恢复契约
 
-- v1 仅支持一个 Zone 和一组 CAM 子账号凭证；不包含预热、配置修改、多 Zone 或全量 EdgeOne 管理。
-- CAM 最小权限是 `teo:DescribePlans` 对 `*`，以及 `teo:DescribeBillingData` 对 `qcs::teo::uin/<主账号UIN>:zone/<ZoneId>`。最终资源表达式以腾讯云 CAM 文档为准。
+- v1 仅支持一个 Zone 和一组 CAM 子账号凭证；预热为默认关闭的显式后台流程，仍不包含缓存刷新、配置修改、多 Zone 或全量 EdgeOne 管理。
+- CAM 最小权限是 `teo:DescribePlans` 对 `*`，以及 `teo:DescribeBillingData`、`teo:CreatePrefetchTask`、`teo:DescribePrefetchTasks` 对目标 Zone。最终资源表达式以腾讯云 CAM 文档为准。
 - 保存前先验证唯一有效套餐，再验证 `acc_flux`、`smt_flux`、`sec_request_clean` 查询；全部成功后才原子写入配置密文和不含凭证的操作记录。
 - `PayMode=1` 为预付费、`PayMode=0` 为后付费；预付费周期按 `EnabledTime` 的月序号锚定，下月不存在同一日期时按官方规则补齐 31 天，企业后付费仅接受企业套餐并按北京时间自然月。
 - 数据库备份只包含密文，不包含主密钥。恢复必须同时从独立 secret 管理恢复原主密钥；错误密钥会因 GCM 认证失败而拒绝解密。
 - 主密钥丢失后旧凭证不可恢复，且 v1 不做在线主密钥轮换。恢复流程是停 API、保留故障数据库副本、在离线维护窗口删除 `system_config` 单例、设置新主密钥、重启并通过系统配置页重新录入 CAM。不得尝试导出或绕过认证读取旧密文。
 - 自动化使用 fake SDK 和运行期构造的测试值；真实 CAM、Zone、套餐响应与约 3 小时计费延迟只在部署后人工烟测。
+- 预热请求不接收任意 URL；目标由服务端素材记录与公开域名生成并限制为 HTTPS 同主机。持久化幂等身份、数据库唯一约束、租约和状态机防止同一内容版本重复提交；浏览器安全投影丢弃目标 URL 与内容版本。
 
 ## R1 小程序客户端访问控制契约
 
@@ -42,13 +43,13 @@
 
 G12 新增生产配置门禁：
 
-| 环境变量 | 生产要求 |
-| --- | --- |
-| `WECHAT_MINIAPP_APP_ID` | 必填；缺失、占位或非微信小程序 AppID 格式时启动失败 |
-| `WECHAT_MINIAPP_APP_SECRET` | 必填；缺失或占位时启动失败；不得提交到源码 |
-| `WECHAT_AUTH_VERIFIER_MODE` | 生产必须为 `wechat`；`fake` 只允许 dev/test |
-| `CLIENT_SESSION_TTL_SECONDS` | 默认 1800 秒，范围 60-86400 秒 |
-| `WECHAT_CODE2SESSION_TIMEOUT_MS` | 默认 3000 ms，范围 500-30000 ms |
+| 环境变量                         | 生产要求                                            |
+| -------------------------------- | --------------------------------------------------- |
+| `WECHAT_MINIAPP_APP_ID`          | 必填；缺失、占位或非微信小程序 AppID 格式时启动失败 |
+| `WECHAT_MINIAPP_APP_SECRET`      | 必填；缺失或占位时启动失败；不得提交到源码          |
+| `WECHAT_AUTH_VERIFIER_MODE`      | 生产必须为 `wechat`；`fake` 只允许 dev/test         |
+| `CLIENT_SESSION_TTL_SECONDS`     | 默认 1800 秒，范围 60-86400 秒                      |
+| `WECHAT_CODE2SESSION_TIMEOUT_MS` | 默认 3000 ms，范围 500-30000 ms                     |
 
 G13 已在 API 侧实现：
 
@@ -81,6 +82,7 @@ G14 已在 miniapp 请求层实现：
 - `.env.example`、`README.md`：补齐 EdgeOne 主密钥生成、先配密钥再发代码、最小 CAM、数据口径、备份恢复和主密钥丢失恢复路径。
 - `docs/api/index.md`：补齐 Auth、密码修改、session 撤销、限流、统计治理、安全日志和备份恢复 API。
 - `docs/api/index.md`：补齐 EdgeOne 配置接口、Dashboard 联合状态、错误码、计费口径和 `no-store` 契约。
+- `README.md`、`docs/api/index.md`：补齐 EdgeOne 预热幂等语义、接口、CAM、调度、灰度和回滚契约。
 - `docs/deploy/nginx-production-routing.md`：补齐 loopback 反代、`deploy:smoke`、`security:release-gate`、`nginx -t`、备份恢复、回滚和灾难演练。
 - `docs/deploy/nginx-production-routing.md`：补齐微信小程序生产变量、匿名 `/api/client/home` 应返回 `401/CLIENT_AUTH_REQUIRED`、真实 `wx.login -> /api/client/auth/wechat -> /api/client/home` 验证步骤。
 - `docs/stages/06-weapp-build-and-deploy.md`：上线清单补入安全门禁、备份容量、异地备份、保留调度和灾难演练。
@@ -89,19 +91,19 @@ G14 已在 miniapp 请求层实现：
 
 以下命令在本轮 G11 最终验证阶段执行：
 
-| 验证项 | 命令 | 结果 |
-| --- | --- | --- |
-| 发布安全门禁 | `pnpm security:release-gate` | 通过，自动化 P0/P1 repository checks green，并列出目标环境人工检查项 |
-| 部署脚本测试 | `pnpm test:deploy` | 通过，2 个文件 8 个测试 |
-| Lint | `pnpm lint` | 通过 |
-| Unit/contract tests | `pnpm test` | 通过；shared 29、miniapp 22、admin 79、api 152、deploy 8 个测试 |
-| E2E | `pnpm e2e` | 通过；沙箱内因 `listen EPERM 127.0.0.1:3001` 失败，提升权限执行后 48 个测试通过，用时 2.9 分钟 |
-| API build | `pnpm --filter api build` | 通过 |
-| Admin build | `pnpm --filter admin build` | 通过；Vite 仍提示单 chunk 超 2000 kB，退出码 0 |
-| Miniapp H5 build | `pnpm --filter miniapp build:h5` | 通过 |
-| WeApp build | `pnpm build:weapp` | 通过 |
-| 备份恢复一致性 | `pnpm --filter api exec vitest run test/restore.test.ts test/backup.test.ts --no-file-parallelism --maxWorkers=1` | 通过，2 个文件 12 个测试，覆盖临时 DB/uploads 的备份、修改和恢复一致性 |
-| 生产 seed 拒绝 | 隔离 SQLite `NODE_ENV=production pnpm --filter api db:seed` | 通过；强 JWT 配置下写入前报错 `db:seed is disabled in production`，隔离 DB/uploads/backup 路径均未创建 |
+| 验证项              | 命令                                                                                                              | 结果                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 发布安全门禁        | `pnpm security:release-gate`                                                                                      | 通过，自动化 P0/P1 repository checks green，并列出目标环境人工检查项                                   |
+| 部署脚本测试        | `pnpm test:deploy`                                                                                                | 通过，2 个文件 8 个测试                                                                                |
+| Lint                | `pnpm lint`                                                                                                       | 通过                                                                                                   |
+| Unit/contract tests | `pnpm test`                                                                                                       | 通过；shared 29、miniapp 22、admin 79、api 152、deploy 8 个测试                                        |
+| E2E                 | `pnpm e2e`                                                                                                        | 通过；沙箱内因 `listen EPERM 127.0.0.1:3001` 失败，提升权限执行后 48 个测试通过，用时 2.9 分钟         |
+| API build           | `pnpm --filter api build`                                                                                         | 通过                                                                                                   |
+| Admin build         | `pnpm --filter admin build`                                                                                       | 通过；Vite 仍提示单 chunk 超 2000 kB，退出码 0                                                         |
+| Miniapp H5 build    | `pnpm --filter miniapp build:h5`                                                                                  | 通过                                                                                                   |
+| WeApp build         | `pnpm build:weapp`                                                                                                | 通过                                                                                                   |
+| 备份恢复一致性      | `pnpm --filter api exec vitest run test/restore.test.ts test/backup.test.ts --no-file-parallelism --maxWorkers=1` | 通过，2 个文件 12 个测试，覆盖临时 DB/uploads 的备份、修改和恢复一致性                                 |
+| 生产 seed 拒绝      | 隔离 SQLite `NODE_ENV=production pnpm --filter api db:seed`                                                       | 通过；强 JWT 配置下写入前报错 `db:seed is disabled in production`，隔离 DB/uploads/backup 路径均未创建 |
 
 ## G11 验证修复记录
 
@@ -116,23 +118,23 @@ G14 已在 miniapp 请求层实现：
 
 以下命令在 R1/G15 最终验证阶段执行：
 
-| 验证项 | 命令 | 结果 |
-| --- | --- | --- |
-| 发布安全门禁 | `pnpm security:release-gate` | 通过；新增微信小程序客户端认证自动化标记检查，并列出目标环境人工检查项 |
-| 部署 smoke | `pnpm deploy:smoke` | 通过；API/Admin host 与 Nginx upstream 均为 loopback |
-| 部署脚本测试 | `pnpm test:deploy` | 通过，2 个文件 8 个测试 |
-| R1 API 回归 | `pnpm --filter api test -- client-auth.test.ts api.test.ts security-logging.test.ts config.test.ts` | 通过，19 个文件 163 个测试 |
-| Shared 契约回归 | `pnpm --filter @event-arts/shared test -- contracts.test.ts` | 通过，2 个文件 30 个测试 |
-| Miniapp 请求层回归 | `pnpm --filter miniapp test -- api.test.ts` | 通过，5 个文件 26 个测试 |
-| Lint | `pnpm lint` | 通过 |
-| Unit/contract tests | `pnpm test` | 通过；shared 30、miniapp 26、api 163、admin 79、deploy 8 个测试 |
-| API build | `pnpm --filter api build` | 通过 |
-| Admin build | `pnpm --filter admin build` | 通过；Vite 仍提示单 chunk 超 2000 kB，退出码 0 |
-| Miniapp H5 build | `pnpm --filter miniapp build:h5` | 通过 |
-| WeApp build | `pnpm build:weapp` | 通过 |
-| E2E | `pnpm e2e` | 沙箱内因 `listen EPERM 127.0.0.1:3001` 失败；提升权限复跑通过，48 个测试通过，用时 4.1 分钟 |
-| H5 产物敏感标记扫描 | `rg "h5-dev-code|fake-session-key|WECHAT_MINIAPP_APP_SECRET|yourwechat|yourappsecret|appSecret|session_key" apps/miniapp/dist` | 无命中；`rg` 退出码 1 表示未找到 |
-| 空白差异检查 | `git diff --check` | 通过 |
+| 验证项              | 命令                                                                                                | 结果                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 发布安全门禁        | `pnpm security:release-gate`                                                                        | 通过；新增微信小程序客户端认证自动化标记检查，并列出目标环境人工检查项                      |
+| 部署 smoke          | `pnpm deploy:smoke`                                                                                 | 通过；API/Admin host 与 Nginx upstream 均为 loopback                                        |
+| 部署脚本测试        | `pnpm test:deploy`                                                                                  | 通过，2 个文件 8 个测试                                                                     |
+| R1 API 回归         | `pnpm --filter api test -- client-auth.test.ts api.test.ts security-logging.test.ts config.test.ts` | 通过，19 个文件 163 个测试                                                                  |
+| Shared 契约回归     | `pnpm --filter @event-arts/shared test -- contracts.test.ts`                                        | 通过，2 个文件 30 个测试                                                                    |
+| Miniapp 请求层回归  | `pnpm --filter miniapp test -- api.test.ts`                                                         | 通过，5 个文件 26 个测试                                                                    |
+| Lint                | `pnpm lint`                                                                                         | 通过                                                                                        |
+| Unit/contract tests | `pnpm test`                                                                                         | 通过；shared 30、miniapp 26、api 163、admin 79、deploy 8 个测试                             |
+| API build           | `pnpm --filter api build`                                                                           | 通过                                                                                        |
+| Admin build         | `pnpm --filter admin build`                                                                         | 通过；Vite 仍提示单 chunk 超 2000 kB，退出码 0                                              |
+| Miniapp H5 build    | `pnpm --filter miniapp build:h5`                                                                    | 通过                                                                                        |
+| WeApp build         | `pnpm build:weapp`                                                                                  | 通过                                                                                        |
+| E2E                 | `pnpm e2e`                                                                                          | 沙箱内因 `listen EPERM 127.0.0.1:3001` 失败；提升权限复跑通过，48 个测试通过，用时 4.1 分钟 |
+| H5 产物敏感标记扫描 | `rg "h5-dev-code                                                                                    | fake-session-key                                                                            | WECHAT_MINIAPP_APP_SECRET | yourwechat | yourappsecret | appSecret | session_key" apps/miniapp/dist` | 无命中；`rg` 退出码 1 表示未找到 |
+| 空白差异检查        | `git diff --check`                                                                                  | 通过                                                                                        |
 
 ## G15 验证修复记录
 
@@ -142,19 +144,39 @@ G14 已在 miniapp 请求层实现：
 
 ## 2026-07-17 EdgeOne 验证记录
 
+| 验证项                         | 命令                                                                                                                                                                                  | 结果                                                                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EdgeOne 核心与 API             | `pnpm --filter api exec vitest run test/edgeone-core.test.ts test/edgeone-api.test.ts --no-file-parallelism --maxWorkers=1`                                                           | 通过，2 个文件 24 个测试；包含全部地区系数、31 天月末补齐、周期边界、空数据、超额和容量字段防重复                                                                                                    |
+| 备份与恢复                     | `pnpm --filter api exec vitest run test/backup.test.ts test/restore.test.ts --no-file-parallelism --maxWorkers=1`                                                                     | 通过，2 个文件 12 个测试；快照只含密文，原密钥可解密，错误密钥认证失败                                                                                                                               |
+| 计划内 TypeScript lint         | `pnpm exec eslint apps/api/src apps/api/test apps/admin/src packages/shared/src packages/shared/test tests/e2e/admin.spec.ts playwright.config.ts`                                    | 通过                                                                                                                                                                                                 |
+| 仓库 Lint                      | `pnpm lint`                                                                                                                                                                           | 未通过，唯一错误为既有小程序测试 `apps/miniapp/src/services/api.test.ts:84:10` 的未使用变量 `rateLimitedBody`；EdgeOne/Api/Admin/Shared/E2E 范围 lint 通过，本任务未越界修改小程序                   |
+| Unit/contract/integration      | `pnpm test`                                                                                                                                                                           | 通过；shared 36、miniapp 57、api 204、admin 98、deploy 8 个测试                                                                                                                                      |
+| API build                      | `pnpm --filter api build`                                                                                                                                                             | 通过                                                                                                                                                                                                 |
+| Admin build                    | `pnpm --filter admin build`                                                                                                                                                           | 通过；Vite 单 chunk 约 2025 kB 警告不影响退出码                                                                                                                                                      |
+| EdgeOne E2E                    | `pnpm e2e --project=admin --grep EdgeOne`                                                                                                                                             | 通过，1 个场景；fake 响应覆盖安全配置、七卡刷新、防并发、凭证无浏览器残留和 4/2/1 响应式                                                                                                             |
+| Admin E2E                      | `pnpm e2e --project=admin` 及失败项聚焦复跑                                                                                                                                           | 20 个后台场景均已覆盖通过；首次全量尝试暴露 AntD dialog 无可访问名称，改用可见 dialog 加标题文本定位后，文章场景 1/1 与末 5 个场景 5/5 通过                                                          |
+| 全量 E2E                       | `pnpm e2e`                                                                                                                                                                            | 未通过：14 个场景通过后，既有 Admin dialog 选择器失败（随后已修复）及 Miniapp H5 首场景无法加载；当前剩余阻断是 H5 构建无法解析 `@babel/runtime/helpers/interopRequireWildcard`，39 个后续场景未执行 |
+| Miniapp H5 诊断                | `env NODE_ENV=test pnpm --filter miniapp build:h5`                                                                                                                                    | 未通过，缺少直接依赖 `@babel/runtime`；小程序是 EdgeOne v1 非目标且 G04 禁止修改                                                                                                                     |
+| 预热核心与迁移                 | `pnpm --filter api exec vitest run test/edgeone-prefetch-core.test.ts test/edgeone-prefetch-api.test.ts test/edgeone-prefetch-migration.test.ts --no-file-parallelism --maxWorkers=1` | 通过，3 个文件 4 个测试；覆盖并发单提交、远端成功对账、内容 MD5 新身份和幂等 SQLite 迁移                                                                                                             |
+| 预热 Admin 单测                | `pnpm --filter admin exec vitest run src/media/MediaPage.test.tsx src/pages/SystemConfigPage.test.tsx --no-file-parallelism --maxWorkers=1`                                           | 通过，2 个文件 5 个测试；jsdom 输出 AntD `getComputedStyle` 未实现提示但退出码为 0                                                                                                                   |
+| 预热 E2E                       | `pnpm e2e --project=admin --grep "EdgeOne 预热仅提交一次"`                                                                                                                            | 通过，1 个场景；双确认仅一次 POST、对账成功、375px 无页面溢出和浏览器无凭证标记                                                                                                                      |
+| 仓库 Unit/contract/integration | `pnpm test`                                                                                                                                                                           | 通过；shared 42、miniapp 57、admin 124、api 219、deploy 8 个测试                                                                                                                                     |
+| 仓库 Lint（预热实现后）        | `pnpm lint`                                                                                                                                                                           | 未通过，唯一错误仍为既有 `apps/miniapp/src/services/api.test.ts:84:10` 未使用变量 `rateLimitedBody`；本任务未修改 miniapp                                                                            |
+
+### 2026-07-18 提交门禁补充验证
+
+用户授权修复仓库级提交门禁后，删除了 Miniapp 测试中的未使用变量，补充 `@babel/runtime` 直接依赖，并修正 H5 E2E 的模块环境与既有富文本样式断言。最终结果：
+
 | 验证项 | 命令 | 结果 |
 | --- | --- | --- |
-| EdgeOne 核心与 API | `pnpm --filter api exec vitest run test/edgeone-core.test.ts test/edgeone-api.test.ts --no-file-parallelism --maxWorkers=1` | 通过，2 个文件 24 个测试；包含全部地区系数、31 天月末补齐、周期边界、空数据、超额和容量字段防重复 |
-| 备份与恢复 | `pnpm --filter api exec vitest run test/backup.test.ts test/restore.test.ts --no-file-parallelism --maxWorkers=1` | 通过，2 个文件 12 个测试；快照只含密文，原密钥可解密，错误密钥认证失败 |
-| 计划内 TypeScript lint | `pnpm exec eslint apps/api/src apps/api/test apps/admin/src packages/shared/src packages/shared/test tests/e2e/admin.spec.ts playwright.config.ts` | 通过 |
-| 仓库 Lint | `pnpm lint` | 未通过，唯一错误为既有小程序测试 `apps/miniapp/src/services/api.test.ts:84:10` 的未使用变量 `rateLimitedBody`；EdgeOne/Api/Admin/Shared/E2E 范围 lint 通过，本任务未越界修改小程序 |
-| Unit/contract/integration | `pnpm test` | 通过；shared 36、miniapp 57、api 204、admin 98、deploy 8 个测试 |
+| 仓库 Lint | `pnpm lint` | 通过 |
+| Unit/contract/integration | `pnpm test` | 通过；shared 42、miniapp 57、admin 124、api 219、deploy 8 个测试 |
 | API build | `pnpm --filter api build` | 通过 |
-| Admin build | `pnpm --filter admin build` | 通过；Vite 单 chunk 约 2025 kB 警告不影响退出码 |
-| EdgeOne E2E | `pnpm e2e --project=admin --grep EdgeOne` | 通过，1 个场景；fake 响应覆盖安全配置、七卡刷新、防并发、凭证无浏览器残留和 4/2/1 响应式 |
-| Admin E2E | `pnpm e2e --project=admin` 及失败项聚焦复跑 | 20 个后台场景均已覆盖通过；首次全量尝试暴露 AntD dialog 无可访问名称，改用可见 dialog 加标题文本定位后，文章场景 1/1 与末 5 个场景 5/5 通过 |
-| 全量 E2E | `pnpm e2e` | 未通过：14 个场景通过后，既有 Admin dialog 选择器失败（随后已修复）及 Miniapp H5 首场景无法加载；当前剩余阻断是 H5 构建无法解析 `@babel/runtime/helpers/interopRequireWildcard`，39 个后续场景未执行 |
-| Miniapp H5 诊断 | `env NODE_ENV=test pnpm --filter miniapp build:h5` | 未通过，缺少直接依赖 `@babel/runtime`；小程序是 EdgeOne v1 非目标且 G04 禁止修改 |
+| Admin build | `pnpm --filter admin build` | 通过；Vite 大 chunk 警告不影响退出码 |
+| Miniapp H5 build | `pnpm --filter miniapp build:h5` | 通过 |
+| WeApp build | `pnpm build:weapp` | 通过 |
+| 发布安全门禁 | `pnpm security:release-gate` | 通过 |
+| Playwright 场景覆盖 | `pnpm e2e` 与聚焦 `--grep` 批次 | 57 个现有场景均已在全量尝试和聚焦批次中覆盖通过；单次完整命令受本机随机长时间调度暂停或 webServer 计时异常中断，未宣称单次全量通过 |
 
 自动化仅使用可注入 fake EdgeOne 客户端或浏览器 route，不包含真实 SecretId/SecretKey。真实 CAM、目标 Zone、套餐返回值和部署日志/网络响应烟测仍须在部署后完成，因此本轮发布总门禁不标记为通过。
 
@@ -165,8 +187,9 @@ G14 已在 miniapp 请求层实现：
 - TLS 证书、HSTS 和微信 request 合法域名。
 - 真实微信小程序 `wx.login -> /api/client/auth/wechat -> /api/client/home` 链路，目标 AppID/AppSecret、request 合法域名和小程序包内 `TARO_APP_API_BASE_URL` 一致性。
 - 防火墙/安全组只暴露 Nginx HTTPS，API/Admin Fastify 端口公网不可达。
-- `analytics:cleanup` 和备份保留策略的调度器执行、失败告警和权限。
+- `analytics:cleanup`、备份保留和 `edgeone:prefetch:reconcile` 调度器的执行、失败告警和权限。
 - `BACKUP_DIR` 容量、权限、保留周期、异地备份复制、RTO/RPO 指标。
 - 灾难演练：创建备份、修改数据和 uploads、恢复、校验数据/uploads/session 撤销，并回滚到恢复点。
 - 真实 CAM 最小策略、目标 Zone 授权、配置保存、四项用量、约 3 小时延迟、刷新时间变化，以及服务日志/浏览器响应无 SecretKey。
+- 使用少量真实公开素材验证预热提交、同版本跳过、任务对账、失败退避和关闭开关后的安全停用；不把任务成功解释为永久缓存驻留。
 - EdgeOne 数据库恢复演练：同一主密钥恢复成功；主密钥丢失场景按离线删除单例并重新录入凭证，不声称可恢复旧明文。

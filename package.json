@@ -22,6 +22,7 @@
     "db:seed": "pnpm --filter api db:seed",
     "admin:bootstrap": "pnpm --filter api admin:bootstrap",
     "analytics:cleanup": "pnpm --filter api analytics:cleanup",
+    "edgeone:prefetch:reconcile": "pnpm --filter api edgeone:prefetch:reconcile",
     "deploy:smoke": "node scripts/deploy/production-smoke-check.mjs",
     "security:release-gate": "node scripts/deploy/security-release-gate.mjs",
     "assets:slice": "tsx scripts/slice-home-assets.ts",

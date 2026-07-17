@@ -56,10 +56,58 @@ export type DescribeBillingDataResponse = {
   RequestId?: string | null;
 };
 
+export type CreatePrefetchTaskRequest = {
+  ZoneId: string;
+  Targets: string[];
+  Mode: "default";
+  PrefetchMediaSegments: "off";
+};
+
+export type EdgeOnePrefetchFailure = {
+  TargetHash: string;
+  ReasonCode?: string;
+};
+
+export type CreatePrefetchTaskResponse = {
+  JobId?: string;
+  FailedTargets: EdgeOnePrefetchFailure[];
+  RequestId?: string;
+};
+
+export type DescribePrefetchTasksRequest = {
+  ZoneId: string;
+  StartTime?: string;
+  EndTime?: string;
+  Limit?: number;
+  Filters?: Array<{
+    Name: "job-id";
+    Values: string[];
+  }>;
+};
+
+export type EdgeOnePrefetchTask = {
+  JobId?: string;
+  TargetHash?: string;
+  Status?: string;
+  FailType?: string;
+};
+
+export type DescribePrefetchTasksResponse = {
+  TotalCount?: number;
+  Tasks: EdgeOnePrefetchTask[];
+  RequestId?: string;
+};
+
 export interface EdgeOneClient {
   describePlans(request: DescribePlansRequest): Promise<DescribePlansResponse>;
   describeBillingData(request: DescribeBillingDataRequest): Promise<DescribeBillingDataResponse>;
+  createPrefetchTask?(request: CreatePrefetchTaskRequest): Promise<CreatePrefetchTaskResponse>;
+  describePrefetchTasks?(request: DescribePrefetchTasksRequest): Promise<DescribePrefetchTasksResponse>;
 }
+
+export type EdgeOnePrefetchClient = EdgeOneClient & Required<
+  Pick<EdgeOneClient, "createPrefetchTask" | "describePrefetchTasks">
+>;
 
 export type EdgeOneClientFactory = (credentials: EdgeOneCredentials) => EdgeOneClient;
 

@@ -13,7 +13,10 @@
 未知 5xx 和可恢复媒体处理错误不会向客户端返回内部异常、SQL、文件路径或堆栈；错误体会在 `error.requestId` 中返回请求 ID，响应头也包含 `X-Request-Id`，用于和结构化日志关联：
 
 ```json
-{ "success": false, "error": { "code": "INTERNAL_ERROR", "message": "服务异常，请稍后再试", "requestId": "..." } }
+{
+  "success": false,
+  "error": { "code": "INTERNAL_ERROR", "message": "服务异常，请稍后再试", "requestId": "..." }
+}
 ```
 
 API CORS 使用显式 allowlist。带 `Origin` 的浏览器请求仅允许 `CORS_ALLOWED_ORIGINS` 中的 origin；未知、畸形或通配 origin 返回 `403/FORBIDDEN`。无 `Origin` 的服务端请求由 `CORS_ALLOW_REQUESTS_WITHOUT_ORIGIN` 控制。
@@ -70,13 +73,13 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 登录交换错误码契约：
 
-| 状态 | `error.code` | 含义 |
-| --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | 请求体缺失、字段多余或格式不合法 |
-| 401 | `INVALID_WECHAT_CODE` | code 无效、过期、重复使用、微信拒绝或目标 AppID 不匹配 |
-| 429 | `RATE_LIMITED` | 登录交换请求过于频繁；响应包含 `Retry-After` |
-| 502/504 | `WECHAT_AUTH_UNAVAILABLE` | 微信上游不可用、超时或服务端微信配置不可用 |
-| 500 | `INTERNAL_ERROR` | 未知服务端错误；只返回脱敏 `requestId` |
+| 状态    | `error.code`              | 含义                                                   |
+| ------- | ------------------------- | ------------------------------------------------------ |
+| 400     | `VALIDATION_ERROR`        | 请求体缺失、字段多余或格式不合法                       |
+| 401     | `INVALID_WECHAT_CODE`     | code 无效、过期、重复使用、微信拒绝或目标 AppID 不匹配 |
+| 429     | `RATE_LIMITED`            | 登录交换请求过于频繁；响应包含 `Retry-After`           |
+| 502/504 | `WECHAT_AUTH_UNAVAILABLE` | 微信上游不可用、超时或服务端微信配置不可用             |
+| 500     | `INTERNAL_ERROR`          | 未知服务端错误；只返回脱敏 `requestId`                 |
 
 除 `POST /api/client/auth/wechat` 外，生产 `/api/client/**` 请求必须带 `Authorization: Bearer <client-session-token>`。无 token、伪造 Header/Origin/Referer/User-Agent、未知 token、管理员 JWT、过期 token 或已撤销 token 都返回 401；客户端会话错误码为 `CLIENT_AUTH_REQUIRED`、`CLIENT_SESSION_EXPIRED` 或 `CLIENT_SESSION_REVOKED`。客户端 token 与管理员 token 语义隔离，不能访问 `/api/admin/**`，管理员 token 也不能访问 `/api/client/**`。
 
@@ -88,13 +91,13 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 相关生产配置：
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `WECHAT_MINIAPP_APP_ID` | 空 | 生产必填，必须是目标微信小程序 AppID；缺失、占位或格式异常时 API 启动失败 |
-| `WECHAT_MINIAPP_APP_SECRET` | 空 | 生产必填，只保存在 API 服务端；缺失或占位时 API 启动失败 |
-| `WECHAT_AUTH_VERIFIER_MODE` | `wechat` | `wechat` 使用生产 verifier；`fake` 只允许 dev/test，生产启用会启动失败 |
-| `CLIENT_SESSION_TTL_SECONDS` | `1800` | 客户端会话有效期，默认 30 分钟 |
-| `WECHAT_CODE2SESSION_TIMEOUT_MS` | `3000` | 服务端调用微信 `code2Session` 的上游超时 |
+| 环境变量                         | 默认值   | 说明                                                                      |
+| -------------------------------- | -------- | ------------------------------------------------------------------------- |
+| `WECHAT_MINIAPP_APP_ID`          | 空       | 生产必填，必须是目标微信小程序 AppID；缺失、占位或格式异常时 API 启动失败 |
+| `WECHAT_MINIAPP_APP_SECRET`      | 空       | 生产必填，只保存在 API 服务端；缺失或占位时 API 启动失败                  |
+| `WECHAT_AUTH_VERIFIER_MODE`      | `wechat` | `wechat` 使用生产 verifier；`fake` 只允许 dev/test，生产启用会启动失败    |
+| `CLIENT_SESSION_TTL_SECONDS`     | `1800`   | 客户端会话有效期，默认 30 分钟                                            |
+| `WECHAT_CODE2SESSION_TIMEOUT_MS` | `3000`   | 服务端调用微信 `code2Session` 的上游超时                                  |
 
 `POST /api/client/track/page-view` 请求体继续兼容 `{ "pagePath": string, "scene"?: string }`；`pagePath` trim 后为 1–256 字符，`scene` 若提供则 trim 后为 1–64 字符，成功响应继续使用空对象数据的统一信封。该接口必须携带有效客户端会话；统计身份只取服务端微信登录校验后会话中的 `appId + openidHash`。`pagePath` 和 `scene` 只做兼容校验，不参与去重，也不写入新日统计表。同一 AppID 下同一微信用户在同一北京时间自然日只计一次，无论页面、场景、客户端会话或请求次数如何；跨日可再次计数。写入由数据库复合唯一约束和原子 upsert 保证并发幂等。新统计不存储原始 openid、unionid、微信 code、token、IP 或 User-Agent；旧匿名页面事件不回填且不参与新指标。
 
@@ -263,6 +266,9 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 - `GET /api/admin/system-config/edgeone`
 - `PUT /api/admin/system-config/edgeone`
 - `GET /api/admin/dashboard/overview`
+- `POST /api/admin/edgeone/prefetch`
+- `GET /api/admin/edgeone/prefetch`
+- `POST /api/admin/edgeone/prefetch/reconcile`
 
 `GET /api/admin/system-config/edgeone` 只返回安全元数据：
 
@@ -343,27 +349,43 @@ CAM 最小策略：
     },
     {
       "effect": "allow",
-      "action": ["teo:DescribeBillingData"],
+      "action": ["teo:DescribeBillingData", "teo:CreatePrefetchTask", "teo:DescribePrefetchTasks"],
       "resource": ["qcs::teo::uin/<主账号UIN>:zone/<ZoneId>"]
     }
   ]
 }
 ```
 
-不授予预热、配置修改或 EdgeOne 全量管理权限；资源表达式以[腾讯云 CAM 文档](https://cloud.tencent.com/document/product/598/99327)为准。
+不授予缓存刷新、配置修改或 EdgeOne 全量管理权限；资源表达式以[腾讯云 CAM 文档](https://cloud.tencent.com/document/product/598/99327)为准。
+
+### Admin EdgeOne Prefetch
+
+`POST /api/admin/edgeone/prefetch` 请求体为 `{ "assetIds": [1, 2] }`；省略 `assetIds` 时服务端按素材 ID 扫描，直到达到实际提交上限。显式 ID 最多 100 个且仍受 `EDGEONE_PREFETCH_MAX_BATCH_SIZE` 限制。响应按素材给出 `submitted/skipped/ineligible/failed` 汇总和安全错误码，不返回 CAM 凭证、上游原始错误或可由浏览器直接提交的目标参数。
+
+`GET /api/admin/edgeone/prefetch` 支持 `assetIds=1,2`、`mediaType`、`status`、`page`、`pageSize`。状态为 `reserved | submitting | processing | success | failed | timeout | canceled | invalid`。Admin 会丢弃列表中的目标 URL 和内容版本，仅展示素材级状态、更新时间和安全错误。
+
+`POST /api/admin/edgeone/prefetch/reconcile` 立即执行一次对账；生产调度器应运行：
+
+```bash
+pnpm --filter api edgeone:prefetch:reconcile
+```
+
+幂等键由 Zone、素材 ID、MD5、可信目标哈希和固定模式组成。`reserved/submitting/processing/success` 不重复提交；`failed/timeout` 在最大次数和退避窗口内重试；`canceled/invalid` 为终态。服务端使用数据库唯一约束、租约和条件更新处理并发，不以 EdgeOne 的当前缓存驻留状态作为判定依据。目标只由服务端可信数据构造，要求 HTTPS、同主机且无 userinfo/query/fragment。
+
+预热开关默认关闭。接口在 `EDGEONE_PREFETCH_ENABLED=false` 时拒绝写入；回滚应关闭开关并停止调度器，保留历史表供恢复后继续对账。真实腾讯云联调必须在 production-like 环境使用受限 CAM 和少量公开素材完成。
 
 ## Media Field Rules
 
-| 字段                                    | 类型       | 推荐尺寸 / 约束                                      |
-| --------------------------------------- | ---------- | ----------------------------------------------------- |
-| Banner 占位图、Banner 图片              | 图片       | 推荐 1420×580；尺寸不限但必须可解析                   |
-| 菜单图标、菜单占位图                    | 图片       | 推荐 176×176；尺寸不限但必须可解析                    |
-| 案例封面、案例封面占位图                | 图片       | 推荐 460×320；尺寸不限但必须可解析                    |
-| 文章封面                                | 图片       | 尺寸不限但必须可解析                                  |
-| 人员列表封面图                          | 图片       | 推荐 690×480；尺寸不限但必须可解析                    |
-| 案例详情媒体                            | 图片或视频 | 尺寸不限但必须可解析                                  |
-| 详情 BANNER                             | 图片       | 尺寸不限但必须可解析；每页 1–6 张，禁止视频与重复 ID  |
-| 详情富文本媒体                          | 图片或视频 | 尺寸不限但必须可解析；HTML 节点类型必须与资源类型一致 |
+| 字段                       | 类型       | 推荐尺寸 / 约束                                       |
+| -------------------------- | ---------- | ----------------------------------------------------- |
+| Banner 占位图、Banner 图片 | 图片       | 推荐 1420×580；尺寸不限但必须可解析                   |
+| 菜单图标、菜单占位图       | 图片       | 推荐 176×176；尺寸不限但必须可解析                    |
+| 案例封面、案例封面占位图   | 图片       | 推荐 460×320；尺寸不限但必须可解析                    |
+| 文章封面                   | 图片       | 尺寸不限但必须可解析                                  |
+| 人员列表封面图             | 图片       | 推荐 690×480；尺寸不限但必须可解析                    |
+| 案例详情媒体               | 图片或视频 | 尺寸不限但必须可解析                                  |
+| 详情 BANNER                | 图片       | 尺寸不限但必须可解析；每页 1–6 张，禁止视频与重复 ID  |
+| 详情富文本媒体             | 图片或视频 | 尺寸不限但必须可解析；HTML 节点类型必须与资源类型一致 |
 
 ## Other Admin APIs
 

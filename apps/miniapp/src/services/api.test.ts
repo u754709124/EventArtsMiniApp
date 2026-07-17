@@ -81,13 +81,6 @@ function clientLoginResponse(token: string) {
   });
 }
 
-function rateLimitedBody(): ApiBody {
-  return {
-    success: false,
-    error: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后再试" }
-  };
-}
-
 function requestPath(options: RequestOptions) {
   return new URL(options.url).pathname;
 }

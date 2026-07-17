@@ -112,6 +112,7 @@ export function runSecurityReleaseGate(options = {}) {
     "API_HOST=127.0.0.1",
     "ADMIN_HOST=127.0.0.1",
     "BACKUP_DIR=var/backups",
+    "EDGEONE_PREFETCH_ENABLED=false",
     "WECHAT_MINIAPP_APP_ID=",
     "WECHAT_MINIAPP_APP_SECRET=",
     "WECHAT_AUTH_VERIFIER_MODE=wechat",
@@ -264,7 +265,8 @@ export function runSecurityReleaseGate(options = {}) {
     "备份与恢复",
     "WECHAT_MINIAPP_APP_ID",
     "生产 `/api/client/**`",
-    "wx.login"
+    "wx.login",
+    "edgeone:prefetch:reconcile"
   ]);
 
   const ok = issues.length === 0;
@@ -277,7 +279,7 @@ export function runSecurityReleaseGate(options = {}) {
         ...smoke.manualChecks,
         "Verify production TLS certificates, HSTS, and WeChat request-domain settings on the target domain.",
         "Verify a real WeChat Mini Program wx.login -> /api/client/auth/wechat exchange on the target AppID/AppSecret before release.",
-        "Verify scheduler execution for analytics cleanup and backup-retention operations.",
+        "Verify scheduler execution for analytics cleanup, backup-retention, and edgeone:prefetch:reconcile operations.",
         "Verify backup-disk capacity, offsite backup copy, recovery time, and recovery point objectives.",
         "Run a disaster drill on a production-like host before first production release."
       ]

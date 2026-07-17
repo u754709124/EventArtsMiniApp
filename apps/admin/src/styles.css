@@ -4,6 +4,8 @@
 
 body {
   margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: #f6f3ef;
   color: #1f1f1f;
   font-family:
@@ -22,6 +24,9 @@ body {
 }
 
 .admin-layout {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   min-height: 100dvh;
 }
 
@@ -71,6 +76,8 @@ body {
 }
 
 .admin-main {
+  width: 0;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -165,6 +172,11 @@ body {
 
 .list-toolbar .ant-input-search {
   width: min(360px, 100vw - 64px);
+}
+
+.toolbar .ant-input-search {
+  width: 360px;
+  max-width: 100%;
 }
 
 .crud-drag-handle.ant-btn {
@@ -508,6 +520,39 @@ body {
   background: #f6f3ef;
 }
 
+.media-prefetch-panel {
+  display: flex;
+  min-width: 0;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid #eadbc9;
+  border-radius: 10px;
+  background: #fffaf4;
+}
+
+.media-prefetch-panel__copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.media-prefetch-panel__copy .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.media-prefetch-summary {
+  margin-bottom: 12px;
+}
+
+.media-prefetch-action.ant-btn,
+.media-prefetch-refresh.ant-btn,
+.media-prefetch-summary .ant-btn {
+  min-height: 44px;
+}
+
 .backup-file-input {
   position: fixed;
   width: 1px;
@@ -687,6 +732,13 @@ video.media-thumb {
     flex-direction: column;
   }
 
+  .page-header__extra,
+  .page-header__extra > .ant-space {
+    width: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+
   .form-section__grid {
     grid-template-columns: 1fr;
   }
@@ -760,6 +812,11 @@ video.media-thumb {
   .dashboard-edgeone-footer.ant-typography {
     align-items: flex-start;
     justify-content: flex-start;
+  }
+
+  .media-prefetch-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

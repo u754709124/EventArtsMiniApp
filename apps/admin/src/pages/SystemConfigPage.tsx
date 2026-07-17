@@ -204,7 +204,7 @@ export function SystemConfigPage() {
                 />
               </Form.Item>
               <Typography.Paragraph className="form-grid-full system-config-security-note" type="secondary">
-                凭证只发送到本服务端并以 AES-256-GCM 密文保存；请仅授予 DescribePlans 和目标 Zone 的 DescribeBillingData 权限。
+                凭证只发送到本服务端并以 AES-256-GCM 密文保存；请仅授予 DescribePlans，以及目标 Zone 的 DescribeBillingData、DescribePrefetchTasks 和 CreatePrefetchTask 权限。
               </Typography.Paragraph>
             </FormSection>
             <FormActionBar

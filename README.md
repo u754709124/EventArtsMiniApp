@@ -29,6 +29,8 @@ CI=true pnpm install
 - `API_HOST`：API 监听地址，默认 `127.0.0.1`；`NODE_ENV=production` 只允许 loopback，禁止 `0.0.0.0` 或公网地址
 - `JWT_SECRET`：管理员 JWT 密钥，生产环境必须替换
 - `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`：EdgeOne CAM 凭证主密钥；必须是规范 Base64 编码的 32 字节随机值，生产必填且必须独立于数据库备份保管
+- `EDGEONE_PREFETCH_ENABLED`：资源预热开关，默认 `false`；完成数据库升级、CAM 授权和灰度检查后才开启
+- `EDGEONE_PREFETCH_MAX_BATCH_SIZE`：单批实际提交上限，默认 `20`；其余重试、租约和退避参数见 `.env.example`
 - `DATABASE_URL`：SQLite 数据库地址，默认 `file:./dev.db`
 - `UPLOAD_DIR`：本地上传目录，默认指向仓库根目录 `uploads`
 - `MAX_IMAGE_UPLOAD_BYTES`：图片上传上限，默认 `10MB`
@@ -117,7 +119,23 @@ ADMIN_HOST=127.0.0.1 ADMIN_PORT=4173 pnpm start:admin
 - 套餐流量：地区用量按 `CH=1`、`NA/EU=1.71`、`AS1=2.49`、`AS2=2.68`、`AS3=2.78`、`MidEast/AF/SA=2.91` 折算，分母只取 `SecTrafficCapacity`。
 - 套餐请求：分母只取 `SecRequestCapacity`。预付费按 `EnabledTime` 锚定的订阅月；若下月不存在同一日期，按腾讯云规则将该周期补齐为 31 天（例如 3 月 31 日至 5 月 1 日）。企业后付费按北京时间自然月。
 
-近 24 小时查询使用 `hour`，发给腾讯云的时间为无毫秒的 `+08:00` ISO8601；套餐查询继续使用 `day` 并保留真实订阅周期边界。未知地区、无法识别的周期或异常数值会显示不可用，不做估算；已用量允许超过套餐额度。腾讯云官方计费数据可能延迟约 3 小时，页面的“最近成功刷新”时间不代表计费数据实时性。腾讯云错误码和 RequestId 只进入服务端安全诊断日志，不进入 Admin 响应；SDK 原始错误和 CAM 凭证不记录。本期不包含资源预热、缓存刷新、多 Zone、加量包或账单金额。
+近 24 小时查询使用 `hour`，发给腾讯云的时间为无毫秒的 `+08:00` ISO8601；套餐查询继续使用 `day` 并保留真实订阅周期边界。未知地区、无法识别的周期或异常数值会显示不可用，不做估算；已用量允许超过套餐额度。腾讯云官方计费数据可能延迟约 3 小时，页面的“最近成功刷新”时间不代表计费数据实时性。腾讯云错误码和 RequestId 只进入服务端安全诊断日志，不进入 Admin 响应；SDK 原始错误和 CAM 凭证不记录。本期仍不包含缓存刷新、多 Zone、加量包或账单金额。
+
+### EdgeOne 资源预热
+
+素材管理页提供显式“预热未预热资源”操作。服务端只接收媒体 ID，并由 `MediaAsset + PUBLIC_BASE_URL` 重新生成目标；目标必须是与公开域名同主机的 HTTPS URL，且不能包含用户信息、查询串或片段。固定使用 `Mode=default`、`PrefetchMediaSegments=off`。
+
+幂等身份由 `ZoneId + mediaAssetId + MD5 + targetHash + mode` 组成。相同内容处于 `reserved/submitting/processing/success` 时直接跳过，不会再次调用腾讯云；`failed/timeout` 只按配置的次数和指数退避重试，`canceled/invalid` 不自动重试。素材内容 MD5 或可信目标变化后会形成新身份，可重新预热。这里的 `success` 表示 EdgeOne 任务历史成功，不等价于永久缓存命中。
+
+部署顺序：
+
+1. 备份数据库并执行 `pnpm db:push`，确认新增预热表和索引已创建。
+2. 给 CAM 增加 `teo:CreatePrefetchTask`、`teo:DescribePrefetchTasks` 权限，通过系统配置页重新保存以验证查询权限。
+3. 保持 `EDGEONE_PREFETCH_ENABLED=false` 启动并检查迁移、日志脱敏和 Admin 未配置提示。
+4. 在灰度环境设置 `EDGEONE_PREFETCH_ENABLED=true`，先选择少量素材提交，确认“已提交/已跳过/不合格/失败”汇总和任务状态。
+5. 由部署调度器定期执行 `pnpm --filter api edgeone:prefetch:reconcile`。命令在开关关闭时安全退出；开启时查询远端状态、恢复过期租约，并按边界策略重试。
+
+停用或回滚时先把 `EDGEONE_PREFETCH_ENABLED` 改回 `false` 并停止调度器；不要删除历史表。已提交的腾讯云任务不会被本地开关撤销，重新开启后可继续对账。
 
 生产部署必须先生成并配置主密钥，再发布代码：
 
@@ -127,7 +145,7 @@ openssl rand -base64 32
 
 把输出通过部署平台的 secret 管理能力设置为 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`，不要写入源码、日志或数据库。生产环境缺失或格式错误时 API 启动失败；开发/测试缺失时可以启动，但不能保存 EdgeOne 配置。代码发布后由管理员进入“系统配置”，输入 ZoneId、SecretId 和 SecretKey，服务端会在写库前验证套餐归属和计费查询权限。
 
-CAM 子账号最小权限如下；`DescribePlans` 只能使用全资源，`DescribeBillingData` 只授权目标 Zone，不授予资源预热、配置修改或 EdgeOne 全量管理权限：
+CAM 子账号最小权限如下；`DescribePlans` 只能使用全资源，计费和预热动作只授权目标 Zone，不授予缓存刷新、配置修改或 EdgeOne 全量管理权限：
 
 ```json
 {
@@ -140,7 +158,7 @@ CAM 子账号最小权限如下；`DescribePlans` 只能使用全资源，`Descr
     },
     {
       "effect": "allow",
-      "action": ["teo:DescribeBillingData"],
+      "action": ["teo:DescribeBillingData", "teo:CreatePrefetchTask", "teo:DescribePrefetchTasks"],
       "resource": ["qcs::teo::uin/<主账号UIN>:zone/<ZoneId>"]
     }
   ]

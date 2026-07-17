@@ -87,6 +87,60 @@ const statements = [
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS edgeone_prefetch_resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zoneId TEXT NOT NULL,
+    mediaAssetId INTEGER NOT NULL,
+    contentVersion TEXT NOT NULL,
+    targetUrl TEXT NOT NULL,
+    targetHash TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'default' CHECK(mode = 'default'),
+    status TEXT NOT NULL DEFAULT 'reserved'
+      CHECK(status IN ('reserved', 'submitting', 'processing', 'success', 'failed', 'timeout', 'canceled', 'invalid')),
+    currentJobId TEXT,
+    attemptCount INTEGER NOT NULL DEFAULT 0 CHECK(attemptCount >= 0),
+    nextRetryAt DATETIME,
+    leaseToken TEXT,
+    leaseExpiresAt DATETIME,
+    lastSubmittedAt DATETIME,
+    completedAt DATETIME,
+    safeErrorCode TEXT,
+    safeErrorMessage TEXT,
+    createdBy INTEGER NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(mediaAssetId) REFERENCES media_assets(id) ON DELETE RESTRICT,
+    FOREIGN KEY(createdBy) REFERENCES admin_users(id) ON DELETE RESTRICT,
+    UNIQUE(zoneId, mediaAssetId, contentVersion, targetHash, mode)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS edgeone_prefetch_resources_zoneId_mediaAssetId_contentVersion_targetHash_mode_key
+    ON edgeone_prefetch_resources(zoneId, mediaAssetId, contentVersion, targetHash, mode)`,
+  `CREATE INDEX IF NOT EXISTS edgeone_prefetch_resources_status_nextRetryAt_idx
+    ON edgeone_prefetch_resources(status, nextRetryAt)`,
+  `CREATE INDEX IF NOT EXISTS edgeone_prefetch_resources_currentJobId_idx
+    ON edgeone_prefetch_resources(currentJobId)`,
+  `CREATE INDEX IF NOT EXISTS edgeone_prefetch_resources_mediaAssetId_updatedAt_idx
+    ON edgeone_prefetch_resources(mediaAssetId, updatedAt)`,
+  `CREATE INDEX IF NOT EXISTS edgeone_prefetch_resources_createdBy_idx
+    ON edgeone_prefetch_resources(createdBy)`,
+  `CREATE TABLE IF NOT EXISTS edgeone_prefetch_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prefetchResourceId INTEGER NOT NULL,
+    attemptNumber INTEGER NOT NULL CHECK(attemptNumber > 0),
+    jobId TEXT,
+    upstreamRequestId TEXT,
+    status TEXT NOT NULL
+      CHECK(status IN ('reserved', 'submitting', 'processing', 'success', 'failed', 'timeout', 'canceled', 'invalid')),
+    safeErrorCode TEXT,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(prefetchResourceId) REFERENCES edgeone_prefetch_resources(id) ON DELETE CASCADE,
+    UNIQUE(prefetchResourceId, attemptNumber)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS edgeone_prefetch_attempts_prefetchResourceId_attemptNumber_key
+    ON edgeone_prefetch_attempts(prefetchResourceId, attemptNumber)`,
+  `CREATE INDEX IF NOT EXISTS edgeone_prefetch_attempts_jobId_idx
+    ON edgeone_prefetch_attempts(jobId)`,
   `CREATE TABLE IF NOT EXISTS media_asset_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mediaAssetId INTEGER NOT NULL,

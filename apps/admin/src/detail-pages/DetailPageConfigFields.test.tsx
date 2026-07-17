@@ -149,7 +149,7 @@ describe("DetailPageConfigFields", () => {
     expect(await screen.findByTestId("detail-rich-text-editor")).toBeTruthy();
     expect(screen.getByTestId("detail-page-preview")).toBeTruthy();
 
-    await cleanupHarness();
+    cleanup();
     render(<Harness />);
     await chooseType("单富文本");
     expect(screen.queryByTestId("detail-hero-subtitle")).toBeNull();

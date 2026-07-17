@@ -38,6 +38,79 @@ export const BannerLinkTypeSchema = z.enum(bannerLinkTypeValues);
 export const MediaTypeSchema = z.enum(mediaTypeValues);
 export const MediaFieldKeySchema = z.enum(mediaFieldKeyValues);
 
+export const edgeOnePrefetchStatusValues = [
+  "reserved",
+  "submitting",
+  "processing",
+  "success",
+  "failed",
+  "timeout",
+  "canceled",
+  "invalid"
+] as const;
+export type EdgeOnePrefetchStatus = (typeof edgeOnePrefetchStatusValues)[number];
+export const EdgeOnePrefetchStatusSchema = z.enum(edgeOnePrefetchStatusValues);
+
+export const edgeOnePrefetchTriggerRequestSchema = z.object({
+  assetIds: z.array(z.number().int().positive()).max(100).transform((ids) => [...new Set(ids)]).optional()
+}).strict();
+
+export const edgeOnePrefetchItemSchema = z.object({
+  mediaAssetId: z.number().int().positive(),
+  status: EdgeOnePrefetchStatusSchema.nullable(),
+  outcome: z.enum(["submitted", "skipped", "ineligible", "failed"]),
+  safeErrorCode: z.string().min(1).max(80).nullable()
+}).strict();
+
+export const edgeOnePrefetchTriggerResponseSchema = z.object({
+  submitted: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+  ineligible: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  items: z.array(edgeOnePrefetchItemSchema)
+}).strict();
+
+export const edgeOnePrefetchListQuerySchema = z.object({
+  assetIds: z.preprocess(
+    (value) => typeof value === "string"
+      ? value.split(",").filter(Boolean).map(Number)
+      : value,
+    z.array(z.number().int().positive()).max(100)
+  ).optional(),
+  mediaType: MediaTypeSchema.optional(),
+  status: EdgeOnePrefetchStatusSchema.optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+}).strict();
+
+export const edgeOnePrefetchResourceDtoSchema = z.object({
+  id: z.number().int().positive(),
+  mediaAssetId: z.number().int().positive(),
+  mode: z.literal("default"),
+  status: EdgeOnePrefetchStatusSchema,
+  attemptCount: z.number().int().min(0),
+  nextRetryAt: z.string().datetime({ offset: true }).nullable(),
+  lastSubmittedAt: z.string().datetime({ offset: true }).nullable(),
+  completedAt: z.string().datetime({ offset: true }).nullable(),
+  safeErrorCode: z.string().min(1).max(80).nullable(),
+  safeErrorMessage: z.string().min(1).max(300).nullable(),
+  updatedAt: z.string().datetime({ offset: true })
+}).strict();
+
+export const edgeOnePrefetchListResponseSchema = z.object({
+  items: z.array(edgeOnePrefetchResourceDtoSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive()
+}).strict();
+
+export type EdgeOnePrefetchTriggerRequest = z.infer<typeof edgeOnePrefetchTriggerRequestSchema>;
+export type EdgeOnePrefetchItem = z.infer<typeof edgeOnePrefetchItemSchema>;
+export type EdgeOnePrefetchTriggerResponse = z.infer<typeof edgeOnePrefetchTriggerResponseSchema>;
+export type EdgeOnePrefetchListQuery = z.infer<typeof edgeOnePrefetchListQuerySchema>;
+export type EdgeOnePrefetchResourceDto = z.infer<typeof edgeOnePrefetchResourceDtoSchema>;
+export type EdgeOnePrefetchListResponse = z.infer<typeof edgeOnePrefetchListResponseSchema>;
+
 export const artistTypeLabels: Record<ArtistType, string> = {
   host: "主持人",
   singer: "歌手",

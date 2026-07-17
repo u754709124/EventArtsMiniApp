@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Empty, Input, Modal, Select, Space, Table, Tabs, Tag } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Card, Empty, Input, Modal, Select, Space, Table, Tabs, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import type { MediaAssetDto, MediaType } from "@event-arts/shared";
+import type { EdgeOnePrefetchStatus, EdgeOnePrefetchTriggerResponse, MediaAssetDto, MediaType } from "@event-arts/shared";
 import { request } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { MediaUploadAction } from "./MediaUploadAction";
 import { notify } from "../notifications/notification";
+import {
+  edgeOnePrefetchErrorMessage,
+  edgeOnePrefetchStatusMeta,
+  listEdgeOnePrefetch,
+  reconcileEdgeOnePrefetch,
+  triggerEdgeOnePrefetch,
+  type SafeEdgeOnePrefetchResource
+} from "./edgeone-prefetch";
 
 type ListResponse = { items: MediaAssetDto[]; total: number; page: number; pageSize: number };
 
@@ -33,6 +41,15 @@ export function MediaPage() {
   const [editTags, setEditTags] = useState<string[]>([]);
   const [unused, setUnused] = useState<MediaAssetDto[] | null>(null);
   const [selectedUnused, setSelectedUnused] = useState<number[]>([]);
+  const [prefetchRows, setPrefetchRows] = useState<Map<number, SafeEdgeOnePrefetchResource>>(new Map());
+  const [prefetchStatusFilter, setPrefetchStatusFilter] = useState<EdgeOnePrefetchStatus | "not_started">();
+  const [prefetchLoading, setPrefetchLoading] = useState(false);
+  const [prefetchPending, setPrefetchPending] = useState(false);
+  const [prefetchRefreshing, setPrefetchRefreshing] = useState(false);
+  const [prefetchSummary, setPrefetchSummary] = useState<EdgeOnePrefetchTriggerResponse | null>(null);
+  const [prefetchError, setPrefetchError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const prefetchRequestSequenceRef = useRef(0);
   const clickGuard = useRepeatClickGuard();
   const editDirty = Boolean(editing && (editName !== editing.resourceName || !sameTags(editTags, editing.tags)));
 
@@ -59,6 +76,139 @@ export function MediaPage() {
   useEffect(() => {
     void load(1);
   }, [load]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      prefetchRequestSequenceRef.current += 1;
+    };
+  }, []);
+
+  const loadPrefetchStatuses = useCallback(async (silent = false) => {
+    const visibleIds = new Set(data.items.map((asset) => asset.id));
+    const requestSequence = ++prefetchRequestSequenceRef.current;
+    if (!silent) setPrefetchLoading(true);
+    try {
+      const response = visibleIds.size
+        ? await listEdgeOnePrefetch([...visibleIds])
+        : { items: [], total: 0, page: 1, pageSize: 100 };
+      if (!mountedRef.current || requestSequence !== prefetchRequestSequenceRef.current) return;
+      const nextRows = new Map<number, SafeEdgeOnePrefetchResource>();
+      for (const row of response.items) {
+        if (!nextRows.has(row.mediaAssetId)) nextRows.set(row.mediaAssetId, row);
+      }
+      setPrefetchRows(nextRows);
+      setPrefetchError(null);
+    } catch (error) {
+      if (!mountedRef.current || requestSequence !== prefetchRequestSequenceRef.current) return;
+      setPrefetchError(edgeOnePrefetchErrorMessage(error));
+    } finally {
+      if (mountedRef.current && requestSequence === prefetchRequestSequenceRef.current && !silent) {
+        setPrefetchLoading(false);
+      }
+    }
+  }, [data.items]);
+
+  useEffect(() => {
+    void loadPrefetchStatuses();
+  }, [loadPrefetchStatuses]);
+
+  const hasActivePrefetch = useMemo(
+    () => [...prefetchRows.values()].some((row) => edgeOnePrefetchStatusMeta[row.status].active),
+    [prefetchRows]
+  );
+
+  useEffect(() => {
+    if (!hasActivePrefetch) return;
+    let stopped = false;
+    let polling = false;
+    let pollCount = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (delay: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void poll(), delay);
+    };
+    const poll = async () => {
+      if (stopped || polling || document.visibilityState !== "visible") return;
+      polling = true;
+      pollCount += 1;
+      try {
+        await loadPrefetchStatuses(true);
+      } finally {
+        polling = false;
+      }
+      if (!stopped && pollCount < 12 && document.visibilityState === "visible") {
+        schedule(5000);
+      }
+    };
+    schedule(5000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        if (timer) clearTimeout(timer);
+        return;
+      }
+      if (!stopped && !polling && pollCount < 12) {
+        schedule(250);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [hasActivePrefetch, loadPrefetchStatuses]);
+
+  async function executePrefetch() {
+    setPrefetchPending(true);
+    setPrefetchError(null);
+    try {
+      const result = await triggerEdgeOnePrefetch();
+      if (!mountedRef.current) return;
+      setPrefetchSummary(result);
+      notify.success(`预热任务：提交 ${result.submitted}，跳过 ${result.skipped}，不合格 ${result.ineligible}，失败 ${result.failed}`);
+      await loadPrefetchStatuses();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = edgeOnePrefetchErrorMessage(error);
+      setPrefetchError(message);
+      notify.error(message);
+    } finally {
+      if (mountedRef.current) setPrefetchPending(false);
+    }
+  }
+
+  function confirmPrefetch() {
+    Modal.confirm({
+      title: "预热尚未预热的资源？",
+      content: (
+        <Space orientation="vertical" size={8}>
+          <Typography.Text>系统只会提交符合条件且没有成功或执行中记录的资源，已提交和已成功版本不会重复预热。</Typography.Text>
+          <Typography.Text type="secondary">“预热成功”仅表示 EdgeOne 历史任务成功，不代表资源会永久驻留所有边缘节点。</Typography.Text>
+        </Space>
+      ),
+      okText: "开始预热",
+      cancelText: "取消",
+      onOk: () => clickGuard("media:edgeone-prefetch:submit", executePrefetch)
+    });
+  }
+
+  async function refreshPrefetchStatuses() {
+    setPrefetchRefreshing(true);
+    setPrefetchError(null);
+    try {
+      await reconcileEdgeOnePrefetch();
+      await loadPrefetchStatuses();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = edgeOnePrefetchErrorMessage(error);
+      setPrefetchError(message);
+      notify.error(message);
+    } finally {
+      if (mountedRef.current) setPrefetchRefreshing(false);
+    }
+  }
 
   async function saveMetadata() {
     if (!editing) return;
@@ -161,6 +311,24 @@ export function MediaPage() {
     { title: "上传人", render: (_, asset) => asset.createdByName ?? (asset.createdBy ? `#${asset.createdBy}` : "-") },
     { title: "上传时间", dataIndex: "createdAt", render: (value) => new Date(String(value)).toLocaleString() },
     {
+      title: "预热状态",
+      width: 130,
+      render: (_, asset) => {
+        const row = prefetchRows.get(asset.id);
+        if (!row) return <Tag>未预热</Tag>;
+        const meta = edgeOnePrefetchStatusMeta[row.status];
+        return <Tag color={meta.color}>{meta.label}</Tag>;
+      }
+    },
+    {
+      title: "预热更新时间",
+      width: 180,
+      render: (_, asset) => {
+        const row = prefetchRows.get(asset.id);
+        return row ? new Date(row.updatedAt).toLocaleString() : "-";
+      }
+    },
+    {
       title: "操作",
       width: 170,
       fixed: "right",
@@ -173,19 +341,92 @@ export function MediaPage() {
     }
   ];
 
+  const visibleMediaItems = prefetchStatusFilter
+    ? data.items.filter((asset) => {
+        const status = prefetchRows.get(asset.id)?.status;
+        return prefetchStatusFilter === "not_started" ? !status : status === prefetchStatusFilter;
+      })
+    : data.items;
+
   return (
     <div className="page-stack">
       <PageHeader
         title="素材库"
         breadcrumbs={["素材管理", "素材库"]}
         extra={
-        <Space>
+        <Space wrap>
+          <Button
+            type="primary"
+            className="media-prefetch-action"
+            data-testid="media-edgeone-prefetch"
+            aria-label="预热尚未预热的 EdgeOne 资源"
+            loading={prefetchPending}
+            disabled={prefetchPending}
+            onClick={() => clickGuard("media:edgeone-prefetch:confirm", confirmPrefetch)}
+          >
+            预热未预热资源
+          </Button>
           <MediaUploadAction testid="media-upload-button" label="上传资源" onAsset={() => void load(1)} />
           <Button data-testid="media-clean-unused" onClick={() => clickGuard("media:scan-unused", scanUnused)}>清理未使用资源</Button>
         </Space>
         }
       />
       <Card className="list-card">
+      <div className="media-prefetch-panel" data-testid="media-edgeone-prefetch-panel">
+        <div className="media-prefetch-panel__copy">
+          <Typography.Text strong>EdgeOne 资源预热</Typography.Text>
+          <Typography.Text type="secondary">状态来自服务端持久化任务；成功不代表边缘节点永久驻留。</Typography.Text>
+        </div>
+        <Button
+          className="media-prefetch-refresh"
+          data-testid="media-edgeone-prefetch-refresh"
+          aria-label="协调并刷新 EdgeOne 预热状态"
+          loading={prefetchRefreshing}
+          disabled={prefetchPending || prefetchRefreshing}
+          onClick={() => clickGuard("media:edgeone-prefetch:refresh", refreshPrefetchStatuses)}
+        >
+          刷新状态
+        </Button>
+      </div>
+      {prefetchSummary && (
+        <Alert
+          className="media-prefetch-summary"
+          data-testid="media-edgeone-prefetch-summary"
+          type={prefetchSummary.failed ? "warning" : "success"}
+          showIcon
+          title={`本次提交 ${prefetchSummary.submitted}，跳过 ${prefetchSummary.skipped}，不合格 ${prefetchSummary.ineligible}，失败 ${prefetchSummary.failed}`}
+          description={prefetchSummary.items.some((item) => item.outcome === "failed" || item.outcome === "ineligible") ? (
+            <Space wrap>
+              {prefetchSummary.items
+                .filter((item) => item.outcome === "failed" || item.outcome === "ineligible")
+                .map((item) => (
+                  <Tag key={`${item.mediaAssetId}:${item.outcome}`}>
+                    #{item.mediaAssetId} {item.safeErrorCode ?? item.outcome}
+                  </Tag>
+                ))}
+            </Space>
+          ) : undefined}
+        />
+      )}
+      {prefetchError && (
+        <Alert
+          className="media-prefetch-summary"
+          data-testid="media-edgeone-prefetch-error"
+          type="error"
+          showIcon
+          title="EdgeOne 预热操作失败"
+          description={prefetchError}
+          action={
+            <Button
+              aria-label="重试刷新 EdgeOne 预热状态"
+              disabled={prefetchPending || prefetchRefreshing}
+              onClick={() => clickGuard("media:edgeone-prefetch:error-retry", refreshPrefetchStatuses)}
+            >
+              重试
+            </Button>
+          }
+        />
+      )}
       <Tabs
         activeKey={mediaType}
         onChange={(key) => clickGuard(`media:type:${key}`, () => setMediaType(key as MediaType))}
@@ -211,12 +452,31 @@ export function MediaPage() {
           options={[{ value: "used", label: "已使用" }, { value: "unused", label: "未使用" }]}
           style={{ width: 180 }}
         />
+        <Select
+          data-testid="media-prefetch-status-filter"
+          allowClear
+          loading={prefetchLoading}
+          placeholder="当前页全部预热状态"
+          value={prefetchStatusFilter}
+          onChange={(value) => clickGuard(
+            `media:prefetch-status:${value ?? "all"}`,
+            () => setPrefetchStatusFilter(value)
+          )}
+          options={[
+            { value: "not_started", label: "未预热" },
+            ...Object.entries(edgeOnePrefetchStatusMeta).map(([value, meta]) => ({
+              value,
+              label: meta.label
+            }))
+          ]}
+          style={{ width: 180 }}
+        />
       </Space>
       <Table
         data-testid="media-table"
         rowKey="id"
         loading={loading}
-        dataSource={data.items}
+        dataSource={visibleMediaItems}
         columns={columns}
         scroll={{ x: "max-content" }}
         pagination={{ current: data.page, pageSize: data.pageSize, total: data.total, showSizeChanger: false, onChange: (page) => clickGuard(`media:page:${page}`, () => load(page)) }}

@@ -15,6 +15,7 @@
     "admin:sessions:cleanup": "node --import tsx src/admin-sessions.ts",
     "admin:notifications:cleanup": "node --import tsx src/admin-notifications.ts",
     "analytics:cleanup": "node --import tsx src/analytics.ts",
+    "edgeone:prefetch:reconcile": "node --import tsx src/edgeone-prefetch-reconcile.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma"
   },
   "dependencies": {

@@ -97,6 +97,14 @@ export function createEdgeOneService(options: EdgeOneServiceOptions) {
     edgeOnePackageCapacities(plan);
     resolveEdgeOnePlanPeriod(plan, now);
     await queryEdgeOneLast24Hours(client, candidate.zoneId, now);
+    if (client.describePrefetchTasks) {
+      await client.describePrefetchTasks({
+        ZoneId: candidate.zoneId,
+        StartTime: new Date(now.getTime() - 5 * 60_000).toISOString(),
+        EndTime: now.toISOString(),
+        Limit: 1
+      });
+    }
 
     const audit = {
       zoneId: candidate.zoneId,

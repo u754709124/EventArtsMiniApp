@@ -63,7 +63,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         ...process.env,
-        NODE_ENV: "test",
+        NODE_ENV: "development",
         TARO_APP_API_BASE_URL: apiBase
       }
     }

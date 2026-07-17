@@ -58,6 +58,14 @@ export type ApiConfig = {
   };
   edgeOne: {
     credentialEncryptionKey: Buffer | null;
+    prefetch: {
+      enabled: boolean;
+      maxBatchSize: number;
+      maxAttempts: number;
+      leaseSeconds: number;
+      initialBackoffSeconds: number;
+      maxBackoffSeconds: number;
+    };
   };
 };
 
@@ -153,7 +161,13 @@ const rawEnvSchema = z.object({
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   ANALYTICS_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).max(100_000).default(60),
   PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
-  EDGEONE_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().optional()
+  EDGEONE_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().optional(),
+  EDGEONE_PREFETCH_ENABLED: booleanFromEnv.default(false),
+  EDGEONE_PREFETCH_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  EDGEONE_PREFETCH_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  EDGEONE_PREFETCH_LEASE_SECONDS: z.coerce.number().int().min(30).max(3600).default(120),
+  EDGEONE_PREFETCH_INITIAL_BACKOFF_SECONDS: z.coerce.number().int().min(10).max(86400).default(60),
+  EDGEONE_PREFETCH_MAX_BACKOFF_SECONDS: z.coerce.number().int().min(10).max(604800).default(3600)
 });
 
 export function getRepositoryRoot() {
@@ -430,6 +444,11 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
     raw.NODE_ENV,
     issues
   );
+  if (raw.EDGEONE_PREFETCH_MAX_BACKOFF_SECONDS < raw.EDGEONE_PREFETCH_INITIAL_BACKOFF_SECONDS) {
+    issues.push(
+      "EDGEONE_PREFETCH_MAX_BACKOFF_SECONDS must be greater than or equal to EDGEONE_PREFETCH_INITIAL_BACKOFF_SECONDS"
+    );
+  }
 
   if (issues.length) throw new ConfigValidationError(issues);
 
@@ -468,7 +487,15 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
       retentionDays: raw.PAGE_VIEW_RETENTION_DAYS
     },
     edgeOne: {
-      credentialEncryptionKey: edgeOneCredentialEncryptionKey
+      credentialEncryptionKey: edgeOneCredentialEncryptionKey,
+      prefetch: {
+        enabled: raw.EDGEONE_PREFETCH_ENABLED,
+        maxBatchSize: raw.EDGEONE_PREFETCH_MAX_BATCH_SIZE,
+        maxAttempts: raw.EDGEONE_PREFETCH_MAX_ATTEMPTS,
+        leaseSeconds: raw.EDGEONE_PREFETCH_LEASE_SECONDS,
+        initialBackoffSeconds: raw.EDGEONE_PREFETCH_INITIAL_BACKOFF_SECONDS,
+        maxBackoffSeconds: raw.EDGEONE_PREFETCH_MAX_BACKOFF_SECONDS
+      }
     }
   };
 }

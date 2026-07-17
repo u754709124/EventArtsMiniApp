@@ -27,7 +27,8 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
       analytics: config.analytics,
       clientAuth: config.clientAuth,
       edgeOne: {
-        credentialEncryptionKey: config.edgeOne.credentialEncryptionKey
+        credentialEncryptionKey: config.edgeOne.credentialEncryptionKey,
+        prefetch: config.edgeOne.prefetch
       }
     });
     await app.listen({ port: config.server.port, host: config.server.host });
@@ -45,7 +46,8 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
         rateLimit: config.rateLimit,
         analytics: config.analytics,
         edgeOne: {
-          credentialEncryptionKeyConfigured: Boolean(config.edgeOne.credentialEncryptionKey)
+          credentialEncryptionKeyConfigured: Boolean(config.edgeOne.credentialEncryptionKey),
+          prefetchEnabled: config.edgeOne.prefetch.enabled
         }
       })
     }, "API listening");

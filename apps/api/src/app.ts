@@ -40,6 +40,8 @@ import {
   clientWechatLoginRequestSchema,
   clientWechatLoginResponseSchema,
   edgeOneConfigUpdateRequestSchema,
+  edgeOnePrefetchListQuerySchema,
+  edgeOnePrefetchTriggerRequestSchema,
   fail,
   failWithRequestId,
   lookupMediaRequestSchema,
@@ -144,10 +146,12 @@ import {
 import {
   asEdgeOneDomainError,
   createEdgeOneService,
+  createEdgeOnePrefetchService,
   edgeOneUpstreamDiagnosticFields,
   edgeOneErrorStatus,
   type EdgeOneDomainError,
-  type EdgeOneClientFactory
+  type EdgeOneClientFactory,
+  type EdgeOnePrefetchRuntimeConfig
 } from "./edgeone";
 
 type AppRateLimitConfig = {
@@ -180,6 +184,7 @@ type BuildOptions = {
   edgeOne?: {
     credentialEncryptionKey: Buffer | null;
     clientFactory?: EdgeOneClientFactory;
+    prefetch?: EdgeOnePrefetchRuntimeConfig;
   };
 };
 
@@ -214,6 +219,18 @@ const uploadedImageFilePattern = /\.(?:jpg|png|webp)$/i;
 const defaultAppRateLimit: AppRateLimitConfig = {
   login: { windowMs: 900_000, maxFailures: 5 },
   analytics: { windowMs: 60_000, maxRequests: 60 }
+};
+const defaultEdgeOnePrefetchConfig: EdgeOnePrefetchRuntimeConfig = {
+  enabled: false,
+  maxBatchSize: 20,
+  maxAttempts: 3,
+  leaseSeconds: 120,
+  initialBackoffSeconds: 60,
+  maxBackoffSeconds: 3600
+};
+const edgeOnePrefetchWriteRateLimitPolicy: FixedWindowRateLimitPolicy = {
+  windowMs: 60_000,
+  limit: 10
 };
 const statusInputSchema = z.enum(["enabled", "disabled"]);
 const positiveIdSchema = z.coerce.number().int().positive();
@@ -295,7 +312,10 @@ function sendRateLimitError(reply: FastifyReply, decision: RateLimitDenied) {
 type EdgeOneOperation =
   | "dashboard_overview"
   | "system_config_read"
-  | "system_config_update";
+  | "system_config_update"
+  | "prefetch_trigger"
+  | "prefetch_list"
+  | "prefetch_reconcile";
 
 function logEdgeOneOperationFailure(
   request: FastifyRequest,
@@ -838,6 +858,14 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   const edgeOneService = createEdgeOneService({
     prisma,
     credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey,
+    clientFactory: options.edgeOne?.clientFactory,
+    now: currentTime
+  });
+  const edgeOnePrefetchService = createEdgeOnePrefetchService({
+    prisma,
+    publicBaseUrl: options.publicBaseUrl,
+    credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey,
+    config: options.edgeOne?.prefetch ?? defaultEdgeOnePrefetchConfig,
     clientFactory: options.edgeOne?.clientFactory,
     now: currentTime
   });
@@ -1408,6 +1436,143 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
     }
   });
+
+  app.post(
+    "/api/admin/edgeone/prefetch",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const parsed = edgeOnePrefetchTriggerRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          firstZodIssueMessage(parsed.error, "预热参数错误")
+        );
+      }
+      const decision = await rateLimiter.consume(
+        `edgeone-prefetch:${request.admin!.id}`,
+        edgeOnePrefetchWriteRateLimitPolicy
+      );
+      if (!decision.allowed) {
+        logSecurityEvent(request, "edgeone_prefetch_rate_limited", {
+          adminId: request.admin!.id,
+          retryAfterSeconds: decision.retryAfterSeconds
+        }, "warn");
+        return sendRateLimitError(reply, decision);
+      }
+      try {
+        const result = await edgeOnePrefetchService.trigger(parsed.data, request.admin!.id);
+        await writeOperationLog(
+          "EDGEONE_PREFETCH_TRIGGER",
+          {
+            submitted: result.submitted,
+            skipped: result.skipped,
+            ineligible: result.ineligible,
+            failed: result.failed,
+            items: result.items.map((item) => ({
+              mediaAssetId: item.mediaAssetId,
+              outcome: item.outcome,
+              status: item.status,
+              safeErrorCode: item.safeErrorCode
+            }))
+          },
+          request.admin!.id
+        );
+        request.log.info({
+          event: "edgeone_prefetch_completed",
+          operation: "prefetch_trigger",
+          requestId: request.id,
+          adminId: request.admin!.id,
+          submitted: result.submitted,
+          skipped: result.skipped,
+          ineligible: result.ineligible,
+          failed: result.failed,
+          mediaAssetIds: result.items.map((item) => item.mediaAssetId)
+        }, "EdgeOne prefetch trigger completed");
+        return reply.send(ok(result));
+      } catch (error) {
+        const safe = asEdgeOneDomainError(error);
+        await writeOperationLog(
+          "EDGEONE_PREFETCH_TRIGGER_FAILED",
+          {
+            businessCode: safe.code,
+            mediaAssetIds: parsed.data.assetIds ?? []
+          },
+          request.admin!.id
+        ).catch(() => undefined);
+        logEdgeOneOperationFailure(request, "prefetch_trigger", safe);
+        return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
+      }
+    }
+  );
+
+  app.get(
+    "/api/admin/edgeone/prefetch",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request, reply) => {
+      const parsed = edgeOnePrefetchListQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          firstZodIssueMessage(parsed.error, "预热列表参数错误")
+        );
+      }
+      try {
+        return reply.send(ok(await edgeOnePrefetchService.list(parsed.data)));
+      } catch (error) {
+        const safe = asEdgeOneDomainError(error);
+        logEdgeOneOperationFailure(request, "prefetch_list", safe);
+        return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/edgeone/prefetch/reconcile",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const decision = await rateLimiter.consume(
+        `edgeone-prefetch-reconcile:${request.admin!.id}`,
+        edgeOnePrefetchWriteRateLimitPolicy
+      );
+      if (!decision.allowed) {
+        logSecurityEvent(request, "edgeone_prefetch_rate_limited", {
+          adminId: request.admin!.id,
+          operation: "reconcile",
+          retryAfterSeconds: decision.retryAfterSeconds
+        }, "warn");
+        return sendRateLimitError(reply, decision);
+      }
+      try {
+        const result = await edgeOnePrefetchService.reconcile();
+        await writeOperationLog(
+          "EDGEONE_PREFETCH_RECONCILE",
+          result,
+          request.admin!.id
+        );
+        request.log.info({
+          event: "edgeone_prefetch_completed",
+          operation: "prefetch_reconcile",
+          requestId: request.id,
+          adminId: request.admin!.id,
+          ...result
+        }, "EdgeOne prefetch reconciliation completed");
+        return reply.send(ok(result));
+      } catch (error) {
+        const safe = asEdgeOneDomainError(error);
+        await writeOperationLog(
+          "EDGEONE_PREFETCH_RECONCILE_FAILED",
+          { businessCode: safe.code },
+          request.admin!.id
+        ).catch(() => undefined);
+        logEdgeOneOperationFailure(request, "prefetch_reconcile", safe);
+        return sendError(reply, edgeOneErrorStatus(safe), safe.code, safe.publicMessage);
+      }
+    }
+  );
 
   app.get("/api/admin/backups", { preHandler: requireAdmin }, async (_request, reply) => {
     return reply.send(ok({ backups: await backupService.listBackups() }));

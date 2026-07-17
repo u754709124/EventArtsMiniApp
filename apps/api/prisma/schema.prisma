@@ -16,6 +16,7 @@ model AdminUser {
   updatedAt     DateTime            @updatedAt
   sessions      AdminSession[]
   notifications AdminNotification[]
+  edgeOnePrefetchResources EdgeOnePrefetchResource[]
 
   @@map("admin_users")
 }
@@ -127,8 +128,59 @@ model MediaAsset {
   placeholderBannerConfigs SiteConfig[]   @relation("placeholderBanner")
   placeholderIconConfigs   SiteConfig[]   @relation("placeholderIcon")
   placeholderCaseConfigs   SiteConfig[]   @relation("placeholderCase")
+  edgeOnePrefetchResources EdgeOnePrefetchResource[]
 
   @@map("media_assets")
+}
+
+model EdgeOnePrefetchResource {
+  id               Int                       @id @default(autoincrement())
+  zoneId           String
+  mediaAssetId     Int
+  contentVersion   String
+  targetUrl        String
+  targetHash       String
+  mode             String                    @default("default")
+  status           String                    @default("reserved")
+  currentJobId     String?
+  attemptCount     Int                       @default(0)
+  nextRetryAt      DateTime?
+  leaseToken       String?
+  leaseExpiresAt   DateTime?
+  lastSubmittedAt  DateTime?
+  completedAt      DateTime?
+  safeErrorCode    String?
+  safeErrorMessage String?
+  createdBy        Int
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  mediaAsset       MediaAsset                @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  creator          AdminUser                 @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  attempts         EdgeOnePrefetchAttempt[]
+
+  @@unique([zoneId, mediaAssetId, contentVersion, targetHash, mode])
+  @@index([status, nextRetryAt])
+  @@index([currentJobId])
+  @@index([mediaAssetId, updatedAt])
+  @@index([createdBy])
+  @@map("edgeone_prefetch_resources")
+}
+
+model EdgeOnePrefetchAttempt {
+  id                 Int                     @id @default(autoincrement())
+  prefetchResourceId Int
+  attemptNumber      Int
+  jobId              String?
+  upstreamRequestId  String?
+  status             String
+  safeErrorCode      String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  prefetchResource   EdgeOnePrefetchResource @relation(fields: [prefetchResourceId], references: [id], onDelete: Cascade)
+
+  @@unique([prefetchResourceId, attemptNumber])
+  @@index([jobId])
+  @@map("edgeone_prefetch_attempts")
 }
 
 model MediaAssetTag {

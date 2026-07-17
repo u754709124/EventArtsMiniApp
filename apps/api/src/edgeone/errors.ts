@@ -85,6 +85,22 @@ export function mapEdgeOneSdkError(error: unknown): EdgeOneDomainError {
       diagnostics
     );
   }
+  if (code.includes("requestlimitexceeded") || code.includes("throttl")) {
+    return new EdgeOneDomainError(
+      "upstream",
+      "EDGEONE_RATE_LIMITED",
+      "腾讯云 EdgeOne 请求过于频繁，请稍后重试",
+      diagnostics
+    );
+  }
+  if (code.includes("quota") || code.includes("resourceinsufficient")) {
+    return new EdgeOneDomainError(
+      "upstream",
+      "EDGEONE_PREFETCH_QUOTA_EXCEEDED",
+      "EdgeOne 预热配额不足，请检查套餐后重试",
+      diagnostics
+    );
+  }
   if (
     code.includes("unauthorizedoperation") ||
     code.includes("operationdenied") ||
@@ -108,6 +124,8 @@ export function mapEdgeOneSdkError(error: unknown): EdgeOneDomainError {
 export function edgeOneErrorStatus(error: EdgeOneDomainError) {
   if (error.kind === "bad_request") return 400;
   if (error.kind === "validation") return 422;
+  if (error.code === "EDGEONE_RATE_LIMITED") return 429;
+  if (error.code === "EDGEONE_PREFETCH_QUOTA_EXCEEDED") return 422;
   if (error.kind === "upstream") return 502;
   return 503;
 }

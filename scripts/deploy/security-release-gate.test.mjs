@@ -19,6 +19,7 @@ describe("security release gate", () => {
     expect(result.ok, JSON.stringify(result.issues, null, 2)).toBe(true);
     expect(result.checked.manualChecks.join("\n")).toContain("disaster drill");
     expect(result.checked.manualChecks.join("\n")).toContain("wx.login");
+    expect(result.checked.manualChecks.join("\n")).toContain("edgeone:prefetch:reconcile");
   });
 
   it("fails P0 checks for public bindings and forbidden defaults", async () => {
