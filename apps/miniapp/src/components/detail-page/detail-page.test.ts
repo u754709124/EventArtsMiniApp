@@ -316,7 +316,7 @@ describe("recoverable detail media", () => {
     expect(richContentSource).not.toContain("正文图片加载失败");
   });
 
-  it("tracks banner failures explicitly and clears them on retry", () => {
+  it("tracks banner failures explicitly and clears them only after media load succeeds", () => {
     expect(updateFailedMediaIds([], 9, true)).toEqual([9]);
     expect(updateFailedMediaIds([9], 9, true)).toEqual([9]);
     expect(updateFailedMediaIds([9, 11], 9, false)).toEqual([11]);
@@ -345,7 +345,7 @@ describe("recoverable detail media", () => {
     expect(getVideoAspectRatioPadding({ width: 0, height: 1080 })).toBe("56.25%");
   });
 
-  it("wires banner image failures to a visible retry and remount key", () => {
+  it("wires banner image failures to a visible non-interactive pull-refresh prompt", () => {
     const appImageSource = readFileSync(
       resolve(miniappSourceRoot, "components/AppImage.tsx"),
       "utf8"
@@ -357,8 +357,71 @@ describe("recoverable detail media", () => {
     expect(appImageSource).toContain("onError?:");
     expect(appImageSource).toContain("current === src");
     expect(bannerSource).toContain("detail-banner-media-error");
-    expect(bannerSource).toContain("bannerRetryKey");
-    expect(bannerSource).toContain("重新加载图片");
+    expect(bannerSource).toContain("请下拉刷新重试");
+    expect(bannerSource).not.toContain("bannerRetryKey");
+    expect(bannerSource).not.toContain("detail-banner-media-retry");
+    expect(bannerSource).not.toContain("重新加载图片");
+  });
+
+  it("keeps detail media failures non-interactive so page pull-refresh owns recovery", () => {
+    const videoSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailVideoBlock.tsx"),
+      "utf8"
+    );
+    expect(videoSource).toContain("视频加载失败，请下拉刷新重试");
+    expect(videoSource).not.toContain("retryKey");
+    expect(videoSource).not.toContain("detail:video:retry");
+    expect(videoSource).not.toContain("重新加载");
+  });
+});
+
+describe("detail pull-refresh recovery", () => {
+  it("enables native pull-down refresh on standalone and legacy detail pages", () => {
+    const configs = [
+      "pages/detail/index.config.ts",
+      "pages/artists/detail.config.ts",
+      "pages/cases/detail.config.ts"
+    ].map((file) => readFileSync(resolve(miniappSourceRoot, file), "utf8"));
+    configs.forEach((source) => expect(source).toContain("enablePullDownRefresh: true"));
+  });
+
+  it("returns awaitable request promises while preserving abort and latest-request gates", () => {
+    const resourceSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/useDetailResource.ts"),
+      "utf8"
+    );
+    const legacySource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/LegacyDetailRedirectPage.tsx"),
+      "utf8"
+    );
+    for (const source of [resourceSource, legacySource]) {
+      expect(source).toContain("function load(rawId: string | number | undefined, propagateError = false): Promise<void>");
+      expect(source).toContain("const token = gate.current.begin");
+      expect(source).toContain("task.abort");
+      expect(source).toContain("return task.promise");
+      expect(source).toContain("if (!gate.current.isCurrent(token)) return");
+      expect(source).toContain("if (propagateError) throw error");
+      expect(source).toContain("function reload()");
+      expect(source).toContain("return load(currentId.current, true)");
+    }
+  });
+
+  it("removes clickable retry from recoverable detail states while preserving terminal states", () => {
+    const routeSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailRouteView.tsx"),
+      "utf8"
+    );
+    const legacySource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/LegacyDetailRedirectPage.tsx"),
+      "utf8"
+    );
+    expect(routeSource).toContain('error: ["页面加载失败", "请下拉刷新重试"]');
+    expect(routeSource).toContain('notFound: ["内容不存在或已停用", "请返回列表选择其他内容"]');
+    expect(routeSource).toContain('disabled: ["内容已停用", "当前内容暂不可访问"]');
+    expect(routeSource).toContain('unknownRenderer: ["详情页类型暂不支持", "请稍后升级后重试"]');
+    expect(`${routeSource}\n${legacySource}`).not.toContain("detail-retry");
+    expect(`${routeSource}\n${legacySource}`).not.toContain("useRepeatClickGuard");
+    expect(`${routeSource}\n${legacySource}`).not.toContain("重新加载");
   });
 });
 

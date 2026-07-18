@@ -11,7 +11,9 @@ import {
 import { isWeappShareEnvironment } from "../../components/detail-page/detail-share-platform";
 import { DetailRouteView } from "../../components/detail-page/DetailRouteView";
 import { useDetailResource } from "../../components/detail-page/useDetailResource";
+import { PullDownRefreshIndicator } from "../../components/PageState";
 import type { DetailHeroViewModel } from "../../components/detail-page/types";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import "./index.scss";
 
 type StandaloneDetailPageData = {
@@ -74,13 +76,14 @@ export default function DetailPage() {
   useLoad((query) => {
     const id = Number(query.id);
     setRouteId(Number.isInteger(id) && id > 0 ? id : null);
-    resource.load(query.id);
+    void resource.load(query.id);
   });
+  const refreshing = usePullDownRefreshState(resource.reload);
   return (
     <View className="detail-route" data-testid="standalone-detail-page">
+      {refreshing && <PullDownRefreshIndicator />}
       <DetailRouteView
         state={resource.state}
-        retry={resource.retry}
         buildHero={buildStandaloneHero}
         fallbackTabUrl="/pages/index/index"
         share={share}

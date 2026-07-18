@@ -137,13 +137,14 @@ describe("pull-down refresh lifecycle", () => {
     expect(states).toEqual([true, false]);
   });
 
-  it("places the shared indicator at the top of all five refresh pages", () => {
+  it("places the shared indicator at the top of all six refresh pages", () => {
     const integrations = [
       ["../pages/index/index.tsx", "<View className=\"page home-page\"", "<MiniappPageHeader"],
       ["../pages/category/index.tsx", "<View className=\"page\" data-testid=\"category-page\">", "<MiniappPageHeader"],
       ["../pages/cases/list.tsx", "<View className=\"page\" data-testid=\"case-list-page\">", "<MiniappPageHeader"],
       ["../pages/articles/list.tsx", "<View className=\"page article-list-page\"", "<View className=\"article-list-nav\""],
-      ["../pages/artists/list.tsx", "<View className=\"artists-page\"", "<View className=\"artists-nav\""]
+      ["../pages/artists/list.tsx", "<View className=\"artists-page\"", "<View className=\"artists-nav\""],
+      ["../pages/mine/index.tsx", "<View className=\"page mine-page\"", "<MiniappPageHeader"]
     ] as const;
 
     for (const [file, before, after] of integrations) {

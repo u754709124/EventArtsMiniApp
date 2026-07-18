@@ -285,10 +285,20 @@ function AnnouncementBar({ announcements }: { announcements: AnnouncementDto[] }
   );
 }
 
-function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHomeResponse["site"] }) {
+function BannerSection({
+  banners,
+  mediaRefreshVersion,
+  site
+}: {
+  banners: BannerDto[];
+  mediaRefreshVersion: number;
+  site: ClientHomeResponse["site"];
+}) {
   const [current, setCurrent] = useState(0);
+  const [failedBannerIds, setFailedBannerIds] = useState<Set<number>>(() => new Set());
   const swipeGuard = useSwipeClickGuard();
   const clickGuard = useRepeatClickGuard();
+  const hasConfiguredBanners = banners.length > 0;
   const list = banners.length
     ? banners
     : [
@@ -308,8 +318,37 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
   const multiple = list.length > 1;
   const currentBanner = list[current] ?? list[0];
 
+  useEffect(() => {
+    setFailedBannerIds(new Set());
+  }, [mediaRefreshVersion]);
+
+  function markBannerFailed(id: number) {
+    if (!hasConfiguredBanners) return;
+    setFailedBannerIds((currentIds) => {
+      if (currentIds.has(id)) return currentIds;
+      const next = new Set(currentIds);
+      next.add(id);
+      return next;
+    });
+  }
+
+  function clearBannerFailed(id: number) {
+    setFailedBannerIds((currentIds) => {
+      if (!currentIds.has(id)) return currentIds;
+      const next = new Set(currentIds);
+      next.delete(id);
+      return next;
+    });
+  }
+
   return (
-    <View className="banner-wrap" data-testid="home-banner-state" data-current-index={current}>
+    <View
+      className="banner-wrap"
+      data-testid="home-banner-state"
+      data-current-index={current}
+      data-media-refresh-version={mediaRefreshVersion}
+      data-failed-count={failedBannerIds.size}
+    >
       <Swiper
         className="banner"
         current={current}
@@ -340,16 +379,24 @@ function BannerSection({ banners, site }: { banners: BannerDto[]; site: ClientHo
                 } : undefined}
               >
                 <AppImage
+                  key={hasConfiguredBanners ? `${banner.id}:${mediaRefreshVersion}` : banner.id}
                   className="banner__image"
                   testid="home-banner-image"
                   src={banner.imageUrl}
                   fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
+                  onError={() => markBannerFailed(banner.id)}
+                  onLoad={() => clearBannerFailed(banner.id)}
                 />
               </View>
             </SwiperItem>
           );
         })}
       </Swiper>
+      {failedBannerIds.size > 0 && (
+        <View className="banner-failure" data-testid="home-banner-failure">
+          <Text>图片加载失败，请下拉刷新</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -381,6 +428,7 @@ export default function HomePage() {
   const [data, setData] = useState<ClientHomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [bannerMediaRefreshVersion, setBannerMediaRefreshVersion] = useState(0);
   const requestToken = useRef(0);
   const clickGuard = useRepeatClickGuard();
 
@@ -396,6 +444,7 @@ export default function HomePage() {
       if (requestToken.current !== token) return;
       setData(home);
       setFailed(false);
+      if (background) setBannerMediaRefreshVersion((version) => version + 1);
       trackPageView("/pages/index/index", "home").catch(() => undefined);
     } catch (error) {
       if (requestToken.current !== token) return;
@@ -413,14 +462,14 @@ export default function HomePage() {
   const refreshing = usePullDownRefreshState(() => load(true));
 
   if (loading) return <LoadingState />;
-  if (failed || !data) return <ErrorState onRetry={load} />;
+  if (failed || !data) return <ErrorState />;
 
   return (
     <View className="page home-page" data-testid="miniapp-home">
       {refreshing && <PullDownRefreshIndicator />}
       <MiniappPageHeader title={data.site.appName} subtitle={data.site.subtitle} titleTestId="home-app-name" subtitleTestId="home-subtitle" />
       <AnnouncementBar announcements={data.announcements} />
-      <BannerSection banners={data.banners} site={data.site} />
+      <BannerSection banners={data.banners} mediaRefreshVersion={bannerMediaRefreshVersion} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />
       <View className="section-heading section-heading--cases">
         <Text className="section-heading__title">精选案例</Text>

@@ -8,15 +8,12 @@ import { getDetailHeroTop } from "./navigation-layout";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
-import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailRendererProps } from "./types";
 
 export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShareButton = false }: DetailRendererProps) {
   const banners = useMemo(() => getDisplayDetailPageBanners(config.banners), [config.banners]);
   const [current, setCurrent] = useState(0);
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
-  const [bannerRetryKey, setBannerRetryKey] = useState(0);
-  const clickGuard = useRepeatClickGuard();
   const navigationMetrics = useMemo(getDetailNavigationMetrics, []);
   const multiple = banners.length > 1;
   const fixedForE2E =
@@ -53,7 +50,6 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
           {banners.map((banner) => (
             <SwiperItem key={banner.id}>
               <AppImage
-                key={`${bannerRetryKey}-${banner.id}`}
                 className="detail-banner__image"
                 src={banner.url}
                 fallback={generatedAssets.placeholderBanner}
@@ -91,16 +87,7 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
             role="alert"
           >
             <Text>{failedBannerIds.length} 张 BANNER 图片加载失败，已显示占位图</Text>
-            <Text
-              className="detail-state__button"
-              data-testid="detail-banner-media-retry"
-              onClick={() => clickGuard("detail:banner-media:retry", () => {
-                setFailedBannerIds([]);
-                setBannerRetryKey((value) => value + 1);
-              })}
-            >
-              重新加载图片
-            </Text>
+            <Text>请下拉刷新重试</Text>
           </View>
         )}
         <DetailRichContent cards={config.cards} />

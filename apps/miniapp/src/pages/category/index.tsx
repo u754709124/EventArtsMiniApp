@@ -52,7 +52,7 @@ export default function CategoryPage() {
       {loading ? <LoadingState /> : failed ? (
         <View className="category-state" data-testid="category-error-state">
           <Text>分类加载失败</Text>
-          <Text className="primary-button" data-testid="category-reload" onClick={() => clickGuard("category:reload", load)}>重新加载</Text>
+          <Text>请下拉刷新重试</Text>
         </View>
       ) : menus.length === 0 ? (
         <EmptyState text="暂无分类" />

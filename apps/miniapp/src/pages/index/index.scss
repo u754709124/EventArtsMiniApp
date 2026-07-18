@@ -134,6 +134,21 @@
   cursor: pointer;
 }
 
+.banner-failure {
+  position: absolute;
+  right: 18rpx;
+  bottom: 18rpx;
+  z-index: 2;
+  max-width: 360rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 6rpx;
+  background: rgba(32, 26, 21, 0.72);
+  color: #fff;
+  font-size: 22rpx;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .menu-card {
   min-height: 188rpx;
   display: flex;

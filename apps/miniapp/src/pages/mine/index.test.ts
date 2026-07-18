@@ -16,8 +16,17 @@ describe("mine page presentation", () => {
 
   it("keeps loading and failure recovery consistent with other client pages", () => {
     expect(pageSource).toContain("<LoadingState />");
-    expect(pageSource).toContain("<ErrorState onRetry={load} />");
+    expect(pageSource).toContain("usePullDownRefreshState(() => load(true))");
+    expect(pageSource).toContain("<ErrorState />");
+    expect(pageSource).not.toContain("onRetry");
+    expect(pageSource).not.toContain("重新加载");
     expect(pageSource).toContain('trackPageView("/pages/mine/index", "mine")');
+  });
+
+  it("enables native pull-down refresh for the mine page", () => {
+    const configSource = readFileSync(resolve(import.meta.dirname, "index.config.ts"), "utf8");
+    expect(configSource).toContain("enablePullDownRefresh: true");
+    expect(configSource).toContain('navigationStyle: "custom"');
   });
 
   it("implements the non-interactive welcome composition without extra feature entries", () => {

@@ -184,7 +184,7 @@ export default function ArticleList() {
       ) : failed ? (
         <View className="article-list-state" data-testid="article-list-error-state">
           <Text>文章加载失败</Text>
-          <Text className="primary-button" data-testid="article-list-reload" onClick={() => clickGuard("article:reload", () => load(1, true))}>重新加载</Text>
+          <Text>请下拉刷新重试</Text>
         </View>
       ) : items.length === 0 ? (
         <EmptyState text={category ? "该分类暂无文章" : "暂无文章"} />

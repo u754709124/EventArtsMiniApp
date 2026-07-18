@@ -45,19 +45,19 @@ export function useDetailResource<T extends DetailDto>({
   const gate = useRef(createDetailRequestGate());
   const currentId = useRef<number | null>(null);
 
-  function load(rawId: string | number | undefined) {
+  function load(rawId: string | number | undefined, propagateError = false): Promise<void> {
     const id = Number(rawId);
     currentId.current = Number.isInteger(id) && id > 0 ? id : null;
     setState({ status: "loading", data: null });
     if (currentId.current === null) {
       gate.current.dispose();
       setState({ status: "notFound", data: null, message: "详情地址无效" });
-      return;
+      return Promise.resolve();
     }
 
     const task = requestWithTask<unknown>(buildUrl(currentId.current));
     const token = gate.current.begin(String(currentId.current), task.abort);
-    void task.promise
+    return task.promise
       .then((rawData) => {
         if (!gate.current.isCurrent(token)) return;
         const data = normalize ? normalize(rawData) : rawData as T;
@@ -83,14 +83,16 @@ export function useDetailResource<T extends DetailDto>({
           data: null,
           message: error instanceof Error ? error.message : undefined
         });
+        if (propagateError) throw error;
       });
   }
 
-  function retry() {
-    if (currentId.current !== null) load(currentId.current);
+  function reload() {
+    if (currentId.current === null) return Promise.resolve();
+    return load(currentId.current, true);
   }
 
   useEffect(() => () => gate.current.dispose(), []);
 
-  return { state, load, retry };
+  return { state, load, reload };
 }

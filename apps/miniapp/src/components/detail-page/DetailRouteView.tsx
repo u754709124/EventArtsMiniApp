@@ -3,7 +3,6 @@ import type { DetailPageRendererKey } from "@event-arts/shared";
 import { DetailNavigation } from "./DetailNavigation";
 import { DetailPageRenderer } from "./DetailPageRenderer";
 import { DetailPageSkeleton } from "./DetailPageSkeleton";
-import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import type { DetailHeroViewModel } from "./types";
 import type { DetailShareState } from "./detail-share";
 import type { DetailResourceState } from "./useDetailResource";
@@ -15,12 +14,11 @@ const stateCopy = {
   disabled: ["内容已停用", "当前内容暂不可访问"],
   configMissing: ["详情配置不存在", "内容正在完善中，请稍后再试"],
   unknownRenderer: ["详情页类型暂不支持", "请稍后升级后重试"],
-  error: ["页面加载失败", "请检查网络后重新加载"]
+  error: ["页面加载失败", "请下拉刷新重试"]
 } as const;
 
 export function DetailRouteView<T extends DetailData>({
   state,
-  retry,
   buildHero,
   fallbackTabUrl,
   share,
@@ -30,14 +28,12 @@ export function DetailRouteView<T extends DetailData>({
   loadingTitle = "详情"
 }: {
   state: DetailResourceState<T>;
-  retry: () => void;
   buildHero: (data: T) => DetailHeroViewModel;
   fallbackTabUrl: string;
   share?: DetailShareState;
   loadingLayout?: DetailPageRendererKey;
   loadingTitle?: string;
 }) {
-  const clickGuard = useRepeatClickGuard();
   if (state.status === "loading") {
     return (
       <DetailPageSkeleton
@@ -63,12 +59,7 @@ export function DetailRouteView<T extends DetailData>({
       <DetailNavigation title={loadingTitle} fallbackTabUrl={fallbackTabUrl} />
       <View className="detail-state">
         <Text className="detail-state__title">{title}</Text>
-        <Text className="detail-state__description">{state.message || description}</Text>
-        {(state.status === "error" || state.status === "configMissing") && (
-          <Text className="detail-state__button" data-testid="detail-retry" onClick={() => clickGuard("detail:retry", retry)}>
-            重新加载
-          </Text>
-        )}
+        <Text className="detail-state__description">{state.status === "error" ? description : state.message || description}</Text>
       </View>
     </View>
   );

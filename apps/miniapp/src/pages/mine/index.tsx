@@ -1,27 +1,37 @@
 import { Text, View } from "@tarojs/components";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClientHomeResponse } from "@event-arts/shared";
 import { MiniappPageHeader } from "../../components/MiniappPageHeader";
-import { ErrorState, LoadingState } from "../../components/PageState";
+import { ErrorState, LoadingState, PullDownRefreshIndicator } from "../../components/PageState";
 import { getHome, trackPageView } from "../../services/api";
+import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import "./index.scss";
 
 export default function MinePage() {
   const [site, setSite] = useState<ClientHomeResponse["site"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const requestToken = useRef(0);
 
-  async function load() {
-    setLoading(true);
-    setFailed(false);
+  async function load(background = false) {
+    const token = requestToken.current + 1;
+    requestToken.current = token;
+    if (!background) {
+      setLoading(true);
+      setFailed(false);
+    }
     try {
       const home = await getHome();
+      if (requestToken.current !== token) return;
       setSite(home.site);
+      setFailed(false);
       trackPageView("/pages/mine/index", "mine").catch(() => undefined);
-    } catch {
+    } catch (error) {
+      if (requestToken.current !== token) return;
+      if (background) throw error;
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (requestToken.current === token) setLoading(false);
     }
   }
 
@@ -29,11 +39,14 @@ export default function MinePage() {
     void load();
   }, []);
 
+  const refreshing = usePullDownRefreshState(() => load(true));
+
   if (loading) return <LoadingState />;
-  if (failed || !site) return <ErrorState onRetry={load} />;
+  if (failed || !site) return <ErrorState />;
 
   return (
     <View className="page mine-page" data-testid="mine-page">
+      {refreshing && <PullDownRefreshIndicator />}
       <MiniappPageHeader title="我的" />
       <View className="mine-welcome" data-testid="mine-welcome">
         <View className="mine-welcome__copy">

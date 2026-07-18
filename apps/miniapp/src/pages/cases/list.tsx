@@ -8,7 +8,6 @@ import { EmptyState, LoadingState, PullDownRefreshIndicator } from "../../compon
 import { getCases } from "../../services/api";
 import { consumePendingCaseMenuFilter } from "../../utils/menu-navigation";
 import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
-import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
 import "./list.scss";
 
 function normalizeCaseText(value: string) {
@@ -29,7 +28,6 @@ export default function CaseList() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const requestId = useRef(0);
-  const clickGuard = useRepeatClickGuard();
   const visibleItems = useMemo(
     () => items.filter((item) => matchesCaseKeyword(item, query)),
     [items, query]
@@ -88,7 +86,7 @@ export default function CaseList() {
       ) : failed ? (
         <View className="case-list-state" data-testid="case-list-error-state">
           <Text>案例加载失败</Text>
-          <Text className="primary-button" data-testid="case-list-reload" onClick={() => clickGuard("case-list:reload", () => load())}>重新加载</Text>
+          <Text>请下拉刷新重试</Text>
         </View>
       ) : visibleItems.length === 0 ? (
         <EmptyState text={query.trim() ? "没有匹配的案例" : "暂无案例"} />
