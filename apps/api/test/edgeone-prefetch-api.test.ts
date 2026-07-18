@@ -29,7 +29,10 @@ describe("EdgeOne prefetch server integration", () => {
     expect(build).toHaveBeenCalledWith(expect.objectContaining({
       edgeOne: expect.objectContaining({
         prefetch: expect.objectContaining({ enabled: true, maxBatchSize: 20 })
-      })
+      }),
+      scheduledTasks: {
+        scheduler: { enabled: true }
+      }
     }));
     expect(listen).toHaveBeenCalledOnce();
     await result.prisma.$disconnect();

@@ -115,6 +115,7 @@ describe("ScheduledTasksPage", () => {
     });
     render(<ScheduledTasksPage />);
 
+    expect(await screen.findByText("服务器会按北京时间自动调度；这里展示真实执行状态，也可在确认后立即执行。")).toBeTruthy();
     await screen.findByText("管理员会话清理");
     expect(screen.getByText("删除已过期的后台管理员登录会话。")).toBeTruthy();
     expect(screen.getByText("2 * * * *")).toBeTruthy();

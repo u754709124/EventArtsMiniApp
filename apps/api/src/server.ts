@@ -14,8 +14,9 @@ type StartApiServerOptions = {
 export async function startApiServer(options: StartApiServerOptions = {}) {
   const config = loadApiConfig(options.config);
   const prisma = (options.createPrisma ?? createPrismaClient)(config.databaseUrl);
+  let app: Awaited<ReturnType<typeof buildApp>> | null = null;
   try {
-    const app = await (options.build ?? buildApp)({
+    app = await (options.build ?? buildApp)({
       prisma,
       jwtSecret: config.jwt.secret,
       uploadDir: config.paths.uploadDir,
@@ -29,6 +30,9 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
       edgeOne: {
         credentialEncryptionKey: config.edgeOne.credentialEncryptionKey,
         prefetch: config.edgeOne.prefetch
+      },
+      scheduledTasks: {
+        scheduler: { enabled: true }
       }
     });
     await app.listen({ port: config.server.port, host: config.server.host });
@@ -53,6 +57,7 @@ export async function startApiServer(options: StartApiServerOptions = {}) {
     }, "API listening");
     return { app, prisma, config };
   } catch (error) {
+    await app?.close().catch(() => undefined);
     await prisma.$disconnect().catch(() => undefined);
     throw error;
   }

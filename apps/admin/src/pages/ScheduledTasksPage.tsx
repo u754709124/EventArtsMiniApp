@@ -208,7 +208,7 @@ export function ScheduledTasksPage() {
       <PageHeader
         title="定时任务"
         breadcrumbs={["定时任务"]}
-        description="查看服务器规划的任务时间并手动触发。计划时间按北京时间展示，不代表外部调度器在线。"
+        description="服务器会按北京时间自动调度；这里展示真实执行状态，也可在确认后立即执行。"
         extra={
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()} data-testid="scheduled-tasks-refresh">
             刷新

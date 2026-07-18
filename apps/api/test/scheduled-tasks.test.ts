@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAdminNotificationCleanupCli } from "../src/admin-notifications";
 import { runAdminSessionCleanupCli } from "../src/admin-sessions";
 import { runPageViewCleanupCli } from "../src/analytics";
@@ -12,10 +12,13 @@ import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { runEdgeOnePrefetchReconcile } from "../src/edgeone-prefetch-reconcile";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
+  ScheduledTaskBusyError,
+  createScheduledTaskScheduler,
   createScheduledTaskRunner,
   listScheduledTasks,
   nextScheduledTaskExecution,
-  type ScheduledTaskHandler
+  type ScheduledTaskHandler,
+  type ScheduledTaskSchedulerTimerApi
 } from "../src/scheduled-tasks";
 import { resetTestAdmin, testAdminCredentials } from "./fixtures";
 
@@ -73,6 +76,32 @@ async function startApp(handlers?: Partial<Record<string, ScheduledTaskHandler>>
   return app;
 }
 
+function createTimerHarness() {
+  let nextId = 0;
+  const pending = new Map<number, { callback: () => void; delayMs: number }>();
+  const timers: ScheduledTaskSchedulerTimerApi = {
+    setTimeout(callback, delayMs) {
+      const id = nextId;
+      nextId += 1;
+      pending.set(id, { callback, delayMs });
+      return id;
+    },
+    clearTimeout(timer) {
+      pending.delete(Number(timer));
+    }
+  };
+  return {
+    timers,
+    pending,
+    fire(id: number) {
+      const timer = pending.get(id);
+      if (!timer) throw new Error(`timer ${id} is not pending`);
+      pending.delete(id);
+      timer.callback();
+    }
+  };
+}
+
 beforeEach(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "event-arts-scheduled-tasks-"));
   uploadDir = path.join(root, "uploads");
@@ -116,6 +145,99 @@ describe("scheduled task cron and schema", () => {
     expect(names).toContain("scheduled_task_states");
     expect(names).toContain("scheduled_task_states_leaseExpiresAt_idx");
     expect(backupImpactTables).toContain("scheduled_task_states");
+  });
+});
+
+describe("scheduled task scheduler", () => {
+  it("starts once, waits until due, persists a scheduled run, and stops cleanly", async () => {
+    const timerHarness = createTimerHarness();
+    const handler = vi.fn().mockResolvedValue({ deletedCount: 2 });
+    app = await buildApp({
+      prisma,
+      jwtSecret: "scheduled-task-test-secret",
+      uploadDir,
+      backupDir,
+      databaseUrl,
+      publicBaseUrl: "http://127.0.0.1:3001",
+      now: () => now,
+      scheduledTasks: {
+        handlers: { "admin-session-cleanup": handler },
+        scheduler: { enabled: true, timers: timerHarness.timers }
+      }
+    });
+
+    await app.ready();
+    expect(timerHarness.pending.size).toBe(4);
+    expect(handler).not.toHaveBeenCalled();
+    const sessionTimer = [...timerHarness.pending].find(([, timer]) => timer.delayMs === 90_000);
+    expect(sessionTimer).toBeDefined();
+
+    now = new Date("2026-07-18T01:02:00.000Z");
+    timerHarness.fire(sessionTimer![0]);
+    await vi.waitFor(async () => {
+      const state = await prisma.scheduledTaskState.findUnique({
+        where: { taskKey: "admin-session-cleanup" }
+      });
+      expect(state).toMatchObject({
+        lastStartedAt: now,
+        lastFinishedAt: now,
+        lastStatus: "success"
+      });
+    });
+    expect(handler).toHaveBeenCalledOnce();
+    expect(timerHarness.pending.size).toBe(4);
+
+    await app.close();
+    app = null;
+    expect(timerHarness.pending.size).toBe(0);
+  });
+
+  it("is idempotent and reschedules after busy and failed executions without leaking errors", async () => {
+    const timerHarness = createTimerHarness();
+    const secret = "scheduler-secret-must-not-leak";
+    const runner = {
+      run: vi.fn()
+        .mockRejectedValueOnce(new ScheduledTaskBusyError("admin-session-cleanup"))
+        .mockRejectedValueOnce(new Error(secret))
+    } as unknown as ReturnType<typeof createScheduledTaskRunner>;
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
+    };
+    const scheduler = createScheduledTaskScheduler({
+      runner,
+      now: () => now,
+      timers: timerHarness.timers,
+      logger
+    });
+
+    expect(scheduler.start()).toBe(true);
+    expect(scheduler.start()).toBe(false);
+    expect(timerHarness.pending.size).toBe(4);
+
+    const firstTimer = [...timerHarness.pending].find(([, timer]) => timer.delayMs === 90_000);
+    now = new Date("2026-07-18T01:02:00.000Z");
+    timerHarness.fire(firstTimer![0]);
+    await vi.waitFor(() => expect(runner.run).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalled());
+    expect(timerHarness.pending.size).toBe(4);
+
+    const secondTimer = [...timerHarness.pending].find(([, timer]) => timer.delayMs === 3_600_000);
+    now = new Date("2026-07-18T02:02:00.000Z");
+    timerHarness.fire(secondTimer![0]);
+    await vi.waitFor(() => expect(runner.run).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
+    expect(JSON.stringify([
+      logger.info.mock.calls,
+      logger.warn.mock.calls,
+      logger.error.mock.calls
+    ])).not.toContain(secret);
+    expect(timerHarness.pending.size).toBe(4);
+
+    expect(scheduler.stop()).toBe(true);
+    expect(scheduler.stop()).toBe(false);
+    expect(timerHarness.pending.size).toBe(0);
   });
 });
 

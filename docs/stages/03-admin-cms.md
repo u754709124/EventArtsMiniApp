@@ -61,7 +61,7 @@ React + Vite + TypeScript + Ant Design。
 - 已添加稳定 `data-testid` 供 Stage 5 Playwright 使用。
 - 已将后台 64 个操作提示和 1 个结果型信息弹窗迁移到统一通知中心；成功、失败、警告和信息使用独立图标/主题，卡片从右侧进退场并在上方卡片消失后向上补位。
 - Header 新增历史消息入口，服务端按管理员隔离固定保留滚动 7×24 小时；浏览器 outbox 仅负责断网待同步，登录、联网和会话恢复后使用稳定事件 ID 静默补传。
-- 新增顶级“定时任务”菜单和 `/scheduled-tasks` 路由，展示四项服务端固定任务的名称、描述、cron、计划下次执行和上次执行时间；支持加载失败重试、空态、刷新、确认执行、逐项 loading 与重复点击保护。时间统一按北京时间展示，窄屏表格在卡片内滚动。
+- 新增顶级“定时任务”菜单和 `/scheduled-tasks` 路由，展示四项服务端固定任务的名称、描述、cron、计划下次执行和真实上次执行时间/状态；支持加载失败重试、空态、刷新、确认执行、逐项 loading 与重复点击保护。真实 API 进程会启动内置调度器，自动执行与立即执行都写入同一状态表；时间统一按北京时间展示，窄屏表格在卡片内滚动。
 - 2026-07-17 EdgeOne 聚焦验证通过：Admin 组件/CSS/路由 4 个文件 14 项测试；Admin 全套 23 个文件 98 项测试；Admin production build 与本次变更定向 ESLint 通过。
 - 2026-07-17 通知中心验收：shared 42 项、API 215 项、Miniapp 57 项、Admin 123 项及部署脚本 8 项单测全部通过；Admin production build、API/shared build、本次变更定向 ESLint 和 Admin E2E 21/21 通过。
 - 2026-07-18 定时任务验收：shared 44 项、API 225 项、Miniapp 57 项、Admin 128 项及部署脚本 8 项单测通过；完整 Playwright 58/58、API/Admin build 与最终 `pnpm release:check` 通过。

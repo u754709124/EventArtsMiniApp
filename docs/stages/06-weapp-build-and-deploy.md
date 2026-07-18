@@ -98,7 +98,9 @@ apps/miniapp/dist
 
 ## 定时任务调度
 
-API 进程不启动常驻 cron daemon。生产部署调度器按 `Asia/Shanghai` 配置并调用现有 CLI：`admin:sessions:cleanup` 为 `2 * * * *`，`admin:notifications:cleanup` 为 `10 3 * * *`，`analytics:cleanup` 为 `20 3 * * *`，`edgeone:prefetch:reconcile` 为 `*/5 * * * *`。四条命令与后台“立即执行”复用统一 runner，状态写入数据库；同任务租约忙碌时应视为已有实例执行中，不能并行补跑。后台展示的“计划下次执行”只是 cron 计算结果，不能替代部署平台的调度健康检查与失败告警。
+真实 API 进程在 Fastify ready 时启动内置调度器，并在关闭时清理全部计时器。调度器按 `Asia/Shanghai` 使用服务端固定目录：`admin:sessions:cleanup` 为 `2 * * * *`，`admin:notifications:cleanup` 为 `10 3 * * *`，`analytics:cleanup` 为 `20 3 * * *`，`edgeone:prefetch:reconcile` 为 `*/5 * * * *`。自动调度、四条人工恢复 CLI 与后台“立即执行”复用统一 runner，真实状态写入数据库；同任务租约忙碌时视为已有实例执行中，不能并行补跑。直接 `buildApp` 默认不启动计时器，只有真实 server 入口显式启用。阶段一按单 API 进程部署，不补跑停机窗口，也不要在部署平台为同一目录配置重复 cron；多实例调度需要新的 Planner revision。
+
+2026-07-18 内置调度器修复验证：确定性 API 调度/SQLite 状态测试随 API 全套 230 项通过，定时任务后台页 4 项定向测试通过，`pnpm lint`、API build 和 Admin build 通过。全量 `pnpm test` 另被当前通知历史抽屉的 2 项既有断言失败阻断；Playwright webServer 健康检查期间进程被终止后出现连接拒绝，未进入定时任务用例，不能登记为通过。
 
 ## API Base URL 配置
 
@@ -123,8 +125,8 @@ API 进程不启动常驻 cron daemon。生产部署调度器按 `Asia/Shanghai`
 - 执行 `pnpm test:deploy`、`pnpm deploy:smoke` 和 `pnpm security:release-gate` 检查配置层 loopback upstream、默认凭据、弱 JWT、生产 seed 防护、CORS、限流、session 撤销、日志脱敏和备份/恢复契约；目标服务器防火墙、安全组和公网端口不可达性仍需人工验证。
 - 在微信开发者工具导入 `apps/miniapp/dist`，复核首页、公告、Banner、菜单跳转、案例详情、TabBar 和异常状态。
 - 复核上传目录或对象存储的读写权限、`BACKUP_DIR` 容量、异地备份复制、备份保留调度、CDN 缓存策略和灾难恢复演练结果。
-- EdgeOne 预热上线前先执行 `pnpm db:push`，补齐 `CreatePrefetchTask/DescribePrefetchTasks` 最小 CAM 权限，保持 `EDGEONE_PREFETCH_ENABLED=false` 启动检查；灰度开启后由调度器定期执行 `pnpm --filter api edgeone:prefetch:reconcile` 并配置失败告警。
-- 在部署平台创建并核对四项定时任务的 cron、`Asia/Shanghai` 时区、CLI 工作目录、环境变量和失败告警；后台逐项立即执行只用于人工验证或恢复，不代替周期调度。
+- EdgeOne 预热上线前先执行 `pnpm db:push`，补齐 `CreatePrefetchTask/DescribePrefetchTasks` 最小 CAM 权限，保持 `EDGEONE_PREFETCH_ENABLED=false` 启动检查；灰度开启后由内置调度器定期执行预热对账，并配置进程与日志失败告警。
+- 确认真正启动的是 `apps/api/src/server.ts` 入口，后台刷新后能看到自动执行写入的真实时间与状态；停用同目录的外部 cron，四条 CLI 仅用于人工恢复。
 - EdgeOne 预热回滚先关闭 `EDGEONE_PREFETCH_ENABLED` 并停止调度，不删除历史表；记录少量公开素材的提交、跳过、成功、失败重试以及日志/浏览器无敏感信息的人工证据。
 - 复核后台资源删除保护、推荐尺寸提示、可解析元数据校验和保存后立即生效。
 - 运行 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm build:weapp`。

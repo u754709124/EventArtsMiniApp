@@ -34,6 +34,29 @@ export type ScheduledTaskRunnerOptions = {
   leaseMs?: number;
 };
 
+export type ScheduledTaskRunner = ReturnType<typeof createScheduledTaskRunner>;
+
+type ScheduledTaskTimer = ReturnType<typeof setTimeout> | number;
+
+export type ScheduledTaskSchedulerTimerApi = {
+  setTimeout: (callback: () => void, delayMs: number) => ScheduledTaskTimer;
+  clearTimeout: (timer: ScheduledTaskTimer) => void;
+};
+
+export type ScheduledTaskSchedulerLogger = {
+  info?: (payload: Record<string, unknown>, message?: string) => void;
+  warn?: (payload: Record<string, unknown>, message?: string) => void;
+  error?: (payload: Record<string, unknown>, message?: string) => void;
+};
+
+export type ScheduledTaskSchedulerOptions = {
+  runner: ScheduledTaskRunner;
+  now?: () => Date;
+  timers?: Partial<ScheduledTaskSchedulerTimerApi>;
+  logger?: ScheduledTaskSchedulerLogger;
+  maxDelayMs?: number;
+};
+
 type ScheduledTaskCatalogItem = {
   taskKey: ScheduledTaskKey;
   name: string;
@@ -51,6 +74,7 @@ const minuteMs = 60_000;
 const shanghaiOffsetMs = 8 * 60 * minuteMs;
 const defaultLeaseMs = 10 * 60_000;
 const renewalFloorMs = 1_000;
+const maxTimerDelayMs = 2_147_483_647;
 
 export const scheduledTaskCatalog = [
   {
@@ -182,6 +206,105 @@ export function nextScheduledTaskExecution(cron: string, now: Date) {
     }
   }
   throw new Error(`unable to compute next execution for cron: ${cron}`);
+}
+
+function schedulerErrorPayload(error: unknown) {
+  const candidate = error as { code?: unknown; statusCode?: unknown; name?: unknown };
+  return sanitizeSummary({
+    errorCode: typeof candidate.code === "string" ? candidate.code : "SCHEDULED_TASK_SCHEDULER_ERROR",
+    statusCode: typeof candidate.statusCode === "number" ? candidate.statusCode : null,
+    errorName: typeof candidate.name === "string" ? candidate.name : null
+  });
+}
+
+export function createScheduledTaskScheduler(options: ScheduledTaskSchedulerOptions) {
+  const now = options.now ?? (() => new Date());
+  const setTimer = options.timers?.setTimeout ?? setTimeout;
+  const clearTimer = options.timers?.clearTimeout ?? clearTimeout;
+  const logger = options.logger;
+  const timers = new Map<ScheduledTaskKey, ScheduledTaskTimer>();
+  const delayCeilingMs = Math.max(1, options.maxDelayMs ?? maxTimerDelayMs);
+  let started = false;
+
+  function log(
+    level: "info" | "warn" | "error",
+    payload: Record<string, unknown>,
+    message: string
+  ) {
+    logger?.[level]?.({ event: "scheduled_task_scheduler", ...payload }, message);
+  }
+
+  function clearTaskTimer(taskKey: ScheduledTaskKey) {
+    const existing = timers.get(taskKey);
+    if (existing === undefined) return;
+    clearTimer(existing);
+    timers.delete(taskKey);
+  }
+
+  function schedule(item: ScheduledTaskCatalogItem) {
+    if (!started) return;
+    clearTaskTimer(item.taskKey);
+
+    const current = now();
+    const next = nextScheduledTaskExecution(item.cron, current);
+    const delayMs = Math.max(0, Math.min(next.getTime() - current.getTime(), delayCeilingMs));
+    const timer = setTimer(() => {
+      timers.delete(item.taskKey);
+      if (now().getTime() < next.getTime()) {
+        schedule(item);
+        return;
+      }
+      void runAndReschedule(item);
+    }, delayMs);
+    (timer as { unref?: () => void }).unref?.();
+    timers.set(item.taskKey, timer);
+    log("info", {
+      taskKey: item.taskKey,
+      nextExecutionAt: next.toISOString(),
+      delayMs
+    }, "Scheduled task timer armed");
+  }
+
+  async function runAndReschedule(item: ScheduledTaskCatalogItem) {
+    if (!started) return;
+    try {
+      const result = await options.runner.run(item.taskKey);
+      log("info", {
+        taskKey: result.taskKey,
+        status: result.status,
+        startedAt: result.startedAt,
+        finishedAt: result.finishedAt
+      }, "Scheduled task completed");
+    } catch (error) {
+      const payload = schedulerErrorPayload(error);
+      log(error instanceof ScheduledTaskBusyError ? "warn" : "error", {
+        taskKey: item.taskKey,
+        ...payload
+      }, "Scheduled task execution did not complete successfully");
+    } finally {
+      schedule(item);
+    }
+  }
+
+  return {
+    start() {
+      if (started) return false;
+      started = true;
+      for (const item of scheduledTaskCatalog) schedule(item);
+      log("info", { taskCount: scheduledTaskCatalog.length }, "Scheduled task scheduler started");
+      return true;
+    },
+    stop() {
+      if (!started && timers.size === 0) return false;
+      started = false;
+      for (const taskKey of Array.from(timers.keys())) clearTaskTimer(taskKey);
+      log("info", { taskCount: scheduledTaskCatalog.length }, "Scheduled task scheduler stopped");
+      return true;
+    },
+    isStarted() {
+      return started;
+    }
+  };
 }
 
 function parseSummary(value: string | null): ScheduledTaskSafeSummary | null {

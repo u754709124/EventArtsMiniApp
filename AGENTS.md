@@ -75,7 +75,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - All forms use required validation, success/error feedback, loading/error/empty states, paginated tables, and destructive confirmation.
 - Saving CMS content must immediately invalidate/refetch data used by admin and client pages.
 - EdgeOne v1 is limited to one Zone and one CAM credential pair. SecretKey may exist only in the current password input and a single API/SDK request; it must not enter URLs, browser storage, logs, errors, snapshots, or client caches. Resource prewarming is an opt-in admin workflow: only trusted HTTPS media targets may be submitted, durable identity and leases prevent duplicate submission, and reconciliation must be scheduled server-side.
-- The “定时任务” page is read-only apart from confirmed immediate execution. Task metadata, cron (`Asia/Shanghai`), handlers, next-run calculation, persistent state, and recoverable leases are server-owned. The browser may submit only a catalog task key; external deployment scheduling remains outside the API process.
+- The “定时任务” page is read-only apart from confirmed immediate execution. Task metadata, cron (`Asia/Shanghai`), handlers, next-run calculation, persistent state, recoverable leases, and the in-process scheduler lifecycle are server-owned. The real API server starts the scheduler and stops it with Fastify; direct `buildApp` usage stays timer-free unless explicitly enabled. The browser may submit only a catalog task key. Do not configure duplicate external cron triggers for the same catalog in phase one.
 
 ## Supported Menus
 

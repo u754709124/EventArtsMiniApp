@@ -162,9 +162,11 @@ import {
   ScheduledTaskBusyError,
   ScheduledTaskExecutionError,
   ScheduledTaskNotFoundError,
+  createScheduledTaskScheduler,
   createScheduledTaskRunner,
   listScheduledTasks,
-  type ScheduledTaskHandler
+  type ScheduledTaskHandler,
+  type ScheduledTaskSchedulerTimerApi
 } from "./scheduled-tasks";
 
 type AppRateLimitConfig = {
@@ -202,6 +204,11 @@ type BuildOptions = {
   scheduledTasks?: {
     handlers?: Partial<Record<string, ScheduledTaskHandler>>;
     leaseMs?: number;
+    scheduler?: {
+      enabled?: boolean;
+      timers?: Partial<ScheduledTaskSchedulerTimerApi>;
+      maxDelayMs?: number;
+    };
   };
 };
 
@@ -935,6 +942,21 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     now: currentTime,
     leaseMs: options.scheduledTasks?.leaseMs
   });
+  const scheduledTaskScheduler = createScheduledTaskScheduler({
+    runner: scheduledTaskRunner,
+    now: currentTime,
+    logger: app.log,
+    timers: options.scheduledTasks?.scheduler?.timers,
+    maxDelayMs: options.scheduledTasks?.scheduler?.maxDelayMs
+  });
+  if (options.scheduledTasks?.scheduler?.enabled) {
+    app.addHook("onReady", async () => {
+      scheduledTaskScheduler.start();
+    });
+    app.addHook("onClose", async () => {
+      scheduledTaskScheduler.stop();
+    });
+  }
   let backupCreateInProgress = false;
   let backupDonePromise: Promise<void> | null = null;
   let resolveBackupDone: (() => void) | null = null;

@@ -388,7 +388,7 @@ pnpm --filter api edgeone:prefetch:reconcile
 | `analytics-cleanup` | 访问统计清理 | `20 3 * * *` | `pnpm --filter api analytics:cleanup` |
 | `edgeone-prefetch-reconcile` | EdgeOne 预热对账 | `*/5 * * * *` | `pnpm --filter api edgeone:prefetch:reconcile` |
 
-cron 统一按 `Asia/Shanghai` 解释；`nextExecutionAt` 是严格晚于服务器当前时间的计划值，不代表外部部署调度器在线。`lastExecutionAt` 是统一 runner 最近实际启动时间，上线前历史不可追溯时为 `null`。API 与四条 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。
+cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时启动内置调度器，在关闭时停止调度器。`nextExecutionAt` 是严格晚于服务器当前时间的计划值，`lastExecutionAt` 和 `lastFinishedAt` 来自统一 runner 的真实持久化记录，上线前历史不可追溯时为 `null`。自动调度、管理端立即执行与四条恢复 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。直接调用 `buildApp` 默认不启动后台计时器，测试只有显式启用时才运行调度器；一期单 API 进程部署不得再为相同目录配置重复的外部 cron。
 
 ## Media Field Rules
 
