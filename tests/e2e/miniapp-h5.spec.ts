@@ -39,9 +39,9 @@ type DetailPageDto = {
     metaItems: Array<{ label: string; value: string }>;
   };
   banners: Array<{ id: number; url: string; sortOrder: number }>;
-  blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
+  blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string; width: number | null; height: number | null }>;
   cards: Array<{
-    blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string }>;
+    blocks: Array<{ type: "richText"; html: string } | { type: "video"; url: string; width: number | null; height: number | null }>;
   }>;
 };
 type DetailFixtures = {
@@ -390,6 +390,8 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
     images: Array.from(root.querySelectorAll("img")).map((image) => ({
       width: image.getBoundingClientRect().width,
       containerWidth: image.parentElement?.getBoundingClientRect().width ?? 0,
+      attributeWidth: image.getAttribute("width") ?? "",
+      attributeHeight: image.getAttribute("height") ?? "",
       inlineWidth: image.style.width,
       inlineMaxWidth: image.style.maxWidth,
       inlineHeight: image.style.height
@@ -408,10 +410,16 @@ async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
     expect(heading.markerInlineMaxHeight).toBe("13px");
   });
   richTextPresentation.images.forEach((image) => {
+    const trustedWidth = /^\d+(?:\.\d+)?$/.test(image.attributeWidth) && /^\d+(?:\.\d+)?$/.test(image.attributeHeight)
+      ? Number(image.attributeWidth)
+      : null;
     expect(image.width).toBeLessThanOrEqual(image.containerWidth + 1);
-    expect(image.inlineWidth).toBe("100%");
+    expect(image.inlineWidth).toBe(trustedWidth ? `${trustedWidth}px` : "100%");
     expect(image.inlineMaxWidth).toBe("100%");
     expect(image.inlineHeight).toBe("auto");
+    if (trustedWidth && trustedWidth < image.containerWidth) {
+      expect(image.width).toBeCloseTo(trustedWidth, 1);
+    }
   });
 
   const geometry = await page.evaluate(() => {
@@ -1303,6 +1311,29 @@ test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节�
   await expect(page.getByTestId("detail-hero")).toContainText("日期：2024-05-18");
   const video = page.getByTestId("detail-video").locator("video");
   await expect(video).toHaveCount(1);
+  const videoGeometry = await page.getByTestId("detail-video").evaluate((wrap) => {
+    const videoElement = wrap.querySelector("video")!;
+    const wrapRect = wrap.getBoundingClientRect();
+    const cardRect = wrap.closest('[data-testid="detail-rich-card"]')!.getBoundingClientRect();
+    return {
+      wrapWidth: wrapRect.width,
+      wrapHeight: wrapRect.height,
+      cardWidth: cardRect.width,
+      inlineMaxWidth: (wrap as HTMLElement).style.maxWidth,
+      inlineAspectRatio: (wrap as HTMLElement).style.aspectRatio,
+      videoWidth: videoElement.getBoundingClientRect().width,
+      videoHeight: videoElement.getBoundingClientRect().height
+    };
+  });
+  const videoBlock = longDto.cards.flatMap((card) => card.blocks).find((block) => block.type === "video");
+  if (!videoBlock || videoBlock.type !== "video" || !videoBlock.width || !videoBlock.height) {
+    throw new Error("详情页视频缺少可信尺寸");
+  }
+  expect(videoGeometry.inlineMaxWidth).toBe(`${videoBlock.width}px`);
+  expect(videoGeometry.inlineAspectRatio).toBe(`${videoBlock.width} / ${videoBlock.height}`);
+  expect(videoGeometry.wrapWidth).toBeLessThanOrEqual(Math.min(videoBlock.width, videoGeometry.cardWidth) + 1);
+  expect(videoGeometry.videoWidth).toBeCloseTo(videoGeometry.wrapWidth, 1);
+  expect(videoGeometry.videoHeight).toBeCloseTo(videoGeometry.wrapHeight, 1);
   await expect(video).not.toHaveAttribute("autoplay");
   await expect(video).not.toHaveAttribute("loop");
   await expect(page.getByTestId("detail-rich-text-block").locator("video")).toHaveCount(0);

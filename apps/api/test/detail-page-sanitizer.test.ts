@@ -12,7 +12,9 @@ import { buildDetailPageBlocks, buildDetailPageCards } from "../src/detail-pages
 const assets = new Map<number, DetailPageMediaAsset>([
   [1, { id: 1, mediaType: "image", url: "/uploads/one.webp", width: 1200, height: 800 }],
   [2, { id: 2, mediaType: "video", url: "/uploads/two.mp4", width: 1920, height: 1080 }],
-  [3, { id: 3, mediaType: "image", url: "/uploads/three.png", width: 900, height: 600 }]
+  [3, { id: 3, mediaType: "image", url: "/uploads/three.png", width: 900, height: 600 }],
+  [4, { id: 4, mediaType: "image", url: "/uploads/missing-size.webp", width: null, height: null }],
+  [5, { id: 5, mediaType: "video", url: "/uploads/vertical.mp4", width: 720, height: 1280 }]
 ]);
 
 describe("detail rich-text sanitizer", () => {
@@ -87,9 +89,23 @@ describe("detail rich-text sanitizer", () => {
       assets
     );
 
-    expect(html).toContain('<img src="/uploads/one.webp" data-media-asset-id="1" alt="现场图">');
-    expect(html).toContain('<video src="/uploads/two.mp4" data-media-asset-id="2" controls="" preload="metadata"></video>');
+    expect(html).toContain('<img src="/uploads/one.webp" data-media-asset-id="1" alt="现场图" width="1200" height="800">');
+    expect(html).toContain('<video src="/uploads/two.mp4" data-media-asset-id="2" width="1920" height="1080" controls="" preload="metadata"></video>');
     expect(html).not.toMatch(/untrusted|autoplay|loop|onerror|onclick/);
+  });
+
+  it("uses trusted asset dimensions over forged input and omits incomplete metadata", () => {
+    const html = sanitizeAndNormalizeRichText(
+      `<img src="/fake.webp" data-media-asset-id="1" width="20" height="20">
+       <img src="/fake-missing.webp" data-media-asset-id="4" width="888" height="777">
+       <video src="/fake.mp4" data-media-asset-id="5" width="16" height="9"></video>`,
+      assets
+    );
+
+    expect(html).toContain('<img src="/uploads/one.webp" data-media-asset-id="1" alt="内容图片" width="1200" height="800">');
+    expect(html).toContain('<img src="/uploads/missing-size.webp" data-media-asset-id="4" alt="内容图片">');
+    expect(html).toContain('<video src="/uploads/vertical.mp4" data-media-asset-id="5" width="720" height="1280" controls="" preload="metadata"></video>');
+    expect(html).not.toMatch(/width="(?:20|888|16)"|height="(?:20|777|9)"/);
   });
 
   it("rejects dangerous temporary media URLs before rewriting", () => {

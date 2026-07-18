@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core";
 import {
   RichTextEditorField,
   isSafeAssetMediaSource,
+  normalizeMediaDimension,
   normalizeMediaAssetId,
   sanitizeRichTextClassName,
   sanitizeRichTextStyle,
@@ -273,6 +274,8 @@ describe("RichTextEditorField", () => {
       const html = onChange.mock.calls.at(-1)?.[0] as string;
       expect(html).toContain('src="/uploads/content.webp"');
       expect(html).toContain('data-media-asset-id="123"');
+      expect(html).toContain('width="1200"');
+      expect(html).toContain('height="800"');
       expect(html).toContain('alt="内容图片"');
     });
 
@@ -301,6 +304,8 @@ describe("RichTextEditorField", () => {
       expect(html).toContain('data-media-asset-id="123"');
       expect(html).toContain('src="/uploads/content.mp4"');
       expect(html).toContain('data-media-asset-id="456"');
+      expect(html).toContain('width="1920"');
+      expect(html).toContain('height="1080"');
       expect(html).toContain("controls");
       expect(html).toContain('preload="metadata"');
       expect(html).not.toMatch(/autoplay|loop|iframe/i);
@@ -314,6 +319,10 @@ describe("RichTextEditorField", () => {
     expect(normalizeMediaAssetId(0)).toBeNull();
     expect(normalizeMediaAssetId("1.2")).toBeNull();
     expect(normalizeMediaAssetId("abc")).toBeNull();
+    expect(normalizeMediaDimension(320)).toBe(320);
+    expect(normalizeMediaDimension("240.5")).toBe(240.5);
+    expect(normalizeMediaDimension(0)).toBeNull();
+    expect(normalizeMediaDimension("bad")).toBeNull();
 
     expect(isSafeAssetMediaSource("/uploads/registered.webp")).toBe(true);
     expect(isSafeAssetMediaSource("data:image/png;base64,abc")).toBe(false);
@@ -364,8 +373,8 @@ describe("RichTextEditorField", () => {
     const lifecycle = editorObserver();
     const canonical =
       '<h1>媒体</h1>' +
-      '<img src="https://assets.example.com/registered.webp" alt="对象存储图片" data-media-asset-id="808">' +
-      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" controls preload="metadata"></video>';
+      '<img src="https://assets.example.com/registered.webp" alt="对象存储图片" data-media-asset-id="808" width="640" height="360">' +
+      '<video src="https://assets.example.com/registered.mp4" data-media-asset-id="809" width="720" height="1280" controls preload="metadata"></video>';
     const { rerender } = render(
       <RichTextEditorField value={canonical} onChange={vi.fn()} lifecycleObserver={lifecycle.observer} />
     );
@@ -374,8 +383,12 @@ describe("RichTextEditorField", () => {
       const html = lifecycle.current?.getHTML() ?? "";
       expect(html).toContain('src="https://assets.example.com/registered.webp"');
       expect(html).toContain('data-media-asset-id="808"');
+      expect(html).toContain('width="640"');
+      expect(html).toContain('height="360"');
       expect(html).toContain('src="https://assets.example.com/registered.mp4"');
       expect(html).toContain('data-media-asset-id="809"');
+      expect(html).toContain('width="720"');
+      expect(html).toContain('height="1280"');
       expect(html).toContain("<h1>媒体</h1>");
     });
 

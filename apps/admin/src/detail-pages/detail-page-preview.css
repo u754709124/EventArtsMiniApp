@@ -368,7 +368,9 @@
 
 .detail-preview-video-wrap {
   min-width: 0;
-  margin: 8px 0;
+  width: 100%;
+  max-width: 100%;
+  margin: 8px auto;
   overflow: hidden;
   border-radius: 7px;
   background: #181818;

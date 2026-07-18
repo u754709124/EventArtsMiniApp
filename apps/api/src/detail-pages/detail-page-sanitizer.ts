@@ -83,6 +83,16 @@ function setAttributes(element: Element, attributes: Array<{ name: string; value
   element.attrs = attributes.map((attribute) => ({ ...attribute, namespace: undefined, prefix: undefined }));
 }
 
+function trustedDimensionAttributes(asset: DetailPageMediaAsset) {
+  const { width, height } = asset;
+  return Number.isFinite(width) && Number.isFinite(height) && Number(width) > 0 && Number(height) > 0
+    ? [
+        { name: "width", value: String(width) },
+        { name: "height", value: String(height) }
+      ]
+    : [];
+}
+
 function createText(value: string): DefaultTreeAdapterTypes.TextNode {
   return { nodeName: "#text", value, parentNode: null };
 }
@@ -234,12 +244,14 @@ function canonicalMediaElement(element: Element, assets: ReadonlyMap<number, Det
     return createElement("img", [
       { name: "src", value: asset.url },
       { name: "data-media-asset-id", value: String(assetId) },
-      { name: "alt", value: getAttribute(element, "alt") ?? "内容图片" }
+      { name: "alt", value: getAttribute(element, "alt") ?? "内容图片" },
+      ...trustedDimensionAttributes(asset)
     ]);
   }
   return createElement("video", [
     { name: "src", value: asset.url },
     { name: "data-media-asset-id", value: String(assetId) },
+    ...trustedDimensionAttributes(asset),
     { name: "controls", value: "" },
     { name: "preload", value: "metadata" }
   ]);
@@ -459,7 +471,8 @@ function normalizeMediaElements(
       setAttributes(element, [
         { name: "src", value: asset.url },
         { name: "data-media-asset-id", value: String(assetId) },
-        { name: "alt", value: alt }
+        { name: "alt", value: alt },
+        ...trustedDimensionAttributes(asset)
       ]);
       return;
     }
@@ -467,6 +480,7 @@ function normalizeMediaElements(
     setAttributes(element, [
       { name: "src", value: asset.url },
       { name: "data-media-asset-id", value: String(assetId) },
+      ...trustedDimensionAttributes(asset),
       { name: "controls", value: "" },
       { name: "preload", value: "metadata" }
     ]);

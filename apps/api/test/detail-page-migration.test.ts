@@ -159,7 +159,7 @@ describe("standalone detail-page migration", () => {
 
     expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: config.id } })).toMatchObject({
       id: config.id,
-      richTextHtml: `<h1>保留 HTML</h1><p>保留 HTML</p><img src="${content.url}" data-media-asset-id="${content.id}" alt="内容图片">`,
+      richTextHtml: `<h1>保留 HTML</h1><p>保留 HTML</p><img src="${content.url}" data-media-asset-id="${content.id}" alt="内容图片" width="1200" height="800">`,
       heroTitle: "已有标题",
       heroSubtitle: "已有宣传语"
     });
@@ -258,8 +258,8 @@ describe("standalone detail-page migration", () => {
     });
     expect(migrated.schemaVersion).toBe(2);
     expect(migrated.richTextHtml).toBe(
-      `<h1>项目介绍</h1><p>旧正文</p><img src="${image.url}" data-media-asset-id="${image.id}" alt="内容图片">` +
-      `<h1>视频说明</h1><video src="${video.url}" data-media-asset-id="${video.id}" controls="" preload="metadata"></video><p>视频说明</p>`
+      `<h1>项目介绍</h1><p>旧正文</p><img src="${image.url}" data-media-asset-id="${image.id}" alt="内容图片" width="1200" height="800">` +
+      `<h1>视频说明</h1><video src="${video.url}" data-media-asset-id="${video.id}" width="1920" height="1080" controls="" preload="metadata"></video><p>视频说明</p>`
     );
     expect(migrated.contentMedia.map((item) => item.mediaAssetId)).toEqual([image.id, video.id]);
     await prisma.$disconnect();

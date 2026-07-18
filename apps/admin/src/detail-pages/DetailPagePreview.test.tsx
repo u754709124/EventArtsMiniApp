@@ -88,7 +88,7 @@ describe("DetailPagePreview", () => {
     const richHtml = [
       '<h1 style="padding-left:99px">单行标题</h1>',
       "<h1>多行标题<br>第二行</h1>",
-      '<p><img src="/uploads/wide.webp" style="width:900px"></p>'
+      '<p><img src="/uploads/small.webp" width="240" height="160" style="width:900px"></p>'
     ].join("");
     const dtoWithRichHtml = (dto: DetailPageConfigDto): DetailPageConfigDto => ({
       ...dto,
@@ -141,7 +141,7 @@ describe("DetailPagePreview", () => {
       expect(style.flexBasis).toBe("0%");
       expect(style.fontSize).toBe("inherit");
     });
-    expect(image.style.width).toBe("100%");
+    expect(image.style.width).toBe("240px");
     expect(image.style.maxWidth).toBe("100%");
     expect(image.style.height).toBe("auto");
 
@@ -188,7 +188,9 @@ describe("DetailPagePreview", () => {
     expect((within(dialog).getByRole("img", { name: "主持人林然 BANNER 1" }) as HTMLImageElement).className).toContain("is-current");
     expect(dialog.querySelector(".detail-preview-card")).toBeTruthy();
     const video = within(dialog).getByLabelText("详情视频 1") as HTMLVideoElement;
+    const videoWrap = video.closest(".detail-preview-video-wrap") as HTMLElement;
     expect(video.poster).toBe("");
+    expect(videoWrap.style.maxWidth).toBe("1920px");
     expect(video.style.aspectRatio).toBe("1920 / 1080");
     expect(video.autoplay).toBe(false);
     expect(video.loop).toBe(false);

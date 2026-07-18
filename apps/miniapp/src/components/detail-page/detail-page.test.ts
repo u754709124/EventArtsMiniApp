@@ -199,7 +199,7 @@ describe("owner adapters and rich media model", () => {
       '<h1 class="title" style="color:#333;padding-left:2rpx;font-size:96px">标题一</h1>',
       "<h1>标题二</h1>",
       "<h1>多行<strong>标题</strong><br><em>第二行</em></h1>",
-      '<img data-media-asset-id="9" src="/one.jpg" style="width:900px;border:1rpx solid red">',
+      '<img data-media-asset-id="9" src="/one.jpg" width="320" height="180" style="width:900px;border:1rpx solid red">',
       '<img data-media-asset-id="10" src="/two.jpg">'
     ].join("");
     const enhanced = enhanceDetailRichTextForDisplay(source);
@@ -216,7 +216,8 @@ describe("owner adapters and rich media model", () => {
     expect(enhanced.match(/display:flex;box-sizing:border-box;align-items:center/gu)).toHaveLength(3);
     expect(enhanced.match(/font-size:17px;font-weight:700;line-height:1\.35/gu)).toHaveLength(3);
     expect(enhanced.match(/width:3px;height:13px;max-height:13px;margin-right:5px/gu)).toHaveLength(3);
-    expect(enhanced.match(/width:100%;max-width:100%;height:auto/gu)).toHaveLength(2);
+    expect(enhanced).toContain("width:320px;max-width:100%;height:auto");
+    expect(enhanced).toContain("width:100%;max-width:100%;height:auto");
     expect(enhanced).toContain('class="title"');
     expect(enhanced).toContain("color:#333");
     expect(enhanced).toContain("padding-left:0");
@@ -224,6 +225,8 @@ describe("owner adapters and rich media model", () => {
     expect(enhanced).toMatch(/多行<strong[^>]*font-size:inherit[^>]*>标题<\/strong><br[^>]*font-size:inherit[^>]*><em[^>]*font-size:inherit[^>]*>第二行<\/em>/u);
     expect(enhanced).toContain("border:1rpx solid red");
     expect(enhanced).toContain('data-media-asset-id="9"');
+    expect(enhanced).toContain('width="320"');
+    expect(enhanced).toContain('height="180"');
     expect(enhanced).not.toContain("padding-left:2rpx");
     expect(enhanced).not.toContain("font-size:96px");
     expect(enhanced).not.toContain("width:900px");
@@ -232,6 +235,7 @@ describe("owner adapters and rich media model", () => {
     expect(enhanceDetailRichTextForDisplay(enhanced)).toBe(enhanced);
     expect(stylesheet).toContain("$detail-section-title-size: 34rpx");
     expect(stylesheet).toContain("$detail-body-size: 30rpx");
+    expect(stylesheet).not.toMatch(/img\s*\{[^}]*width:\s*100%;/u);
     expect(stylesheet).toMatch(/h1\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?font-weight:\s*700;/u);
   });
 
@@ -343,6 +347,20 @@ describe("recoverable detail media", () => {
     expect(getVideoAspectRatioPadding({ width: 1920, height: 1080 })).toBe("56.25%");
     expect(getVideoAspectRatioPadding({ width: null, height: null })).toBe("56.25%");
     expect(getVideoAspectRatioPadding({ width: 0, height: 1080 })).toBe("56.25%");
+    const videoSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailVideoBlock.tsx"),
+      "utf8"
+    );
+    const stylesheet = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/detail-page.scss"),
+      "utf8"
+    );
+    expect(videoSource).toContain('className: "detail-video-wrap detail-video-wrap--intrinsic"');
+    expect(videoSource).toContain("maxWidth: `${width}px`");
+    expect(videoSource).toContain("aspectRatio: `${width} / ${height}`");
+    expect(videoSource).toContain("paddingBottom: getVideoAspectRatioPadding(block)");
+    expect(stylesheet).toContain(".detail-video-wrap--intrinsic");
+    expect(stylesheet).toMatch(/\.detail-video-wrap--intrinsic\s*\{[\s\S]*?height:\s*auto;[\s\S]*?padding-bottom:\s*0;[\s\S]*?aspect-ratio:\s*16 \/ 9;/u);
   });
 
   it("wires banner image failures to a visible non-interactive pull-refresh prompt", () => {

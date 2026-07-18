@@ -314,11 +314,13 @@ describe("detail page presentation resolver", () => {
       '<h1 class="title" style="padding-left:99px;color:#333;font-size:96px;font-weight:300">单行标题<strong style="font-size:72px;font-weight:400;color:#b77836">重点</strong></h1>',
       '<h1>多行标题<br><span style="font-size:3em"><em style="font-size:192rpx;background:#fff">第二行</em></span></h1>',
       '<p style="font-size:18px">保留的正文字号</p>',
-      '<img data-media-asset-id="9" src="/wide.jpg" alt="宴会厅" loading="lazy" style="width:900px;border:1px solid red">'
+      '<img data-media-asset-id="9" src="/small.jpg" width="320" height="180" alt="宴会厅" loading="lazy" style="width:900px;border:1px solid red">',
+      '<img data-media-asset-id="10" src="/legacy.jpg" alt="缺失尺寸">'
     ].join("");
     const enhanced = enhanceDetailRichTextForPresentation(source);
 
     expect(enhanced).toContain('data-detail-rich-text-target="weapp"');
+    expect(enhanced).toContain('data-detail-rich-text-version="4"');
     expect(enhanced).toContain("font-size:15px;line-height:1.72");
     expect(enhanced.match(/data-detail-heading="true"/gu)).toHaveLength(3);
     expect(enhanced).not.toMatch(/<\/?h1\b/iu);
@@ -333,6 +335,7 @@ describe("detail page presentation resolver", () => {
     expect(enhanced.match(/display:block;box-sizing:border-box;min-width:0;flex:1/gu)).toHaveLength(3);
     expect(enhanced).toMatch(/单行标题<strong[^>]*font-size:inherit[^>]*>重点<\/strong>/u);
     expect(enhanced).toMatch(/多行标题<br[^>]*font-size:inherit[^>]*>.*第二行/su);
+    expect(enhanced).toContain("width:320px;max-width:100%;height:auto");
     expect(enhanced).toContain("width:100%;max-width:100%;height:auto");
     expect(enhanced).toContain("color:#333");
     expect(enhanced).toContain("color:#b77836");
@@ -346,6 +349,8 @@ describe("detail page presentation resolver", () => {
     expect(enhanced).not.toContain("font-weight:400");
     expect(enhanced).toContain("border:1px solid red");
     expect(enhanced).toContain('data-media-asset-id="9"');
+    expect(enhanced).toContain('width="320"');
+    expect(enhanced).toContain('height="180"');
     expect(enhanced).toContain('alt="宴会厅"');
     expect(enhanced).toContain('loading="lazy"');
     expect(enhanced).not.toContain("padding-left:99px");
@@ -361,12 +366,13 @@ describe("detail page presentation resolver", () => {
     expect(enhanceDetailRichTextForPresentation(adminEnhanced, { target: "admin" })).toBe(adminEnhanced);
   });
 
-  it("upgrades V2 same-target output before becoming idempotent", () => {
-    const v2 = '<div data-detail-rich-text-root="true" data-detail-rich-text-target="weapp" style="font-size:15px;line-height:1.72"><div data-detail-heading="true" style="font-size:16px;line-height:1.35"><span data-detail-heading-marker="true"></span><span data-detail-heading-content="true">旧标题</span></div><p>正文</p></div>';
-    const upgraded = enhanceDetailRichTextForPresentation(v2, { target: "weapp" });
+  it("upgrades previous same-target output before becoming idempotent", () => {
+    const v3 = '<div data-detail-rich-text-root="true" data-detail-rich-text-target="weapp" data-detail-rich-text-version="3" style="font-size:15px;line-height:1.72"><div data-detail-heading="true" style="font-size:16px;line-height:1.35"><span data-detail-heading-marker="true"></span><span data-detail-heading-content="true">旧标题</span></div><p><img src="/small.jpg" width="240" height="160" style="width:100%;max-width:100%;height:auto"></p></div>';
+    const upgraded = enhanceDetailRichTextForPresentation(v3, { target: "weapp" });
 
-    expect(upgraded).toContain('data-detail-rich-text-version="3"');
+    expect(upgraded).toContain('data-detail-rich-text-version="4"');
     expect(upgraded).toContain("font-size:17px;font-weight:700;line-height:1.35");
+    expect(upgraded).toContain("width:240px;max-width:100%;height:auto");
     expect(upgraded).not.toContain("font-size:16px");
     expect(enhanceDetailRichTextForPresentation(upgraded, { target: "weapp" })).toBe(upgraded);
   });

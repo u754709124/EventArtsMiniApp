@@ -112,6 +112,25 @@ export function normalizeMediaAssetId(value: unknown) {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+export function normalizeMediaDimension(value: unknown) {
+  const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const dimension = Number(raw);
+  return Number.isFinite(dimension) && dimension > 0 ? dimension : null;
+}
+
+function trustedMediaDimensionsFromElement(element: HTMLElement) {
+  const width = normalizeMediaDimension(element.getAttribute("width"));
+  const height = normalizeMediaDimension(element.getAttribute("height"));
+  return width && height ? { width, height } : { width: null, height: null };
+}
+
+function renderTrustedMediaDimensions(attributes: Record<string, unknown>) {
+  const width = normalizeMediaDimension(attributes.width);
+  const height = normalizeMediaDimension(attributes.height);
+  return width && height ? { width: String(width), height: String(height) } : {};
+}
+
 function normalizeAssetMediaSource(source: unknown, allowRemote: boolean) {
   if (typeof source !== "string") return null;
   const value = source.trim();
@@ -211,6 +230,8 @@ function createAssetImage(registry: TrustedMediaRegistry) {
       return {
         src: { default: null },
         mediaAssetId: { default: null },
+        width: { default: null },
+        height: { default: null },
         alt: { default: "内容图片" }
       };
     },
@@ -227,9 +248,12 @@ function createAssetImage(registry: TrustedMediaRegistry) {
             if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "image", mediaAssetId, src })) {
               return false;
             }
+            const dimensions = trustedMediaDimensionsFromElement(node);
             return {
               src: normalizedSrc,
               mediaAssetId,
+              width: dimensions.width,
+              height: dimensions.height,
               alt: node.getAttribute("alt")?.trim() || "内容图片"
             };
           }
@@ -249,7 +273,8 @@ function createAssetImage(registry: TrustedMediaRegistry) {
         mergeAttributes({
           src: normalizedSrc,
           alt: typeof node.attrs.alt === "string" && node.attrs.alt.trim() ? node.attrs.alt.trim() : "内容图片",
-          "data-media-asset-id": String(mediaAssetId)
+          "data-media-asset-id": String(mediaAssetId),
+          ...renderTrustedMediaDimensions(node.attrs)
         })
       ];
     }
@@ -268,7 +293,9 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
     addAttributes() {
       return {
         src: { default: null },
-        mediaAssetId: { default: null }
+        mediaAssetId: { default: null },
+        width: { default: null },
+        height: { default: null }
       };
     },
 
@@ -284,7 +311,8 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
             if (!mediaAssetId || !normalizedSrc || !registry.has({ mediaType: "video", mediaAssetId, src })) {
               return false;
             }
-            return { src: normalizedSrc, mediaAssetId };
+            const dimensions = trustedMediaDimensionsFromElement(node);
+            return { src: normalizedSrc, mediaAssetId, width: dimensions.width, height: dimensions.height };
           }
         }
       ];
@@ -302,6 +330,7 @@ function createAssetVideo(registry: TrustedMediaRegistry) {
         mergeAttributes({
           src: normalizedSrc,
           "data-media-asset-id": String(mediaAssetId),
+          ...renderTrustedMediaDimensions(node.attrs),
           controls: "",
           preload: "metadata"
         })

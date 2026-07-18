@@ -45,7 +45,7 @@ const detailHeadingDescendantPattern = /<[a-z][\w:-]*\b[^>]*>/giu;
 const detailPresentationRootPattern =
   /^<div\b(?=[^>]*\bdata-detail-rich-text-root\s*=\s*(?:"true"|'true'|true))(?=[^>]*\bdata-detail-rich-text-target\s*=\s*(?:"(admin|weapp)"|'(admin|weapp)'|(admin|weapp)))[^>]*>([\s\S]*)<\/div\s*>$/iu;
 const currentDetailPresentationVersionPattern =
-  /\bdata-detail-rich-text-version\s*=\s*(?:"3"|'3'|3)/iu;
+  /\bdata-detail-rich-text-version\s*=\s*(?:"4"|'4'|4)/iu;
 
 function mergeInlineStyle(
   existing: string,
@@ -138,13 +138,34 @@ const detailRichTextRootStyles: readonly StyleDeclaration[] = [
   ["line-height", "1.72"]
 ];
 
-const detailImageStyles: readonly StyleDeclaration[] = [
-  ["display", "block"],
-  ["box-sizing", "border-box"],
-  ["width", "100%"],
-  ["max-width", "100%"],
-  ["height", "auto"]
-];
+function tagAttributeValue(tag: string, attribute: string) {
+  const pattern = new RegExp(`\\s${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "iu");
+  const match = pattern.exec(tag);
+  return match ? (match[1] ?? match[2] ?? match[3] ?? "") : "";
+}
+
+function positiveNumericAttribute(tag: string, attribute: string) {
+  const value = tagAttributeValue(tag, attribute).trim();
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
+function formatPx(value: number) {
+  return Number.isInteger(value) ? `${value}px` : `${value.toFixed(3).replace(/0+$/u, "").replace(/\.$/u, "")}px`;
+}
+
+function detailImageStylesForTag(tag: string): readonly StyleDeclaration[] {
+  const width = positiveNumericAttribute(tag, "width");
+  const height = positiveNumericAttribute(tag, "height");
+  return [
+    ["display", "block"],
+    ["box-sizing", "border-box"],
+    ["width", width && height ? formatPx(width) : "100%"],
+    ["max-width", "100%"],
+    ["height", "auto"]
+  ];
+}
 
 function normalizeHeadingContent(content: string) {
   const contentWithoutMarkers = content.replace(detailHeadingMarkerElementPattern, "");
@@ -212,10 +233,10 @@ export function enhanceDetailRichTextForPresentation(
       renderHeading(openingTag, content, target)
     );
   const imageNormalized = headingNormalized.replace(/<img\b[^>]*>/giu, (tag) =>
-    mergeTagStyle(tag, detailImageStyles)
+    mergeTagStyle(tag, detailImageStylesForTag(tag))
   );
   const rootOpeningTag = mergeTagStyle(
-    `<div data-detail-rich-text-root="true" data-detail-rich-text-target="${target}" data-detail-rich-text-version="3">`,
+    `<div data-detail-rich-text-root="true" data-detail-rich-text-target="${target}" data-detail-rich-text-version="4">`,
     detailRichTextRootStyles,
     ["font"]
   );

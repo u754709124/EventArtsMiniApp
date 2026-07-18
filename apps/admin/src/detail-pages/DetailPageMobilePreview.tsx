@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import {
   enhanceDetailRichTextForPresentation,
   resolveDetailPagePresentation,
@@ -8,10 +9,20 @@ import {
 } from "@event-arts/shared";
 import "./detail-page-preview.css";
 
+function positiveDimension(value: number | null) {
+  return Number.isFinite(value) && Number(value) > 0 ? Number(value) : null;
+}
+
 function videoAspectRatio(block: Extract<DetailPageContentBlockDto, { type: "video" }>) {
   return block.width && block.height && block.width > 0 && block.height > 0
     ? `${block.width} / ${block.height}`
     : "16 / 9";
+}
+
+function intrinsicMediaWidthStyle(block: Pick<Extract<DetailPageContentBlockDto, { type: "video" }>, "width" | "height">): CSSProperties {
+  const width = positiveDimension(block.width);
+  const height = positiveDimension(block.height);
+  return width && height ? { maxWidth: `${width}px` } : {};
 }
 
 function PreviewBlock({
@@ -23,7 +34,7 @@ function PreviewBlock({
 }) {
   if (block.type === "video") {
     return (
-      <section className="detail-preview-video-wrap">
+      <section className="detail-preview-video-wrap" style={intrinsicMediaWidthStyle(block)}>
         <video
           className="detail-preview-video"
           src={block.url}

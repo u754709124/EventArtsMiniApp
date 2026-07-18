@@ -10,7 +10,7 @@ import { adminApi, adminPath, adminToken, apiBase, chooseDetailMediaFromLibrary,
 test.describe.configure({ mode: "serial" });
 
 type DetailPageSummary = { id: number; name: string; type: string; typeLabel: string; referenceCount: number };
-type MediaAssetSummary = { id: number; resourceName: string; url: string };
+type MediaAssetSummary = { id: number; resourceName: string; url: string; width: number | null; height: number | null };
 type BackupSummary = {
   id: string;
   note: string | null;
@@ -1124,8 +1124,10 @@ test("详情页管理预览可创建 BANNER 富文本并被人员引用", async 
   const balanced = media.items.find((asset) => asset.resourceName === "banner-linran-balanced.png");
   const close = media.items.find((asset) => asset.resourceName === "banner-linran-close.png");
   const wide = media.items.find((asset) => asset.resourceName === "banner-linran-wide.png");
-  expect(balanced && close && wide).toBeTruthy();
-  if (!balanced || !close || !wide) throw new Error("详情页 BANNER 种子资源缺失");
+  const richImage = media.items.find((asset) => asset.resourceName === "advantage-experience.png");
+  const richVideo = media.items.find((asset) => asset.resourceName === "detail-case-demo.mp4");
+  expect(balanced && close && wide && richImage && richVideo).toBeTruthy();
+  if (!balanced || !close || !wide || !richImage || !richVideo) throw new Error("详情页种子资源缺失");
   await page.getByRole("button", { name: "将 banner-linran-wide.png 上移" }).click();
   await expect(page.getByTestId(`detail-banner-order-${wide.id}`)).toHaveText("第 2 张");
   await expect(page.getByTestId(`detail-banner-order-${close.id}`)).toHaveText("第 3 张");
@@ -1153,6 +1155,30 @@ test("详情页管理预览可创建 BANNER 富文本并被人员引用", async 
   });
   await expect(livePreview.locator(".detail-preview-banner.is-current")).toHaveCSS("object-fit", "cover");
   await expect(livePreview.locator("video")).toHaveCount(1);
+  const previewMediaGeometry = await livePreview.evaluate((root) => {
+    const image = root.querySelector(".detail-preview-rich-text img") as HTMLImageElement | null;
+    const videoWrap = root.querySelector(".detail-preview-video-wrap") as HTMLElement | null;
+    const video = videoWrap?.querySelector("video") as HTMLVideoElement | null;
+    if (!image || !videoWrap || !video) throw new Error("后台详情预览媒体结构缺失");
+    return {
+      imageWidth: image.getBoundingClientRect().width,
+      imageInlineWidth: image.style.width,
+      imageInlineMaxWidth: image.style.maxWidth,
+      videoWrapWidth: videoWrap.getBoundingClientRect().width,
+      videoWrapMaxWidth: videoWrap.style.maxWidth,
+      videoAspectRatio: video.style.aspectRatio,
+      videoWidth: video.getBoundingClientRect().width
+    };
+  });
+  if (!richImage.width || !richImage.height || !richVideo.width || !richVideo.height) {
+    throw new Error("详情页富文本种子媒体缺少尺寸");
+  }
+  expect(previewMediaGeometry.imageInlineWidth).toBe(`${richImage.width}px`);
+  expect(previewMediaGeometry.imageInlineMaxWidth).toBe("100%");
+  expect(previewMediaGeometry.imageWidth).toBeLessThanOrEqual(richImage.width + 1);
+  expect(previewMediaGeometry.videoWrapMaxWidth).toBe(`${richVideo.width}px`);
+  expect(previewMediaGeometry.videoAspectRatio).toBe(`${richVideo.width} / ${richVideo.height}`);
+  expect(previewMediaGeometry.videoWidth).toBeLessThanOrEqual(richVideo.width + 1);
 
   await page.getByTestId("detail-designer-save").click();
   await waitForToast(page, "保存成功");

@@ -16,6 +16,7 @@ import "./rich-text-editor.css";
 
 export {
   isSafeAssetMediaSource,
+  normalizeMediaDimension,
   normalizeMediaAssetId,
   sanitizeRichTextClassName,
   sanitizeRichTextStyle
@@ -266,10 +267,16 @@ export function RichTextEditorField({
     if (asset.mediaType === "image") {
       insert({
         type: "assetImage",
-        attrs: { src: asset.url, mediaAssetId, alt: asset.resourceName || "内容图片" }
+        attrs: {
+          src: asset.url,
+          mediaAssetId,
+          width: asset.width,
+          height: asset.height,
+          alt: asset.resourceName || "内容图片"
+        }
       });
     } else {
-      insert({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId } });
+      insert({ type: "assetVideo", attrs: { src: asset.url, mediaAssetId, width: asset.width, height: asset.height } });
     }
     setPickerType(null);
   }
