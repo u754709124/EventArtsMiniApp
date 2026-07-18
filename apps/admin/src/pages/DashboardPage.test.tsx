@@ -110,7 +110,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/最近成功刷新/).textContent).toContain("北京时间");
   });
 
-  it("adapts the recent traffic and request units without changing package units", async () => {
+  it("adapts recent and package traffic and request units independently", async () => {
     const overview = readyOverview(1);
     if (overview.edgeOne.status !== "ready") throw new Error("测试数据必须为 ready");
     overview.edgeOne.last24Hours.trafficBytes = 999_000_000;
@@ -123,8 +123,8 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByLabelText("999.00 MB")).toBeTruthy();
     expect(screen.getByLabelText("999 次")).toBeTruthy();
-    expect(screen.getByTestId("dashboard-edgeone-package-traffic").textContent).toContain("0.50 GB / 10.00 GB");
-    expect(screen.getByTestId("dashboard-edgeone-package-requests").textContent).toContain("0.00 M / 20.00 M");
+    expect(screen.getByTestId("dashboard-edgeone-package-traffic").textContent).toContain("500.00 MB / 10.00 GB");
+    expect(screen.getByTestId("dashboard-edgeone-package-requests").textContent).toContain("500 次 / 20.00 M");
   });
 
   it("uses one aggregate request to refresh all seven cards and suppresses overlapping clicks", async () => {

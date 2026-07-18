@@ -595,6 +595,8 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   if (dashboardData.edgeOne.status !== "ready") throw new Error("E2E fixture must be ready");
   dashboardData.edgeOne.last24Hours.trafficBytes = 750_000_000;
   dashboardData.edgeOne.last24Hours.requestCount = 999;
+  dashboardData.edgeOne.package.trafficUsedBytes = 500_000_000;
+  dashboardData.edgeOne.package.requestUsed = 999;
   const leaveOnlySecret = ["leave", "only", Date.now()].join("-");
   await page.getByTestId("edgeone-secret-key").fill(leaveOnlySecret);
   page.once("dialog", (dialog) => dialog.accept());
@@ -613,8 +615,8 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   await page.goto(adminPath("/dashboard"));
   await expect(page.getByTestId("dashboard-edgeone-last24-traffic")).toContainText("750.00 MB");
   await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("999 次");
-  await expect(page.getByTestId("dashboard-edgeone-package-traffic")).toContainText("4.00 GB / 20.00 GB");
-  await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("6.00 M / 40.00 M");
+  await expect(page.getByTestId("dashboard-edgeone-package-traffic")).toContainText("500.00 MB / 20.00 GB");
+  await expect(page.getByTestId("dashboard-edgeone-package-requests")).toContainText("999 次 / 40.00 M");
   await expect(page.getByLabel("EdgeOne 配置信息")).toContainText("Zone zone-e2e");
   await expect(page.getByLabel("EdgeOne 配置信息")).toContainText("套餐 plan-e2e");
   await expect(page.getByText("最近成功刷新：", { exact: false })).toBeVisible();

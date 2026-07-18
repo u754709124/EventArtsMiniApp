@@ -48,9 +48,9 @@ export function formatLast24Requests(value: number): DashboardMetricDisplay {
 }
 
 export function formatPackageTraffic(value: number): DashboardMetricDisplay {
-  return scaledMetric(value, decimalGigabyte, "GB");
+  return formatLast24Traffic(value);
 }
 
 export function formatPackageRequests(value: number): DashboardMetricDisplay {
-  return scaledMetric(value, decimalMillion, "M");
+  return formatLast24Requests(value);
 }

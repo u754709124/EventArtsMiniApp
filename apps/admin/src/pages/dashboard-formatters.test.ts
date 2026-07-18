@@ -26,10 +26,11 @@ describe("dashboard EdgeOne formatters", () => {
     expect(formatLast24Requests(value).text).toBe(expected);
   });
 
-  it("keeps package traffic and request units fixed", () => {
-    expect(formatPackageTraffic(500_000_000).text).toBe("0.50 GB");
+  it("applies the adaptive units to package traffic and requests", () => {
+    expect(formatPackageTraffic(500_000_000).text).toBe("500.00 MB");
     expect(formatPackageTraffic(20_000_000_000).text).toBe("20.00 GB");
-    expect(formatPackageRequests(500).text).toBe("0.00 M");
+    expect(formatPackageRequests(500).text).toBe("500 次");
+    expect(formatPackageRequests(125_000).text).toBe("125.00 K");
     expect(formatPackageRequests(40_000_000).text).toBe("40.00 M");
   });
 });
