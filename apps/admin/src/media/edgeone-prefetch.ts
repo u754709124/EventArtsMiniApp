@@ -33,6 +33,15 @@ export const edgeOnePrefetchStatusMeta: Record<
   invalid: { label: "资源无效", color: "error", active: false }
 };
 
+export function edgeOnePrefetchSafeFailureReason(row: SafeEdgeOnePrefetchResource) {
+  const code = row.safeErrorCode?.trim();
+  const message = row.safeErrorMessage?.trim();
+  if (code && message) return `${code}：${message}`;
+  if (message) return message;
+  if (code) return code;
+  return "预热失败，暂无可展示原因";
+}
+
 export function triggerEdgeOnePrefetch() {
   return request<EdgeOnePrefetchTriggerResponse>("/api/admin/edgeone/prefetch", {
     method: "POST",

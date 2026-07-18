@@ -1,6 +1,7 @@
 import type {
   AdminNotificationCreateRequest,
   AdminNotificationCreateResponse,
+  AdminNotificationLevel,
   AdminNotificationListResponse,
   ApiResponse,
   BackupCreateRequest,
@@ -186,8 +187,9 @@ export function persistAdminNotification(payload: AdminNotificationCreateRequest
   }, { handleSessionExpiry: false });
 }
 
-export function listAdminNotifications(page = 1, pageSize = 20) {
+export function listAdminNotifications(page = 1, pageSize = 20, options: { level?: AdminNotificationLevel } = {}) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (options.level) params.set("level", options.level);
   return request<AdminNotificationListResponse>(`/api/admin/notifications?${params}`);
 }
 

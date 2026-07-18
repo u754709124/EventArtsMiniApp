@@ -547,6 +547,28 @@ body {
   margin-bottom: 12px;
 }
 
+.media-prefetch-status-cell {
+  display: grid;
+  max-width: 220px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.media-prefetch-status-cell .ant-tag {
+  width: fit-content;
+}
+
+.media-prefetch-status-cell__reason {
+  display: block;
+  min-width: 0;
+  color: #7a2f25;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .media-prefetch-action.ant-btn,
 .media-prefetch-refresh.ant-btn,
 .media-prefetch-summary .ant-btn {

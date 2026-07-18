@@ -1,27 +1,13 @@
-import {
-  CheckCircleFilled,
-  CloseCircleFilled,
-  InfoCircleFilled,
-  WarningFilled
-} from "@ant-design/icons";
-import { Alert, Button, Drawer, Empty, Skeleton, Spin } from "antd";
+import { Alert, Button, Drawer, Empty, Skeleton, Spin, Tooltip } from "antd";
 import { useEffect, useState } from "react";
-import type { AdminNotificationDto, AdminNotificationLevel } from "@event-arts/shared";
+import type { AdminNotificationDto } from "@event-arts/shared";
 import { listAdminNotifications } from "../api";
 
 const pageSize = 20;
-const labels: Record<AdminNotificationLevel, string> = {
-  success: "成功",
-  error: "失败",
-  warning: "警告",
-  info: "提示"
-};
-const icons = {
-  success: <CheckCircleFilled />,
-  error: <CloseCircleFilled />,
-  warning: <WarningFilled />,
-  info: <InfoCircleFilled />
-};
+
+function formatLogTime(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+}
 
 export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [items, setItems] = useState<AdminNotificationDto[]>([]);
@@ -34,14 +20,14 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
     setLoading(true);
     setError(null);
     try {
-      const result = await listAdminNotifications(nextPage, pageSize);
+      const result = await listAdminNotifications(nextPage, pageSize, { level: "error" });
       setItems((current) => append
         ? [...current, ...result.items.filter((item) => !current.some((existing) => existing.id === item.id))]
         : result.items);
       setPage(result.pagination.page);
       setTotal(result.pagination.total);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "历史消息加载失败");
+      setError(loadError instanceof Error ? loadError.message : "失败日志加载失败");
     } finally {
       setLoading(false);
     }
@@ -60,7 +46,7 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
   return (
     <Drawer
       className="notification-history"
-      title="最近 7 天消息"
+      title="最近 7 天失败日志"
       size={420}
       open={open}
       onClose={onClose}
@@ -71,30 +57,28 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
           data-testid="notification-history-error"
           type="error"
           showIcon
-          title="历史消息加载失败"
+          title="失败日志加载失败"
           description={error}
           action={<Button onClick={() => void load(1, false)}>重试</Button>}
         />
       ) : (
         <Skeleton loading={loading && !items.length} active>
           {!items.length ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近 7 天暂无消息" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近 7 天暂无失败日志" />
           ) : (
             <>
               <div className="notification-history__list" aria-busy={loading}>
                 {items.map((item) => (
-                  <article className={`notification-history__item notification-history__item--${item.level}`} key={item.id}>
-                    <span className="notification-history__icon" aria-hidden="true">{icons[item.level]}</span>
-                    <div>
-                      <div className="notification-history__meta">
-                        <strong>{labels[item.level]}</strong>
-                        <time dateTime={item.occurredAt}>
-                          {new Date(item.occurredAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
-                        </time>
-                      </div>
+                  <Tooltip key={item.id} title={item.message} placement="topLeft">
+                    <article
+                      className="notification-history__item notification-history__item--error"
+                      tabIndex={0}
+                      aria-label={`发生时间 ${formatLogTime(item.occurredAt)}，错误原因 ${item.message}`}
+                    >
+                      <time dateTime={item.occurredAt}>{formatLogTime(item.occurredAt)}</time>
                       <p>{item.message}</p>
-                    </div>
-                  </article>
+                    </article>
+                  </Tooltip>
                 ))}
               </div>
               {error && (
@@ -102,7 +86,7 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
                   className="notification-history__append-error"
                   type="error"
                   showIcon
-                  title="更多消息加载失败"
+                  title="更多失败日志加载失败"
                   action={<Button onClick={() => void load(page + 1, true)}>重试</Button>}
                 />
               )}

@@ -130,12 +130,12 @@ export function AdminLayout() {
       <Layout className="admin-main">
         <Layout.Header className="admin-header">
           <div className="admin-header__account">
-            <Tooltip title="历史消息">
+            <Tooltip title="日志查看">
               <Button
                 className="admin-header__history"
                 type="text"
                 icon={<HistoryOutlined />}
-                aria-label="查看最近 7 天历史消息"
+                aria-label="查看最近 7 天失败日志"
                 onClick={() => setHistoryOpen(true)}
               />
             </Tooltip>

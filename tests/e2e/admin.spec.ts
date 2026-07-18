@@ -384,7 +384,7 @@ test("登录成功进入看板并展示 PV", async ({ page }) => {
   await expect(page.getByTestId("dashboard-pv-month")).toContainText(/本月浏览量.*\d+/s);
 });
 
-test("统一通知支持主题堆叠、进度补位和跨浏览器历史", async ({ page, browser }) => {
+test("统一通知支持主题堆叠、进度补位和跨浏览器失败日志", async ({ page, browser }) => {
   await page.route("**/api/admin/auth/logout", async (route) => {
     await route.fulfill({
       status: 503,
@@ -463,18 +463,21 @@ test("统一通知支持主题堆叠、进度补位和跨浏览器历史", async
   const failureTopAfter = (await failureToast.boundingBox())!.y;
   expect(failureTopAfter).toBeLessThan(failureTopBefore);
 
-  await page.getByRole("button", { name: "查看最近 7 天历史消息" }).click();
-  const historyDrawer = page.getByRole("dialog", { name: "最近 7 天消息" });
-  await expect(historyDrawer).toContainText("登录成功");
+  await page.getByRole("button", { name: "查看最近 7 天失败日志" }).click();
+  const historyDrawer = page.getByRole("dialog", { name: "最近 7 天失败日志" });
+  await expect(historyDrawer).not.toContainText("登录成功");
   await expect(historyDrawer).toContainText("E2E 退出失败");
+  const failureLogRow = historyDrawer.getByRole("article", { name: /错误原因 E2E 退出失败/ });
+  await failureLogRow.hover();
+  await expect(page.getByRole("tooltip")).toContainText("E2E 退出失败");
   await historyDrawer.getByRole("button", { name: /close|关闭/i }).click();
 
   const secondContext = await browser.newContext({ baseURL: "http://127.0.0.1:5173" });
   const secondPage = await secondContext.newPage();
   try {
     await loginAdminUi(secondPage);
-    await secondPage.getByRole("button", { name: "查看最近 7 天历史消息" }).click();
-    const secondHistory = secondPage.getByRole("dialog", { name: "最近 7 天消息" });
+    await secondPage.getByRole("button", { name: "查看最近 7 天失败日志" }).click();
+    const secondHistory = secondPage.getByRole("dialog", { name: "最近 7 天失败日志" });
     await expect(secondHistory).toContainText("E2E 退出失败");
   } finally {
     await secondContext.close();
@@ -1464,7 +1467,8 @@ test("EdgeOne 预热仅提交一次并在窄屏显示可恢复状态", async ({ 
   await loginAdminUi(page);
   await page.setViewportSize({ width: 375, height: 812 });
   let triggerCalls = 0;
-  let status: "processing" | "success" = "processing";
+  let status: "failed" | "success" = "failed";
+  const safeFailureReason = "CAM 子账号缺少预热查询权限";
   const asset = {
     id: 901,
     resourceName: "edgeone-prefetch.jpg",
@@ -1511,8 +1515,8 @@ test("EdgeOne 预热仅提交一次并在窄屏显示可恢复状态", async ({ 
             nextRetryAt: null,
             lastSubmittedAt: "2026-07-17T00:00:00.000Z",
             completedAt: status === "success" ? "2026-07-17T00:00:10.000Z" : null,
-            safeErrorCode: null,
-            safeErrorMessage: null,
+            safeErrorCode: status === "failed" ? "EDGEONE_PERMISSION_DENIED" : null,
+            safeErrorMessage: status === "failed" ? safeFailureReason : null,
             updatedAt: "2026-07-17T00:00:10.000Z"
           }],
           total: 1,
@@ -1552,6 +1556,8 @@ test("EdgeOne 预热仅提交一次并在窄屏显示可恢复状态", async ({ 
   });
 
   await page.goto(adminPath("/media-assets"));
+  await expect(page.getByText("预热失败")).toBeVisible();
+  await expect(page.getByTitle(`EDGEONE_PERMISSION_DENIED：${safeFailureReason}`)).toBeVisible();
   const trigger = page.getByTestId("media-edgeone-prefetch");
   await trigger.dblclick();
   await expect(page.getByRole("dialog")).toHaveCount(1);

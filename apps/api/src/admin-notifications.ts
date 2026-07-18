@@ -107,6 +107,7 @@ export async function listAdminNotifications(
   const cutoff = adminNotificationCutoff(now);
   const where = {
     adminId: input.adminId,
+    ...(input.query.level ? { level: input.query.level } : {}),
     occurredAt: { gte: cutoff, lte: new Date(now.getTime() + ADMIN_NOTIFICATION_MAX_FUTURE_SKEW_MS) }
   } satisfies Prisma.AdminNotificationWhereInput;
 

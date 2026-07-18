@@ -89,4 +89,70 @@ describe("MediaPage EdgeOne prefetch", () => {
     resolvePrefetch({ submitted: 1, skipped: 0, ineligible: 0, failed: 0, items: [] });
     await waitFor(() => expect(notificationMocks.success).toHaveBeenCalledOnce());
   });
+
+  it.each([
+    {
+      safeErrorCode: "EDGEONE_PERMISSION_DENIED",
+      safeErrorMessage: "CAM 子账号缺少预热查询权限",
+      expected: "EDGEONE_PERMISSION_DENIED：CAM 子账号缺少预热查询权限"
+    },
+    {
+      safeErrorCode: null,
+      safeErrorMessage: null,
+      expected: "预热失败，暂无可展示原因"
+    }
+  ])("shows the safe failure reason in the failed resource row", async (failure) => {
+    const asset = {
+      id: 901,
+      resourceName: "prefetch.jpg",
+      originalName: "prefetch.jpg",
+      filename: "prefetch.jpg",
+      md5: "0123456789abcdef0123456789abcdef",
+      mimeType: "image/jpeg",
+      mediaType: "image",
+      url: "/uploads/prefetch.jpg",
+      width: 710,
+      height: 290,
+      size: 1024,
+      storageType: "local",
+      createdBy: 1,
+      createdByName: "admin",
+      createdAt: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:00.000Z",
+      tags: [],
+      inUse: false,
+      referenceCount: 0
+    };
+    apiMocks.request.mockImplementation((url: string) => {
+      if (url.startsWith("/api/admin/media-assets?")) {
+        return Promise.resolve({ items: [asset], total: 1, page: 1, pageSize: 20 });
+      }
+      if (url === "/api/admin/media-assets/tags") return Promise.resolve({ items: [] });
+      if (url.startsWith("/api/admin/edgeone/prefetch?")) {
+        return Promise.resolve({
+          items: [{
+            id: 1,
+            mediaAssetId: asset.id,
+            mode: "default",
+            status: "failed",
+            attemptCount: 1,
+            nextRetryAt: null,
+            lastSubmittedAt: "2026-07-17T00:00:00.000Z",
+            completedAt: "2026-07-17T00:00:10.000Z",
+            safeErrorCode: failure.safeErrorCode,
+            safeErrorMessage: failure.safeErrorMessage,
+            updatedAt: "2026-07-17T00:00:10.000Z"
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 100
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<MediaPage />);
+    expect(await screen.findByText(failure.expected)).toBeTruthy();
+    expect(screen.getByLabelText(`预热失败：${failure.expected}`)).toBeTruthy();
+  });
 });

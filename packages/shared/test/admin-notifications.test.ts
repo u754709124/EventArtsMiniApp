@@ -38,11 +38,13 @@ describe("admin notification contracts", () => {
 
   it("coerces and bounds pagination", () => {
     expect(adminNotificationListQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
-    expect(adminNotificationListQuerySchema.parse({ page: "2", pageSize: "100" })).toEqual({
+    expect(adminNotificationListQuerySchema.parse({ page: "2", pageSize: "100", level: "error" })).toEqual({
       page: 2,
-      pageSize: 100
+      pageSize: 100,
+      level: "error"
     });
     expect(adminNotificationListQuerySchema.safeParse({ page: 0 }).success).toBe(false);
     expect(adminNotificationListQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+    expect(adminNotificationListQuerySchema.safeParse({ level: "fatal" }).success).toBe(false);
   });
 });

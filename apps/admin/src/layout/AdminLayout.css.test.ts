@@ -51,6 +51,15 @@ describe("AdminLayout CSS contract", () => {
     expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*border-radius:\s*50%/s);
     expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*pointer-events:\s*auto/s);
     expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*background:\s*var\(--notification-surface\)/s);
+    expect(notificationCss).not.toMatch(/\.notification-toast__close\s*\{[^}]*background:\s*var\(--notification-accent\)/s);
     expect(notificationCss).toMatch(/\.notification-toast__close:focus-visible\s*\{/);
+  });
+
+  it("keeps failure logs and prefetch reasons on one ellipsized line", () => {
+    expect(notificationCss).toMatch(/\.notification-history__item p\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s);
+    expect(rule(".media-prefetch-status-cell__reason")).toMatch(/overflow:\s*hidden/);
+    expect(rule(".media-prefetch-status-cell__reason")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".media-prefetch-status-cell__reason")).toMatch(/white-space:\s*nowrap/);
   });
 });

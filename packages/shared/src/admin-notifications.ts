@@ -33,7 +33,8 @@ export const adminNotificationCreateRequestSchema = z.object({
 
 export const adminNotificationListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(adminNotificationLimits.pageSizeMax).default(20)
+  pageSize: z.coerce.number().int().positive().max(adminNotificationLimits.pageSizeMax).default(20),
+  level: AdminNotificationLevelSchema.optional()
 }).strict();
 
 export const adminNotificationCreateResponseSchema = z.object({

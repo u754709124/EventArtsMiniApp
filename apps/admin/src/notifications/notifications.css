@@ -48,19 +48,29 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 2px solid var(--notification-surface);
+  border: 1px solid var(--notification-border);
   border-radius: 50%;
-  color: #fff;
-  background: var(--notification-accent);
-  box-shadow: 0 4px 12px rgb(43 33 24 / 24%);
+  color: var(--notification-accent);
+  background: var(--notification-surface);
+  box-shadow: 0 4px 12px rgb(43 33 24 / 18%);
   cursor: pointer;
   pointer-events: auto;
   place-items: center;
   transform: translate(-50%, -50%);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .notification-toast__close:hover {
-  filter: brightness(0.92);
+  background: color-mix(in srgb, var(--notification-surface) 92%, var(--notification-accent));
+  box-shadow: 0 6px 14px rgb(43 33 24 / 22%);
+}
+
+.notification-toast__close:active {
+  transform: translate(-50%, -50%) scale(0.94);
 }
 
 .notification-toast__close:focus-visible {
@@ -138,20 +148,23 @@
 
 .notification-history__list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .notification-history__item {
   --history-accent: #76501e;
 
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 10px;
+  min-width: 0;
   padding: 13px;
   border: 1px solid #ece1d5;
   border-left: 3px solid var(--history-accent);
   border-radius: 8px;
   background: #fffdf9;
+  align-items: center;
 }
 
 .notification-history__item--success {
@@ -166,29 +179,26 @@
   --history-accent: #98670b;
 }
 
-.notification-history__icon,
-.notification-history__meta strong {
-  color: var(--history-accent);
+.notification-history__item:focus-visible {
+  outline: 3px solid rgb(180 35 46 / 24%);
+  outline-offset: 2px;
 }
 
-.notification-history__meta {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.notification-history__meta time {
+.notification-history__item time {
   color: #6f6258;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .notification-history__item p {
-  margin: 4px 0 0;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
+  min-width: 0;
+  margin: 0;
+  color: #2b2118;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notification-history__append-error,

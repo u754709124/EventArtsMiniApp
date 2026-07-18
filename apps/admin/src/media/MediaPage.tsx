@@ -9,6 +9,7 @@ import { MediaUploadAction } from "./MediaUploadAction";
 import { notify } from "../notifications/notification";
 import {
   edgeOnePrefetchErrorMessage,
+  edgeOnePrefetchSafeFailureReason,
   edgeOnePrefetchStatusMeta,
   listEdgeOnePrefetch,
   reconcileEdgeOnePrefetch,
@@ -317,7 +318,16 @@ export function MediaPage() {
         const row = prefetchRows.get(asset.id);
         if (!row) return <Tag>未预热</Tag>;
         const meta = edgeOnePrefetchStatusMeta[row.status];
-        return <Tag color={meta.color}>{meta.label}</Tag>;
+        if (row.status !== "failed") return <Tag color={meta.color}>{meta.label}</Tag>;
+        const reason = edgeOnePrefetchSafeFailureReason(row);
+        return (
+          <div className="media-prefetch-status-cell" aria-label={`${meta.label}：${reason}`}>
+            <Tag color={meta.color}>{meta.label}</Tag>
+            <Typography.Text className="media-prefetch-status-cell__reason" title={reason}>
+              {reason}
+            </Typography.Text>
+          </div>
+        );
       }
     },
     {

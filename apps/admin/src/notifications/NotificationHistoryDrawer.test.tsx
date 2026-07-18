@@ -55,24 +55,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("NotificationHistoryDrawer", () => {
-  it("shows semantic labels and loads the next page", async () => {
+  it("requests failure logs, exposes full reasons on focus, and loads the next page", async () => {
+    const longReason = "EdgeOne 预热失败：CAM 子账号缺少查询权限，请补充最小权限后重试";
     api.listAdminNotifications
       .mockResolvedValueOnce({
-        items: [item(2, "error", "保存失败")],
+        items: [item(2, "error", longReason)],
         pagination: { page: 1, pageSize: 20, total: 2, totalPages: 2 }
       })
       .mockResolvedValueOnce({
-        items: [item(1, "success", "保存成功")],
+        items: [item(1, "error", "退出登录失败")],
         pagination: { page: 2, pageSize: 20, total: 2, totalPages: 2 }
       });
 
     render(<NotificationHistoryDrawer open onClose={vi.fn()} />);
-    expect(await screen.findByText("保存失败")).toBeTruthy();
-    expect(screen.getByText("失败")).toBeTruthy();
+    const reason = await screen.findByText(longReason);
+    const row = reason.closest("article");
+    expect(row?.getAttribute("aria-label")).toContain(`错误原因 ${longReason}`);
+    expect(api.listAdminNotifications).toHaveBeenNthCalledWith(1, 1, 20, { level: "error" });
+    fireEvent.mouseOver(row!);
+    await waitFor(() => expect(screen.getAllByText(longReason).length).toBeGreaterThan(1));
     fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
-    expect(await screen.findByText("保存成功")).toBeTruthy();
-    expect(screen.getByText("成功")).toBeTruthy();
-    expect(api.listAdminNotifications).toHaveBeenNthCalledWith(2, 2, 20);
+    expect(await screen.findByText("退出登录失败")).toBeTruthy();
+    expect(api.listAdminNotifications).toHaveBeenNthCalledWith(2, 2, 20, { level: "error" });
   });
 
   it("shows empty state and a retryable load error", async () => {
@@ -86,6 +90,6 @@ describe("NotificationHistoryDrawer", () => {
     expect((await screen.findByTestId("notification-history-error")).textContent).toContain("服务不可用");
     fireEvent.click(screen.getByRole("button", { name: /重\s*试/ }));
     await waitFor(() => expect(api.listAdminNotifications).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("最近 7 天暂无消息")).toBeTruthy();
+    expect(await screen.findByText("最近 7 天暂无失败日志")).toBeTruthy();
   });
 });

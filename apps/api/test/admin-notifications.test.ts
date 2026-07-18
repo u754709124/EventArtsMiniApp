@@ -156,6 +156,32 @@ describe("admin notification API", () => {
     });
   });
 
+  it("filters a notification level before counting and paginating while preserving the default list", async () => {
+    const token = await login();
+    await postNotification(token, { level: "success", message: "saved", occurredAt: new Date(now.getTime() - 3_000).toISOString() });
+    await postNotification(token, { level: "error", message: "older error", occurredAt: new Date(now.getTime() - 2_000).toISOString() });
+    await postNotification(token, { level: "info", message: "hint", occurredAt: new Date(now.getTime() - 1_000).toISOString() });
+    await postNotification(token, { level: "error", message: "newer error" });
+
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/admin/notifications?page=1&pageSize=1&level=error",
+      headers: auth(token)
+    });
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().data).toMatchObject({
+      items: [{ level: "error", message: "newer error" }],
+      pagination: { page: 1, pageSize: 1, total: 2, totalPages: 2 }
+    });
+
+    const unfiltered = await app.inject({
+      method: "GET",
+      url: "/api/admin/notifications?page=1&pageSize=20",
+      headers: auth(token)
+    });
+    expect(unfiltered.json().data.pagination.total).toBe(4);
+  });
+
   it("retains the exact seven-day boundary, ignores older outbox events, and rejects excessive future skew", async () => {
     const token = await login();
     const boundary = new Date(now.getTime() - ADMIN_NOTIFICATION_RETENTION_MS);
@@ -218,5 +244,15 @@ describe("admin notification API", () => {
       headers: auth(token)
     });
     expect(page.statusCode).toBe(400);
+    const level = await app.inject({
+      method: "GET",
+      url: "/api/admin/notifications?level=fatal",
+      headers: auth(token)
+    });
+    expect(level.statusCode).toBe(400);
+    expect(level.json()).toMatchObject({
+      success: false,
+      error: { code: "VALIDATION_ERROR" }
+    });
   });
 });
