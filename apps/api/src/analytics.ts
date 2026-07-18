@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyticsFieldLimits } from "@event-arts/shared";
-import { loadApiConfig } from "./config";
+import { loadApiConfig, type LoadApiConfigOptions } from "./config";
 import { createPrismaClient, type AppPrismaClient } from "./db";
 import { ensureDatabaseSchema } from "./sqlite-schema";
 
@@ -317,36 +317,46 @@ function parsePageViewCleanupArgs(args: string[]) {
   return { dryRun };
 }
 
-export async function runPageViewCleanupCli(args = process.argv.slice(2)) {
+type AnalyticsCleanupCliRuntimeOptions = {
+  config?: LoadApiConfigOptions;
+  now?: () => Date;
+  leaseMs?: number;
+  writeOutput?: (line: string) => void;
+};
+
+export async function runPageViewCleanupCli(
+  args = process.argv.slice(2),
+  runtimeOptions: AnalyticsCleanupCliRuntimeOptions = {}
+) {
   const options = parsePageViewCleanupArgs(args);
-  const config = loadApiConfig();
+  const config = loadApiConfig(runtimeOptions.config);
   const prisma = createPrismaClient(config.databaseUrl);
   try {
     await ensureDatabaseSchema(prisma, { uploadDir: config.paths.uploadDir });
-    const now = new Date();
-    if (options.dryRun) {
-      const [legacyCount, dailyCount] = await Promise.all([
-        countExpiredPageViewEvents(prisma, { now, retentionDays: config.analytics.retentionDays }),
-        countExpiredDailyUserVisits(prisma, { now, retentionDays: config.analytics.retentionDays })
-      ]);
-      console.log(`Expired analytics rows would be deleted: ${legacyCount + dailyCount}`);
-      return { deletedCount: 0, dryRunCount: legacyCount + dailyCount, legacyCount, dailyCount };
-    }
-    const legacyResult = await cleanupExpiredPageViewEvents(prisma, {
-      now,
-      retentionDays: config.analytics.retentionDays
+    const [{ createScheduledTaskRunner }, { createScheduledTaskHandlers }] = await Promise.all([
+      import("./scheduled-tasks"),
+      import("./scheduled-task-handlers")
+    ]);
+    const runner = createScheduledTaskRunner({
+      prisma,
+      now: runtimeOptions.now,
+      leaseMs: runtimeOptions.leaseMs,
+      handlers: createScheduledTaskHandlers({
+        prisma,
+        publicBaseUrl: config.publicBaseUrl,
+        analytics: config.analytics,
+        edgeOne: {
+          credentialEncryptionKey: config.edgeOne.credentialEncryptionKey,
+          prefetch: config.edgeOne.prefetch
+        },
+        dryRun: options.dryRun,
+        writeOutput: runtimeOptions.writeOutput ?? console.log
+      })
     });
-    const dailyResult = await cleanupExpiredDailyUserVisits(prisma, {
-      now,
-      retentionDays: config.analytics.retentionDays
-    });
-    const deletedCount = legacyResult.deletedCount + dailyResult.deletedCount;
-    console.log(`Expired analytics rows deleted: ${deletedCount}`);
+    const result = await runner.run("analytics-cleanup");
     return {
-      deletedCount,
-      dryRunCount: null,
-      legacyDeletedCount: legacyResult.deletedCount,
-      dailyDeletedCount: dailyResult.deletedCount
+      ...result.resultSummary,
+      dryRunCount: options.dryRun ? result.resultSummary.dryRunCount ?? 0 : null
     };
   } finally {
     await prisma.$disconnect();

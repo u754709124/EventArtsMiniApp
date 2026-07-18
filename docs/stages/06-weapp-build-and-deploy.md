@@ -62,6 +62,7 @@ pnpm build:weapp
 - 首页视觉校准后复跑：`pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm --filter miniapp build:h5`、`pnpm build:weapp` 均通过；H5 截图已更新，Playwright 总数为 20。
 - `.env.example` 已修正为 `VITE_API_BASE_URL` 与 `TARO_APP_API_BASE_URL`。
 - README 已补全安装、数据库、seed、管理员 bootstrap、启动、构建、测试、生产注意事项、上传目录和对象存储预留说明。
+- 2026-07-18 定时任务集成后最终 `pnpm release:check` 通过：P0/P1 自动门禁、lint、全部单测、Playwright 58/58、API/Admin build、Miniapp H5 build 与 weapp build 均完成。
 
 ## 构建命令
 
@@ -95,6 +96,10 @@ apps/miniapp/dist
 - `VITE_API_BASE_URL`：后台构建或代理使用的 API Base URL。
 - `TARO_APP_API_BASE_URL`：小程序/H5 编译时 API Base URL。
 
+## 定时任务调度
+
+API 进程不启动常驻 cron daemon。生产部署调度器按 `Asia/Shanghai` 配置并调用现有 CLI：`admin:sessions:cleanup` 为 `2 * * * *`，`admin:notifications:cleanup` 为 `10 3 * * *`，`analytics:cleanup` 为 `20 3 * * *`，`edgeone:prefetch:reconcile` 为 `*/5 * * * *`。四条命令与后台“立即执行”复用统一 runner，状态写入数据库；同任务租约忙碌时应视为已有实例执行中，不能并行补跑。后台展示的“计划下次执行”只是 cron 计算结果，不能替代部署平台的调度健康检查与失败告警。
+
 ## API Base URL 配置
 
 - 本地 H5：`TARO_APP_API_BASE_URL=http://127.0.0.1:3001 pnpm dev:h5`。
@@ -119,6 +124,7 @@ apps/miniapp/dist
 - 在微信开发者工具导入 `apps/miniapp/dist`，复核首页、公告、Banner、菜单跳转、案例详情、TabBar 和异常状态。
 - 复核上传目录或对象存储的读写权限、`BACKUP_DIR` 容量、异地备份复制、备份保留调度、CDN 缓存策略和灾难恢复演练结果。
 - EdgeOne 预热上线前先执行 `pnpm db:push`，补齐 `CreatePrefetchTask/DescribePrefetchTasks` 最小 CAM 权限，保持 `EDGEONE_PREFETCH_ENABLED=false` 启动检查；灰度开启后由调度器定期执行 `pnpm --filter api edgeone:prefetch:reconcile` 并配置失败告警。
+- 在部署平台创建并核对四项定时任务的 cron、`Asia/Shanghai` 时区、CLI 工作目录、环境变量和失败告警；后台逐项立即执行只用于人工验证或恢复，不代替周期调度。
 - EdgeOne 预热回滚先关闭 `EDGEONE_PREFETCH_ENABLED` 并停止调度，不删除历史表；记录少量公开素材的提交、跳过、成功、失败重试以及日志/浏览器无敏感信息的人工证据。
 - 复核后台资源删除保护、推荐尺寸提示、可解析元数据校验和保存后立即生效。
 - 运行 `pnpm lint`、`pnpm test`、`pnpm e2e`、`pnpm build:weapp`。

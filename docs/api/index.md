@@ -374,6 +374,22 @@ pnpm --filter api edgeone:prefetch:reconcile
 
 预热开关默认关闭。接口在 `EDGEONE_PREFETCH_ENABLED=false` 时拒绝写入；回滚应关闭开关并停止调度器，保留历史表供恢复后继续对账。真实腾讯云联调必须在 production-like 环境使用受限 CAM 和少量公开素材完成。
 
+### Admin Scheduled Tasks
+
+- `GET /api/admin/scheduled-tasks`：返回 `{ "items": ScheduledTaskDto[] }`。
+- `POST /api/admin/scheduled-tasks/:taskKey/run`：body 必须为空，按服务端目录立即执行并返回 task key、状态、开始/完成 ISO 时间和安全结果摘要。
+
+两条接口都要求管理员 Bearer token，并设置 `Cache-Control: no-store`。目录固定为：
+
+| taskKey | 名称 | cron | CLI |
+| --- | --- | --- | --- |
+| `admin-session-cleanup` | 管理员会话清理 | `2 * * * *` | `pnpm --filter api admin:sessions:cleanup` |
+| `admin-notification-cleanup` | 管理员消息清理 | `10 3 * * *` | `pnpm --filter api admin:notifications:cleanup` |
+| `analytics-cleanup` | 访问统计清理 | `20 3 * * *` | `pnpm --filter api analytics:cleanup` |
+| `edgeone-prefetch-reconcile` | EdgeOne 预热对账 | `*/5 * * * *` | `pnpm --filter api edgeone:prefetch:reconcile` |
+
+cron 统一按 `Asia/Shanghai` 解释；`nextExecutionAt` 是严格晚于服务器当前时间的计划值，不代表外部部署调度器在线。`lastExecutionAt` 是统一 runner 最近实际启动时间，上线前历史不可追溯时为 `null`。API 与四条 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。
+
 ## Media Field Rules
 
 | 字段                       | 类型       | 推荐尺寸 / 约束                                       |
@@ -391,6 +407,8 @@ pnpm --filter api edgeone:prefetch:reconcile
 
 - `POST /api/admin/auth/login`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`
 - `GET /api/admin/dashboard/overview`
+- `GET /api/admin/scheduled-tasks`
+- `POST /api/admin/scheduled-tasks/:taskKey/run`
 - `GET|PUT /api/admin/system-config/edgeone`
 - `GET|POST /api/admin/backups`
 - `POST /api/admin/backups/import`

@@ -670,6 +670,25 @@ video.media-thumb {
   font-size: 12px;
 }
 
+.scheduled-tasks-page,
+.scheduled-tasks-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scheduled-tasks-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scheduled-tasks-inline-error {
+  margin-bottom: 16px;
+}
+
 .artist-cover-thumb {
   display: block;
   width: 64px;

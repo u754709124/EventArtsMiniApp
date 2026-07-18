@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { DashboardOverviewResponse, EdgeOneConfigResponse } from "@event-arts/shared";
+import type { DashboardOverviewResponse, EdgeOneConfigResponse, ScheduledTaskDto } from "@event-arts/shared";
 import sharp from "sharp";
 import { adminApi, adminPath, adminToken, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
@@ -519,6 +519,7 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
     "sidebar-group-content",
     "sidebar-group-assets",
     "sidebar-group-account",
+    "sidebar-scheduled-tasks",
     "sidebar-system-config"
   ]);
   await page.getByTestId("sidebar-system-config").click();
@@ -632,6 +633,139 @@ test("EdgeOne 系统配置与刷新全部使用安全的单次聚合流程", asy
   dashboardData = edgeOneReadyOverview(5);
   await page.goto(adminPath("/dashboard"));
   await expect(page.getByTestId("dashboard-edgeone-last24-requests")).toContainText("5.00 M");
+});
+
+test("定时任务展示规划并确认后只立即执行一次", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAdminUi(page);
+
+  let listCount = 0;
+  let runCount = 0;
+  const baseTasks: ScheduledTaskDto[] = [
+    {
+      taskKey: "admin-session-cleanup",
+      name: "管理员会话清理",
+      description: "删除已过期的后台管理员登录会话。",
+      cron: "2 * * * *",
+      timezone: "Asia/Shanghai",
+      nextExecutionAt: "2026-07-18T01:02:00.000Z",
+      lastExecutionAt: null,
+      lastFinishedAt: null,
+      lastStatus: null,
+      isRunning: false,
+      resultSummary: null
+    },
+    {
+      taskKey: "admin-notification-cleanup",
+      name: "管理员消息清理",
+      description: "删除超过保留期的后台通知消息。",
+      cron: "10 3 * * *",
+      timezone: "Asia/Shanghai",
+      nextExecutionAt: "2026-07-18T19:10:00.000Z",
+      lastExecutionAt: "2026-07-17T19:10:00.000Z",
+      lastFinishedAt: "2026-07-17T19:10:01.000Z",
+      lastStatus: "success",
+      isRunning: false,
+      resultSummary: { deletedCount: 3 }
+    },
+    {
+      taskKey: "analytics-cleanup",
+      name: "访问统计清理",
+      description: "删除超过保留期的访问统计数据。",
+      cron: "20 3 * * *",
+      timezone: "Asia/Shanghai",
+      nextExecutionAt: "2026-07-18T19:20:00.000Z",
+      lastExecutionAt: null,
+      lastFinishedAt: null,
+      lastStatus: null,
+      isRunning: false,
+      resultSummary: null
+    },
+    {
+      taskKey: "edgeone-prefetch-reconcile",
+      name: "EdgeOne 预热对账",
+      description: "对账 EdgeOne 资源预热任务状态并推进重试。",
+      cron: "*/5 * * * *",
+      timezone: "Asia/Shanghai",
+      nextExecutionAt: "2026-07-18T01:05:00.000Z",
+      lastExecutionAt: null,
+      lastFinishedAt: null,
+      lastStatus: null,
+      isRunning: false,
+      resultSummary: null
+    }
+  ];
+
+  await page.route("**/api/admin/scheduled-tasks**", async (route) => {
+    if (route.request().method() === "POST") {
+      runCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            taskKey: "admin-session-cleanup",
+            status: "success",
+            startedAt: "2026-07-18T01:00:00.000Z",
+            finishedAt: "2026-07-18T01:00:01.000Z",
+            resultSummary: { deletedCount: 1 }
+          },
+          message: "ok"
+        })
+      });
+      return;
+    }
+    listCount += 1;
+    const items = baseTasks.map((task) => task.taskKey === "admin-session-cleanup" && runCount > 0
+      ? {
+          ...task,
+          lastExecutionAt: "2026-07-18T01:00:00.000Z",
+          lastFinishedAt: "2026-07-18T01:00:01.000Z",
+          lastStatus: "success" as const,
+          resultSummary: { deletedCount: 1 }
+        }
+      : task);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data: { items }, message: "ok" })
+    });
+  });
+
+  await page.getByTestId("sidebar-scheduled-tasks").click();
+  await expect(page).toHaveURL(/\/admin\/scheduled-tasks$/);
+  await expect(page.getByRole("heading", { level: 2, name: "定时任务" })).toBeVisible();
+  await expect(page.getByText("管理员会话清理")).toBeVisible();
+  await expect(page.getByText("删除已过期的后台管理员登录会话。")).toBeVisible();
+  await expect(page.getByText("2 * * * *")).toBeVisible();
+  await expect(page.getByText("2026-07-18 09:02:00")).toBeVisible();
+  await expect(page.getByText("从未执行").first()).toBeVisible();
+  await expect(page.getByText("2026-07-18 03:10:00")).toBeVisible();
+
+  const runButton = page.getByTestId("scheduled-task-run-admin-session-cleanup");
+  await runButton.click();
+  const dialog = page.getByRole("dialog", { name: "立即执行“管理员会话清理”？" });
+  await expect(dialog).toContainText("使用服务器现有配置");
+  const confirmButton = dialog.getByRole("button", { name: /立\s*即\s*执\s*行/ });
+  await confirmButton.evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  await expect(runButton).toBeDisabled();
+  await expect.poll(() => runCount).toBe(1);
+  await expect.poll(() => listCount).toBe(2);
+  await expect(page.getByText("成功", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("2026-07-18 09:00:00")).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoDocumentHorizontalScroll(page);
+  const tableGeometry = await page.locator(".scheduled-tasks-card .ant-table-content").evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth
+  }));
+  expect(tableGeometry.scrollWidth).toBeGreaterThan(tableGeometry.clientWidth);
 });
 
 test("修改密码后撤销旧 token 并要求重新登录", async ({ page, request }) => {

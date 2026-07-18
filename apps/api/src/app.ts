@@ -42,6 +42,7 @@ import {
   edgeOneConfigUpdateRequestSchema,
   edgeOnePrefetchListQuerySchema,
   edgeOnePrefetchTriggerRequestSchema,
+  scheduledTaskRunResponseSchema,
   fail,
   failWithRequestId,
   lookupMediaRequestSchema,
@@ -120,6 +121,7 @@ import {
   type ApiLoggerOptions
 } from "./logging";
 import {
+  defaultPageViewAnalyticsConfig,
   dailyUserVisitOverview,
   recordDailyUserVisit,
   type PageViewAnalyticsConfig
@@ -153,6 +155,15 @@ import {
   type EdgeOneClientFactory,
   type EdgeOnePrefetchRuntimeConfig
 } from "./edgeone";
+import { createScheduledTaskHandlers } from "./scheduled-task-handlers";
+import {
+  ScheduledTaskBusyError,
+  ScheduledTaskExecutionError,
+  ScheduledTaskNotFoundError,
+  createScheduledTaskRunner,
+  listScheduledTasks,
+  type ScheduledTaskHandler
+} from "./scheduled-tasks";
 
 type AppRateLimitConfig = {
   login: {
@@ -185,6 +196,10 @@ type BuildOptions = {
     credentialEncryptionKey: Buffer | null;
     clientFactory?: EdgeOneClientFactory;
     prefetch?: EdgeOnePrefetchRuntimeConfig;
+  };
+  scheduledTasks?: {
+    handlers?: Partial<Record<string, ScheduledTaskHandler>>;
+    leaseMs?: number;
   };
 };
 
@@ -280,6 +295,7 @@ const detailPageOptionQuerySchema = z.object({
   type: z.string().trim().optional(),
   limit: positiveIdSchema.max(100).default(30)
 });
+const scheduledTaskRunRequestBodySchema = z.object({}).strict();
 const articleCategoryQuerySchema = z.object({
   q: z.string().trim().transform((value) => value || undefined).optional(),
   limit: positiveIdSchema.max(100).default(100)
@@ -869,6 +885,25 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     clientFactory: options.edgeOne?.clientFactory,
     now: currentTime
   });
+  const scheduledTaskHandlers = {
+    ...createScheduledTaskHandlers({
+      prisma,
+      publicBaseUrl: options.publicBaseUrl,
+      analytics: options.analytics ?? defaultPageViewAnalyticsConfig,
+      edgeOne: {
+        credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey ?? null,
+        prefetch: options.edgeOne?.prefetch ?? defaultEdgeOnePrefetchConfig,
+        clientFactory: options.edgeOne?.clientFactory
+      }
+    }),
+    ...options.scheduledTasks?.handlers
+  };
+  const scheduledTaskRunner = createScheduledTaskRunner({
+    prisma,
+    handlers: scheduledTaskHandlers,
+    now: currentTime,
+    leaseMs: options.scheduledTasks?.leaseMs
+  });
   let backupCreateInProgress = false;
   let backupDonePromise: Promise<void> | null = null;
   let resolveBackupDone: (() => void) | null = null;
@@ -1406,6 +1441,66 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       })
     );
   });
+
+  app.get("/api/admin/scheduled-tasks", { preHandler: [setNoStore, requireAdmin] }, async (_request, reply) => {
+    return reply.send(ok(await listScheduledTasks(prisma, currentTime())));
+  });
+
+  app.post(
+    "/api/admin/scheduled-tasks/:taskKey/run",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const params = z.object({ taskKey: z.string().min(1) }).strict().safeParse(request.params);
+      if (!params.success) {
+        return sendError(reply, 404, "SCHEDULED_TASK_NOT_FOUND", "定时任务不存在");
+      }
+      const body = scheduledTaskRunRequestBodySchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        return sendError(reply, 400, "VALIDATION_ERROR", "立即执行参数错误");
+      }
+      try {
+        const result = await scheduledTaskRunner.run(params.data.taskKey);
+        await writeOperationLog(
+          "SCHEDULED_TASK_RUN",
+          {
+            taskKey: result.taskKey,
+            status: result.status,
+            resultSummary: result.resultSummary
+          },
+          request.admin!.id
+        );
+        return reply.send(ok(scheduledTaskRunResponseSchema.parse(result)));
+      } catch (error) {
+        if (error instanceof ScheduledTaskNotFoundError) {
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        if (error instanceof ScheduledTaskBusyError) {
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        if (error instanceof ScheduledTaskExecutionError) {
+          await writeOperationLog(
+            "SCHEDULED_TASK_RUN_FAILED",
+            {
+              taskKey: error.taskKey,
+              businessCode: error.code,
+              resultSummary: error.summary
+            },
+            request.admin!.id
+          ).catch(() => undefined);
+          request.log.warn({
+            event: "scheduled_task_failed",
+            requestId: request.id,
+            adminId: request.admin!.id,
+            taskKey: error.taskKey,
+            businessCode: error.code,
+            resultSummary: error.summary
+          }, "Scheduled task failed");
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+  );
 
   app.get("/api/admin/system-config/edgeone", { preHandler: [setNoStore, requireAdmin] }, async (request, reply) => {
     try {

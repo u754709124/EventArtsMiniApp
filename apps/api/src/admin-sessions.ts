@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Prisma } from "@prisma/client";
-import { loadApiConfig } from "./config";
+import { loadApiConfig, type LoadApiConfigOptions } from "./config";
 import { createPrismaClient, type AppPrismaClient } from "./db";
 import { ensureDatabaseSchema } from "./sqlite-schema";
 
@@ -103,21 +103,47 @@ function parseCleanupArgs(args: string[]) {
   return { dryRun };
 }
 
-export async function runAdminSessionCleanupCli(args = process.argv.slice(2)) {
+type CleanupCliRuntimeOptions = {
+  config?: LoadApiConfigOptions;
+  now?: () => Date;
+  leaseMs?: number;
+  writeOutput?: (line: string) => void;
+};
+
+export async function runAdminSessionCleanupCli(
+  args = process.argv.slice(2),
+  runtimeOptions: CleanupCliRuntimeOptions = {}
+) {
   const options = parseCleanupArgs(args);
-  const config = loadApiConfig();
+  const config = loadApiConfig(runtimeOptions.config);
   const prisma = createPrismaClient(config.databaseUrl);
   try {
     await ensureDatabaseSchema(prisma, { uploadDir: config.paths.uploadDir });
-    const now = new Date();
-    if (options.dryRun) {
-      const count = await countExpiredAdminSessions(prisma, now);
-      console.log(`Expired admin sessions would be deleted: ${count}`);
-      return { deletedCount: 0, dryRunCount: count };
-    }
-    const result = await cleanupExpiredAdminSessions(prisma, now);
-    console.log(`Expired admin sessions deleted: ${result.deletedCount}`);
-    return { ...result, dryRunCount: null };
+    const [{ createScheduledTaskRunner }, { createScheduledTaskHandlers }] = await Promise.all([
+      import("./scheduled-tasks"),
+      import("./scheduled-task-handlers")
+    ]);
+    const runner = createScheduledTaskRunner({
+      prisma,
+      now: runtimeOptions.now,
+      leaseMs: runtimeOptions.leaseMs,
+      handlers: createScheduledTaskHandlers({
+        prisma,
+        publicBaseUrl: config.publicBaseUrl,
+        analytics: config.analytics,
+        edgeOne: {
+          credentialEncryptionKey: config.edgeOne.credentialEncryptionKey,
+          prefetch: config.edgeOne.prefetch
+        },
+        dryRun: options.dryRun,
+        writeOutput: runtimeOptions.writeOutput ?? console.log
+      })
+    });
+    const result = await runner.run("admin-session-cleanup");
+    return {
+      ...result.resultSummary,
+      dryRunCount: options.dryRun ? result.resultSummary.dryRunCount ?? 0 : null
+    };
   } finally {
     await prisma.$disconnect();
   }

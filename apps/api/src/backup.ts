@@ -506,8 +506,7 @@ async function validateCandidateDatabase(databasePath: string, manifest: BackupM
   }
 }
 
-async function tableCounts(prisma: AppPrismaClient) {
-  const tables = [
+export const backupImpactTables = [
     "admin_users",
     "admin_sessions",
     "admin_notifications",
@@ -529,8 +528,12 @@ async function tableCounts(prisma: AppPrismaClient) {
     "detail_page_content_media",
     "daily_user_visits",
     "page_view_events",
-    "operation_logs"
-  ];
+    "operation_logs",
+    "scheduled_task_states"
+  ] as const;
+
+async function tableCounts(prisma: AppPrismaClient) {
+  const tables = backupImpactTables;
   const counts: Record<string, number> = {};
   for (const table of tables) {
     if (!(await sqliteTableExists(prisma, table))) {

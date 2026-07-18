@@ -8,6 +8,7 @@ import {
   LockOutlined,
   SafetyCertificateOutlined,
   PictureOutlined,
+  ScheduleOutlined,
   SettingOutlined,
   TeamOutlined
 } from "@ant-design/icons";
@@ -173,6 +174,15 @@ export const adminMenuConfig: AdminMenuItem[] = [
         testid: "sidebar-change-password"
       }
     ]
+  },
+  {
+    key: "scheduled-tasks",
+    label: "定时任务",
+    icon: <ScheduleOutlined />,
+    path: "/scheduled-tasks",
+    matchPaths: ["/scheduled-tasks"],
+    breadcrumb: "定时任务",
+    testid: "sidebar-scheduled-tasks"
   },
   {
     key: "system-config",

@@ -4,6 +4,7 @@ import { DetailPageReferenceIdSchema, DetailPageTypeSchema, DetailPageConfigDto 
 export * from "./detail-pages";
 export * from "./detail-page-presentation";
 export * from "./admin-notifications";
+export * from "./scheduled-tasks";
 
 export const statusValues = ["enabled", "disabled"] as const;
 export const menuTypeValues = ["host", "singer", "actor", "activity_case", "article", "detail_page", "contact"] as const;

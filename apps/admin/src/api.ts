@@ -8,7 +8,10 @@ import type {
   BackupDeleteResponse,
   BackupImportPreflightResponse,
   BackupListResponse,
-  BackupRestoreAcceptedResponse
+  BackupRestoreAcceptedResponse,
+  ScheduledTaskKey,
+  ScheduledTaskListResponse,
+  ScheduledTaskRunResponse
 } from "@event-arts/shared";
 import { isAdminLoginPathname, withAdminBasename } from "./routes/admin-paths";
 
@@ -220,4 +223,15 @@ export function restoreBackup(backupId: string) {
     method: "POST",
     body: JSON.stringify({ backupId, confirmation: "RESTORE_FULL_BACKUP" })
   });
+}
+
+export function listScheduledTasks() {
+  return request<ScheduledTaskListResponse>("/api/admin/scheduled-tasks");
+}
+
+export function runScheduledTask(taskKey: ScheduledTaskKey) {
+  return request<ScheduledTaskRunResponse>(
+    `/api/admin/scheduled-tasks/${encodeURIComponent(taskKey)}/run`,
+    { method: "POST" }
+  );
 }

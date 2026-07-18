@@ -6,7 +6,15 @@ describe("admin route matching", () => {
   it("keeps system configuration as the final unique top-level item", () => {
     const topLevelKeys = adminMenuConfig.map((item) => item.key);
 
-    expect(topLevelKeys).toEqual(["dashboard", "home", "content", "assets", "account", "system-config"]);
+    expect(topLevelKeys).toEqual([
+      "dashboard",
+      "home",
+      "content",
+      "assets",
+      "account",
+      "scheduled-tasks",
+      "system-config"
+    ]);
     expect(adminMenuConfig.at(-1)?.key).toBe("system-config");
     expect(topLevelKeys.filter((key) => key === "system-config")).toHaveLength(1);
   });
@@ -48,6 +56,12 @@ describe("admin route matching", () => {
       openKeys: [],
       breadcrumbs: ["系统配置"],
       title: "系统配置"
+    });
+    expect(matchAdminRoute("/scheduled-tasks")).toMatchObject({
+      selectedKeys: ["scheduled-tasks"],
+      openKeys: [],
+      breadcrumbs: ["定时任务"],
+      title: "定时任务"
     });
     expect(validOpenKeys(["home", "content", "account", "unknown"])).toEqual(["home", "content", "account"]);
   });

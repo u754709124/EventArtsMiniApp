@@ -429,6 +429,22 @@ model OperationLog {
   @@map("operation_logs")
 }
 
+model ScheduledTaskState {
+  taskKey           String    @id
+  lastStartedAt     DateTime?
+  lastFinishedAt    DateTime?
+  lastStatus        String?
+  resultSummaryJson String?
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([leaseExpiresAt])
+  @@index([lastStartedAt])
+  @@map("scheduled_task_states")
+}
+
 model SeedRecord {
   key        String   @id
   entityType String

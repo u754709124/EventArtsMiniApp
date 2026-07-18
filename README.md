@@ -181,7 +181,9 @@ pnpm assets:slice:artists
 
 详情页是独立、可复用、可统一管理的内容实体。后台侧栏提供“详情页管理”，业务表单只选择 `detailPageId`，不再内嵌完整详情配置。公告、首页 BANNER、人员、案例、文章和“详情页直达”菜单可以共享同一详情页；被任一业务记录引用的详情页不能删除。
 
-后台信息架构包含“数据看板 / 系统配置 / 首页运营 / 内容管理 / 素材管理”，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
+后台信息架构包含“数据看板 / 首页运营 / 内容管理 / 素材管理 / 账号安全 / 定时任务 / 系统配置”，菜单、面包屑和路由高亮来自同一导航配置。人员和案例使用独立新增/编辑页，短首页运营表单保留抽屉；详见 `docs/design/admin-navigation-and-forms.md`。
+
+后台“定时任务”展示服务器固定目录中的管理员会话清理、管理员消息清理、访问统计清理和 EdgeOne 预热对账，包含说明、五段 cron、计划下次执行和上次执行时间。所有时间按 `Asia/Shanghai` 解释；“立即执行”需要确认且只提交任务 key，由数据库租约阻止同一任务跨请求/进程并发。页面的计划时间不证明外部调度器已安装或在线。
 
 后台成功、失败、警告和信息操作统一使用右上角通知卡片：卡片固定展示 5 秒，顶部细进度条从右向左缩短，支持右侧进退场、纵向堆叠和向上补位，并尊重系统 reduced-motion 设置。Header 的历史按钮展示当前管理员最近滚动 7×24 小时的消息；历史由服务端按管理员隔离，本地仅保存待同步 outbox，断网恢复后以事件 UUID 幂等补传。通知历史不包含未读、删除、筛选或保留期配置。
 
@@ -268,6 +270,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 - Admin upstream 默认 `127.0.0.1:4173`，API upstream 默认 `127.0.0.1:3001`，公网只开放 Nginx。
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
 - 后台“账号安全 / 备份与恢复”支持创建全量备份、查看列表、删除、导入 `.tar`/`.tar.gz` 外部备份并执行 `RESTORE_FULL_BACKUP` 二次确认恢复。恢复成功会撤销所有管理员会话。
+- 生产调度器继续调用 `admin:sessions:cleanup`、`admin:notifications:cleanup`、`analytics:cleanup` 和 `edgeone:prefetch:reconcile`；四条 CLI 与后台立即执行复用同一 runner 并记录最近状态。API 进程不内置常驻 cron daemon。
 - 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
 - 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名；上线前用真实小程序复核 `wx.login -> /api/client/auth/wechat -> /api/client/home`。如果真机报 `ERR_CONNECTION_CLOSED`，先确认小程序包内编译进去的 `TARO_APP_API_BASE_URL` 是真实可访问域名，而不是验证或文档里的占位地址。
 - 部署前运行 `pnpm deploy:smoke`、`pnpm test:deploy` 和 `pnpm security:release-gate` 检查配置层面的 loopback upstream 和 P0/P1 自动化安全契约；真实 TLS、防火墙、安全组、磁盘容量、异地备份、调度器和灾难演练仍必须在目标环境人工验证。

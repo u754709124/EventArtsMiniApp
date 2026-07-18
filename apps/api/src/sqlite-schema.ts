@@ -365,6 +365,21 @@ const statements = [
     createdBy INTEGER,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS scheduled_task_states (
+    taskKey TEXT PRIMARY KEY,
+    lastStartedAt DATETIME,
+    lastFinishedAt DATETIME,
+    lastStatus TEXT CHECK(lastStatus IS NULL OR lastStatus IN ('running', 'success', 'failed')),
+    resultSummaryJson TEXT,
+    leaseToken TEXT,
+    leaseExpiresAt DATETIME,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS scheduled_task_states_leaseExpiresAt_idx
+    ON scheduled_task_states(leaseExpiresAt)`,
+  `CREATE INDEX IF NOT EXISTS scheduled_task_states_lastStartedAt_idx
+    ON scheduled_task_states(lastStartedAt)`,
   `CREATE TABLE IF NOT EXISTS seed_records (
     key TEXT PRIMARY KEY,
     entityType TEXT NOT NULL,

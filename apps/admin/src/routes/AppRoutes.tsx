@@ -13,6 +13,7 @@ import { ChangePasswordPage } from "../pages/ChangePasswordPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { LoginPage } from "../pages/LoginPage";
 import { Protected } from "../pages/Protected";
+import { ScheduledTasksPage } from "../pages/ScheduledTasksPage";
 import { SiteConfigPage } from "../pages/SiteConfigPage";
 import { SystemConfigPage } from "../pages/SystemConfigPage";
 import { setSessionExpiredHandler } from "../api";
@@ -57,6 +58,7 @@ export const router = createBrowserRouter(
         { path: "detail-pages/:id/edit", element: <DetailPageDesigner /> },
         { path: "media-assets", element: <MediaPage /> },
         { path: "backups", element: <BackupPage /> },
+        { path: "scheduled-tasks", element: <ScheduledTasksPage /> },
         { path: "change-password", element: <ChangePasswordPage /> },
         { path: "*", element: <NotFoundPage /> }
       ]
