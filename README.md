@@ -90,6 +90,15 @@ pnpm --filter miniapp build:h5
 pnpm build:weapp
 ```
 
+Admin、Miniapp H5 与 WeApp 构建会在产物超出性能预算时直接失败。当前门禁为：Admin 单个 JS 不超过 500 KiB、入口静态依赖闭包 gzip 不超过 300 KiB；H5 单个 JS 不超过 620 KiB、HTML 初始脚本合计不超过 380 KiB；WeApp 单个 JS 不超过 200 KiB。Admin 页面按路由加载，构建 manifest 还会校验登录、CRUD、详情编辑器、素材/备份等动态边界，避免非当前页面代码重新进入首包。预算检查可单独运行：
+
+```bash
+pnpm test:build
+node scripts/build/check-bundles.mjs --target admin
+node scripts/build/check-bundles.mjs --target miniapp-h5
+node scripts/build/check-bundles.mjs --target miniapp-weapp
+```
+
 微信小程序端构建完成后，将 `apps/miniapp/dist` 导入微信开发者工具。
 
 生产小程序包内的 API 地址是构建时写入的常量。上传前必须在根目录 `.env` 设置真实的 `TARO_APP_API_BASE_URL`，或直接执行：

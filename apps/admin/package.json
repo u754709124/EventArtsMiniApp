@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
-    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "build": "tsc -p tsconfig.json --noEmit && vite build && node ../../scripts/build/check-bundles.mjs --target admin",
     "start": "node server.mjs",
     "test": "vitest run --passWithNoTests --no-file-parallelism --maxWorkers=1"
   },

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:h5": "taro build --type h5 --watch",
-    "build:h5": "taro build --type h5 --no-check",
-    "build:weapp": "taro build --type weapp --no-check",
+    "build:h5": "taro build --type h5 --no-check && node ../../scripts/build/check-bundles.mjs --target miniapp-h5",
+    "build:weapp": "taro build --type weapp --no-check && node ../../scripts/build/check-bundles.mjs --target miniapp-weapp",
     "build": "pnpm build:h5 && pnpm build:weapp",
     "test": "vitest run --passWithNoTests"
   },

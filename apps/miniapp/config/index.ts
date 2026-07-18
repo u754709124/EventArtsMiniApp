@@ -145,6 +145,7 @@ function unsafeMiniappApiBaseUrlReason(value: string) {
 }
 
 const currentBuildType = taroBuildType();
+const isWatchBuild = process.argv.includes("--watch");
 const shouldGuardMiniappApiBaseUrl = currentBuildType === "weapp" && !allowUnsafeMiniappApiBaseUrl;
 const unsafeReason = shouldGuardMiniappApiBaseUrl
   ? unsafeMiniappApiBaseUrlReason(apiBaseUrl)
@@ -218,6 +219,12 @@ export default defineConfig({
     staticDirectory: "static",
     webpackChain(chain) {
       includeSharedSource(chain);
+      const taroSplitChunks = chain.optimization.get("splitChunks") ?? {};
+      chain.optimization.splitChunks({
+        ...taroSplitChunks,
+        maxSize: 560 * 1024
+      });
+      chain.performance.hints(isWatchBuild ? false : "error");
       chain.performance.maxAssetSize(h5PerformanceBudget.maxAssetSize);
       chain.performance.maxEntrypointSize(h5PerformanceBudget.maxEntrypointSize);
     },

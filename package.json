@@ -16,7 +16,7 @@
     "build:weapp": "pnpm --filter miniapp build:weapp",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "pnpm -r --if-present test && pnpm test:deploy",
+    "test": "pnpm -r --if-present test && pnpm test:deploy && pnpm test:build",
     "e2e": "playwright test",
     "db:push": "pnpm --filter api db:push",
     "db:seed": "pnpm --filter api db:seed",
@@ -35,6 +35,7 @@
     "codex:plan:state": "node scripts/codex/update-plan-state.mjs",
     "codex:plan:cleanup": "node scripts/codex/cleanup-plan-run.mjs",
     "test:deploy": "vitest run scripts/deploy",
+    "test:build": "vitest run scripts/build",
     "test:codex": "vitest run scripts/codex",
     "release:check": "pnpm security:release-gate && pnpm lint && pnpm test && pnpm e2e && pnpm --filter api build && pnpm --filter admin build && pnpm --filter miniapp build:h5 && pnpm build:weapp"
   },

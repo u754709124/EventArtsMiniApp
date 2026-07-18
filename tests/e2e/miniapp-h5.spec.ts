@@ -1439,7 +1439,16 @@ test("首页精选文章、文章菜单筛选、公共详情和无详情静态�
 
     await page.goBack();
     await expect(page.getByTestId("article-list-page")).toBeVisible();
-    await tap(page, page.getByTestId(`article-category-${noDetailArticle.category}`));
+    const noDetailCategoryTab = page.getByTestId(`article-category-${noDetailArticle.category}`);
+    await expect(noDetailCategoryTab).toBeVisible();
+    await noDetailCategoryTab.scrollIntoViewIfNeeded();
+    const noDetailCategoryResponse = page.waitForResponse((response) =>
+      response.url().includes("/api/client/articles") &&
+      response.url().includes(`category=${encodeURIComponent(noDetailArticle.category)}`) &&
+      response.request().method() === "GET"
+    );
+    await noDetailCategoryTab.click();
+    await noDetailCategoryResponse;
     await expect(page.getByTestId("article-list-title")).toHaveText(noDetailArticle.category);
     await clearDevOverlay(page);
     const noDetailCard = page.getByTestId("article-list-article-card").filter({ hasText: noDetailArticle.title }).first();
