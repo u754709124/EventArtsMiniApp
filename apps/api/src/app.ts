@@ -50,6 +50,7 @@ import {
   mediaFieldRules,
   mediaListQuerySchema,
   menuConfigSchemaByType,
+  normalizeArtistCategories,
   normalizeArtistTags,
   normalizeArticleCategories,
   normalizeResourceName,
@@ -60,6 +61,7 @@ import {
   type ArtistType,
   type CaseMediaDto,
   type DetailPageConfigDto,
+  type LegacyArtistType,
   type MediaFieldKey,
   type MenuType
 } from "@event-arts/shared";
@@ -486,10 +488,34 @@ function isMenuType(value: string): value is MenuType {
   return Object.hasOwn(menuConfigSchemaByType, value);
 }
 
+const legacyMenuTypeToArtistCategory: Record<LegacyArtistType, string> = {
+  host: "主持人",
+  singer: "歌手",
+  actor: "演员"
+};
+
+function isLegacyArtistMenuType(value: string): value is LegacyArtistType {
+  return Object.hasOwn(legacyMenuTypeToArtistCategory, value);
+}
+
+function canonicalMenuType(value: string) {
+  return isLegacyArtistMenuType(value) ? "artist" : value;
+}
+
+function menuConfigInputForType(type: string, configJson: unknown) {
+  const config = configJson && typeof configJson === "object" ? configJson : {};
+  if (!isLegacyArtistMenuType(type)) return config;
+  return {
+    ...config,
+    category: legacyMenuTypeToArtistCategory[type]
+  };
+}
+
 function parseMenuConfigForType(type: string, configJson: unknown) {
-  if (!isMenuType(type)) return {};
-  const schema = menuConfigSchemaByType[type];
-  const parsed = schema.safeParse(configJson && typeof configJson === "object" ? configJson : {});
+  const targetType = canonicalMenuType(type);
+  if (!isMenuType(targetType)) return {};
+  const schema = menuConfigSchemaByType[targetType];
+  const parsed = schema.safeParse(menuConfigInputForType(type, configJson));
   if (!parsed.success) {
     console.warn(`Invalid menu config for type ${type}; falling back to defaults.`);
   }
@@ -691,7 +717,7 @@ function serializeMenuItem(item: {
     text: item.text,
     iconAssetId: item.iconAssetId,
     iconUrl: mediaUrl(publicBaseUrl, item.iconAsset),
-    type: item.type,
+    type: canonicalMenuType(item.type),
     configJson: parseMenuConfigForType(item.type, parseJson(item.configJson)),
     showOnHome: Boolean(item.showOnHome),
     sortOrder: item.sortOrder,
@@ -715,6 +741,11 @@ function uniqueCaseCategories(items: Array<{ category: string | null }>) {
 
 function uniqueArticleCategories(items: Array<{ category: string | null }>) {
   return normalizeArticleCategories(items.map((item) => item.category ?? ""))
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function uniqueArtistCategories(items: Array<{ type: string | null }>) {
+  return normalizeArtistCategories(items.map((item) => item.type ?? ""))
     .sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
@@ -2253,10 +2284,13 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
 
   app.get("/api/client/artists", async (request, reply) => {
     const parsed = artistListQuerySchema.safeParse(request.query);
-    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员列表查询参数错误");
-    const { type, q, location, tag } = parsed.data;
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "人员列表查询参数错误");
+    const { category, q, location, tag } = parsed.data;
     const items = await prisma.artist.findMany({
-      where: { status: "enabled", type },
+      where: {
+        status: "enabled",
+        ...(category ? { type: category } : {})
+      },
       include: { avatarAsset: true },
       orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
     });
@@ -2785,6 +2819,14 @@ function registerCrud(
     return reply.send(ok({ items: uniqueCaseCategories(items) }));
   });
 
+  app.get("/api/admin/artist-categories", { preHandler: requireAdmin }, async (_request, reply) => {
+    const items = await prisma.artist.findMany({
+      select: { type: true },
+      orderBy: { type: "asc" }
+    });
+    return reply.send(ok({ items: uniqueArtistCategories(items) }));
+  });
+
   app.get("/api/admin/articles/categories", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = articleCategoryQuerySchema.safeParse(request.query);
     if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "文章分类查询参数错误");
@@ -3078,7 +3120,7 @@ function registerCrud(
   });
   app.post("/api/admin/artists", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistCreateRequestSchema.safeParse(request.body);
-    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员参数错误");
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "人员参数错误");
     const body = parsed.data;
     const problem = await mediaProblemForId(prisma, body.avatarAssetId, "artist.avatar");
     if (problem) return sendError(reply, problem.code === "NOT_FOUND" ? 404 : 400, problem.code, problem.message);
@@ -3096,7 +3138,7 @@ function registerCrud(
   });
   app.put("/api/admin/artists/:id", { preHandler: requireAdmin }, async (request, reply) => {
     const parsed = ArtistUpdateRequestSchema.safeParse(request.body);
-    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "人员参数错误");
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "人员参数错误");
     const body = parsed.data;
     const id = Number((request.params as { id: string }).id);
     const existing = await prisma.artist.findUnique({ where: { id } });

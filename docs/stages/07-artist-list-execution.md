@@ -2,15 +2,15 @@
 
 ## 执行目标
 
-完成一个由 `type` 参数驱动的统一演职人员列表页，覆盖主持人、歌手和演员三个入口。交付必须同时包含：安全兼容的 SQLite 数据升级、媒体库注册的示例封面、18 条可重复 seed 数据、后台维护字段、Taro H5/微信端页面、API/后台/小程序自动化测试、H5 实际截图及差异图、接口与设计文档。
+完成一个由可选人员分类驱动的统一演职人员列表页。当前规范入口为单一 `artist` 菜单：菜单可通过 `configJson.category` 进入指定中文分类，未配置分类时展示全部启用人员；旧 `host`、`singer`、`actor` 仅作为兼容别名映射到主持人、歌手和演员。交付必须同时包含：安全兼容的 SQLite 数据升级、媒体库注册的示例封面、18 条可重复 seed 数据、后台维护字段、Taro H5/微信端页面、API/后台/小程序自动化测试、H5 实际截图及差异图、接口与设计文档。
 
 最终路由固定为：
 
-- `/pages/artists/list?type=host`：主持人
-- `/pages/artists/list?type=singer`：歌手
-- `/pages/artists/list?type=actor`：演员
+- `/pages/artists/list`：全部启用人员
+- `/pages/artists/list?category=<人员分类>`：按任意合法人员分类筛选
+- `/pages/artists/list?type=host|singer|actor`：历史兼容深链，分别映射到 `主持人`、`歌手`、`演员`
 
-小程序页面接收到缺失或非法 `type` 时回退到 `host`；API 对显式非法 `type` 返回统一的 `400 VALIDATION_ERROR`。
+小程序页面接收到缺失、空值或非法配置时降级为全部人员；API 的 `category` 省略时返回全部启用人员，旧 `type` 参数只承担兼容映射。
 
 三种人员列表均为子页面，不渲染页面级底部菜单；返回入口仍通过顶部返回按钮安全回到分类或上一页。
 
@@ -32,7 +32,7 @@
 - 客户端人员项只消费 `coverUrl`、`avatarUrl`、`location`、`badge`、`tags` 等序列化字段；`tags` 始终是 `string[]`。
 - 标签在边界统一 trim、去空、去重、限 1–4 个；存库只通过一次标签序列化函数写入 `tagsJson`。
 - 单个标签最长 12 个字符；共享层和后台 API 同时拒绝超长标签。
-- 列表固定按 `sortOrder ASC, id ASC`；仅返回 `enabled`，并严格以 `type` 过滤。`q` 搜索姓名、地点、徽章、标签和描述；`location` 与 `tag` 是精确实际值筛选。
+- 列表固定按 `sortOrder ASC, id ASC`；仅返回 `enabled`。`category` 为空时返回全部人员，非空时按人员分类精确过滤；`q` 搜索姓名、分类、地点、徽章、标签和描述；`location` 与 `tag` 是精确实际值筛选。
 - 设计宽度为 `750rpx`。双列卡片 `345rpx` 宽、`20rpx` 列间距、封面 `345rpx × 240rpx`、固定卡片总高 `436rpx`、行距 `18rpx`。描述固定两行，采用 `-webkit-line-clamp: 2` 加固定高度。
 - 所有文字都是实时 UI；封面资源仅包含照片。不得以整页或整卡片截图代替组件。
 
@@ -60,16 +60,16 @@ pnpm assets:slice:artists
 | 标签/契约单测 | 类型映射、标签恢复、非法输入 | `pnpm --filter @event-arts/shared test` |
 | API 单测 | 创建、字段校验、筛选、排序、损坏 JSON、历史 SQLite 升级与幂等 | `pnpm --filter api test` |
 | 后台 E2E | 新字段、必填、标签上限、保存/列表/编辑回填 | `pnpm e2e --grep '人员管理'` |
-| 小程序 E2E | 三类型入口、双列稳定、搜索、筛选、详情、无页面级底栏 | `pnpm e2e --grep '人员'` |
+| 小程序 E2E | 单一人员入口、可选分类、旧深链兼容、双列稳定、搜索、筛选、详情、无页面级底栏 | `pnpm e2e --grep '人员'` |
 | 资源 | 参考尺寸、裁切边界、输出尺寸 | `pnpm assets:slice:artists` |
 | 构建 | 类型/打包/微信端 | `pnpm lint && pnpm test && pnpm e2e && pnpm build:api && pnpm build:admin && pnpm build:h5 && pnpm build:weapp` |
 | 发布集合 | 全部真实命令串联 | `pnpm release:check` |
 
 ## 视觉复核步骤
 
-1. 使用 Playwright 的移动视口打开 host、singer、actor 深链。
-2. 保存 `docs/design/actual-artists-host.png`、`actual-artists-singer.png`、`actual-artists-actor.png`。
-3. 以 `reference-artists.png` 与 host 截图生成 `docs/design/diff-artists-host.png`；只可遮罩状态栏与平台胶囊，不能遮罩搜索或卡片。
+1. 使用 Playwright 的移动视口打开 `artist` 人员入口或带 `category` 的深链。
+2. 保存 `docs/design/actual-artists-host.png` 作为当前统一人员列表截图。
+3. 以 `reference-artists.png` 与当前截图生成 `docs/design/diff-artists-host.png`；只可遮罩状态栏与平台胶囊，不能遮罩搜索或卡片。
 4. 人工复核双列左右边界、封面高度、姓名基线、标签高度、两行描述和子页面安全区留白；至少完成一次调整与二次截图。
 
 ## 已记录执行证据
@@ -78,14 +78,23 @@ pnpm assets:slice:artists
 - `pnpm db:push`、`pnpm db:seed`：退出码均为 `0`；seed 重新执行不新增重复人员记录。
 - `pnpm lint`：退出码 `0`。
 - `pnpm test`：退出码 `0`；Shared `8`、API `41`、Admin `3` 个 Vitest 用例全部通过，Miniapp package 没有本地 Vitest 文件。
-- `pnpm e2e`：退出码 `0`，28 项 Playwright 用例全部通过；其中覆盖后台人员新增/编辑回填、三类入口、搜索、筛选、详情、无页面级底栏和截图/diff。
+- `pnpm e2e`：退出码 `0`，28 项 Playwright 用例全部通过；其中覆盖后台人员新增/编辑回填、三类入口、搜索、筛选、详情、无页面级底栏和截图/diff。2026-07-18 人员菜单合并后，小程序入口验收改为覆盖单一 `artist` 菜单、未配置分类的全部列表、任意中文分类、旧 `type` 深链兼容和非法配置降级。
 - `pnpm --filter api build`、`pnpm --filter admin build`：退出码均为 `0`。后续已配置 Admin chunk warning budget，当前无 warning 输出。
 - `pnpm --filter miniapp build:h5`、`pnpm build:weapp`：退出码均为 `0`。后续已压缩生成资源并配置 Taro performance budget，当前无 warning 输出。
 - `pnpm release:check`：退出码 `0`，依次执行 lint、unit、E2E、API/Admin/H5/微信构建。
 - 为兼容首次切出的旧截图资源，动态徽标已改为完整覆盖该资源中旧徽标的投影范围，且背景不透明；不会把旧标签文字透到实时徽标下方。
 - 微信构建曾因页面运行时导入共享 TypeScript 源码而报 `ModuleParseError`；根因确认后将小程序改为仅导入共享类型、在页面定义等价的只读文案映射，随后微信构建退出码为 `0`。
-- H5 视觉复核命令 `pnpm e2e --grep '人员列表设计复核截图与参考差异图'`：退出码 `0`；已产生 host、singer、actor 截图和 host diff。初始全页截图会包含 Taro H5 保留路由，随后改为截取当前人员页根节点；在移除人员页底栏后，最终输出为 `854 × 1844` px 的 2× 截图。
+- H5 视觉复核命令 `pnpm e2e --grep '人员列表设计复核截图与参考差异图'`：退出码 `0`；旧版本产生 host、singer、actor 截图和 host diff。人员菜单合并后，该用例改为截取当前统一人员列表根节点并继续生成 `actual-artists-host.png` 与 `diff-artists-host.png`。
 
 ## 完成门槛
 
-只有所有分项均改为“完成”、上述验证命令有新鲜的退出码 `0` 证据、三种页面截图和 host diff 文件真实存在，并且没有未解决的视觉或平台兼容风险时，才可将本阶段标记完成。
+只有所有分项均改为“完成”、上述验证命令有新鲜的退出码 `0` 证据、统一人员列表截图和 diff 文件真实存在，并且没有未解决的视觉或平台兼容风险时，才可将本阶段标记完成。
+
+## 2026-07-18 人员菜单合并验证补充
+
+- `pnpm lint`：退出码 `0`。
+- `pnpm test`：退出码 `0`；shared `44`、miniapp `64`、API `228`、admin `140`、deploy `8`、build-script `4` 全部通过。
+- `pnpm build:weapp`：退出码 `0`，Webpack 编译和 bundle budget 均通过。
+- 聚焦 Playwright 两组各 `5` 项均通过，覆盖人员菜单未配置分类时显示全部、任意中文分类、旧 `host/singer/actor` 深链、分类页复用、人员卡片和后台相关回归。
+- 全量 `pnpm e2e` 在批准沙箱外启动服务后连续通过 `49/62`，随后被外部 `SIGTERM` 终止（退出码 `143`）；终止前本次新增场景全部通过，无断言失败，剩余 `13` 项未执行。因此本次不把全量 E2E 记录为完整通过。
+- `__ALL_ARTICLES__` 已确认只用于文章菜单后台 UI 的“全部文章”适配；文章与活动案例保存请求都会移除该哨兵，活动案例分类控件只消费 `/api/admin/case-categories`。

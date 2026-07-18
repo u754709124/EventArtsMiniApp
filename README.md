@@ -204,7 +204,7 @@ pnpm assets:slice:artists
 
 `detailPageId` 为空时入口不可点击，也不会回退旧 `linkType/linkTarget` 或 owner 详情页。旧人员/案例详情路由仅作为兼容跳板。
 
-分类菜单共有 7 种类型：`host`、`singer`、`actor`、`activity_case`、`article`、`detail_page`、`contact`。`detail_page` 的严格配置为：
+分类菜单共有 5 种规范类型：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 统一进入人员列表，可在 `configJson.category` 中提交可选人员分类；未配置分类时展示全部启用人员，旧 `host`、`singer`、`actor` 入口仅作为兼容别名映射到中文分类。`detail_page` 的严格配置为：
 
 ```json
 { "detailPageType": "rich_text", "detailPageId": 1 }

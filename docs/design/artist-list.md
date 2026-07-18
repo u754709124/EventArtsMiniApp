@@ -1,18 +1,18 @@
 # 演职人员列表页设计与资源说明
 
-## 路由与类型
+## 路由与分类
 
-三个入口共用 `pages/artists/list`：
+统一人员入口使用 `pages/artists/list`：
 
-| 路由                              | `type`   | 页面标题、角色文案 |
-| --------------------------------- | -------- | ------------------ |
-| `/pages/artists/list?type=host`   | `host`   | 主持人             |
-| `/pages/artists/list?type=singer` | `singer` | 歌手               |
-| `/pages/artists/list?type=actor`  | `actor`  | 演员               |
+| 路由 | 页面标题、筛选行为 |
+| --- | --- |
+| `/pages/artists/list` | 人员；展示全部启用人员 |
+| `/pages/artists/list?category=歌手` | 歌手；按任意人员分类精确筛选 |
+| `/pages/artists/list?type=host` | 历史兼容深链；映射为主持人分类 |
 
-小程序对缺失或未知 `type` 回退为 `host`；客户端 API 对显式非法 `type` 返回统一的 400 错误。新页面只读取 DTO 的 `tags: string[]`，不读取或解析原始 `tagsJson`。
+人员分类是规范化自由文本，不再限制为三个预定义值。旧 `type=host|singer|actor` 仅作为兼容别名；新入口和 API 使用可选 `category`。页面只读取 DTO 的 `tags: string[]`，不读取或解析原始 `tagsJson`。
 
-三种列表均作为子页面，不渲染页面级底部菜单；用户通过顶部返回按钮回到分类页或上一级页面。
+人员列表作为子页面，不渲染页面级底部菜单；用户通过顶部返回按钮回到分类页或上一级页面。
 
 ## 数据字段
 
@@ -20,7 +20,7 @@
 | ---------------------- | -------------------------------- |
 | `id`                   | 人员主键                         |
 | `name`                 | 人员名称                         |
-| `type`                 | `host`、`singer` 或 `actor`      |
+| `type`                 | 人员分类字符串（兼容保留字段名） |
 | `coverUrl`             | 列表封面图 URL，语义化字段       |
 | `avatarUrl`            | 兼容字段，当前与 `coverUrl` 相同 |
 | `location`             | 演绎地点                         |

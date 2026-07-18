@@ -2,8 +2,7 @@ import path from "node:path";
 import {
   buildActivityCaseTemplate,
   buildArtistProfileTemplate,
-  serializeArtistTags,
-  type ArtistType
+  serializeArtistTags
 } from "@event-arts/shared";
 import { registerSeedAssets } from "./assets";
 import type { AppPrismaClient } from "./db";
@@ -18,6 +17,12 @@ type SeedOptions = {
 };
 
 const assetRoot = path.resolve(process.cwd(), "../../apps/miniapp/src/assets/generated");
+
+const seedArtistCategoryKeys: Record<string, string> = {
+  "主持人": "host",
+  "歌手": "singer",
+  "演员": "actor"
+};
 
 async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.clientSession.deleteMany();
@@ -287,9 +292,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
   });
 
   const menus = [
-    ["主持人", "icon-host.png", "host", { defaultSort: "sortOrder", pageSize: 10 }],
-    ["歌手", "icon-singer.png", "singer", { defaultSort: "sortOrder", pageSize: 10 }],
-    ["演员", "icon-actor.png", "actor", { defaultSort: "sortOrder", pageSize: 10 }],
+    ["人员", "icon-host.png", "artist", { pageSize: 10 }],
     ["活动案例", "icon-case.png", "activity_case", { onlyFeatured: false, pageSize: 10 }],
     ["婚礼攻略", "icon-case.png", "article", { category: "婚礼攻略", pageSize: 10 }],
     ["联系我们", "icon-contact.png", "contact", { phone: "13800000000", address: "杭州" }]
@@ -439,7 +442,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
 
   const artists: Array<{
     name: string;
-    type: ArtistType;
+    type: string;
     cover: string;
     location: string;
     badge: string;
@@ -450,7 +453,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
   }> = [
     {
       name: "林然",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-01.png",
       location: "杭州",
       badge: "金牌主持",
@@ -461,7 +464,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "Jessica",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-02.png",
       location: "深圳",
       badge: "人气主持",
@@ -472,7 +475,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "陆安",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-03.png",
       location: "上海",
       badge: "实力主持",
@@ -483,7 +486,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "沈悦",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-04.png",
       location: "广州",
       badge: "高端主持",
@@ -494,7 +497,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "Kevin",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-05.png",
       location: "北京",
       badge: "双语主持",
@@ -505,7 +508,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "余薇",
-      type: "host",
+      type: "主持人",
       cover: "artist-cover-06.png",
       location: "成都",
       badge: "资深主持",
@@ -516,7 +519,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "苏晴",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-01.png",
       location: "杭州",
       badge: "金嗓歌手",
@@ -527,7 +530,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "Daniel",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-02.png",
       location: "深圳",
       badge: "双语歌手",
@@ -538,7 +541,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "陈默",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-03.png",
       location: "上海",
       badge: "实力唱将",
@@ -549,7 +552,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "安娜",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-04.png",
       location: "广州",
       badge: "晚宴歌手",
@@ -560,7 +563,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "许诺",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-05.png",
       location: "北京",
       badge: "原创歌手",
@@ -571,7 +574,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "唐艺",
-      type: "singer",
+      type: "歌手",
       cover: "artist-cover-06.png",
       location: "成都",
       badge: "氛围歌手",
@@ -582,7 +585,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "周野",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-01.png",
       location: "杭州",
       badge: "舞台演员",
@@ -593,7 +596,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "林雪",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-02.png",
       location: "深圳",
       badge: "形象演员",
@@ -604,7 +607,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "顾言",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-03.png",
       location: "上海",
       badge: "实力演员",
@@ -615,7 +618,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "沈宁",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-04.png",
       location: "广州",
       badge: "古风演员",
@@ -626,7 +629,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "韩川",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-05.png",
       location: "北京",
       badge: "动作演员",
@@ -637,7 +640,7 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
     },
     {
       name: "余曼",
-      type: "actor",
+      type: "演员",
       cover: "artist-cover-06.png",
       location: "成都",
       badge: "多栖演员",
@@ -664,10 +667,10 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       status: "enabled"
     };
     await upsertSeedEntity(prisma, {
-      key: `artist.${type}.${sortOrder}`,
+      key: `artist.${seedArtistCategoryKeys[type] ?? type}.${sortOrder}`,
       entityType: "artist",
       findById: (id) => prisma.artist.findUnique({ where: { id } }),
-      findLegacy: () => prisma.artist.findFirst({ where: { name, type } }),
+      findLegacy: () => prisma.artist.findFirst({ where: { name } }),
       create: () => prisma.artist.create({ data }),
       update: (id) => prisma.artist.update({ where: { id }, data })
     });

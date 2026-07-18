@@ -4,9 +4,7 @@ import { navigateToDetailPage } from "./detail-page-navigation";
 import { runGuardedAction } from "./repeat-click-guard";
 
 export const menuLabels: Record<MenuType, string> = {
-  host: "主持人",
-  singer: "歌手",
-  actor: "演员",
+  artist: "人员",
   activity_case: "活动案例",
   article: "文章",
   detail_page: "详情页直达",
@@ -14,9 +12,7 @@ export const menuLabels: Record<MenuType, string> = {
 };
 
 export const menuSummaries: Record<MenuType, string> = {
-  host: "寻找适合活动风格的专业主持人",
-  singer: "发现适合现场氛围的实力歌手",
-  actor: "挑选丰富活动体验的演艺人员",
+  artist: "按人员分类浏览主持、歌手与演艺服务",
   activity_case: "浏览真实活动案例与现场效果",
   article: "阅读婚礼攻略与活动策划经验",
   detail_page: "直接查看精选服务与活动详情",
@@ -24,9 +20,7 @@ export const menuSummaries: Record<MenuType, string> = {
 };
 
 const menuRoutes: Record<MenuType, string> = {
-  host: "/pages/artists/list?type=host",
-  singer: "/pages/artists/list?type=singer",
-  actor: "/pages/artists/list?type=actor",
+  artist: "/pages/artists/list",
   activity_case: "/pages/cases/list",
   article: "/pages/articles/list",
   detail_page: "/pages/detail/index",
@@ -34,6 +28,11 @@ const menuRoutes: Record<MenuType, string> = {
 };
 
 const caseMenuFilterStorageKey = "event-arts:case-menu-filter";
+const legacyArtistCategoryMap: Record<string, string> = {
+  host: "主持人",
+  singer: "歌手",
+  actor: "演员"
+};
 
 type CaseMenuFilter = {
   category?: string;
@@ -53,6 +52,12 @@ function getMenuConfig(menu: MenuItemDto | MenuType | string) {
   return isMenuItemLike(menu) && typeof menu.configJson === "object" && menu.configJson !== null
     ? menu.configJson as Record<string, unknown>
     : {};
+}
+
+function normalizeMenuType(menu: MenuItemDto | MenuType | string): MenuType | undefined {
+  const rawType = String(isMenuItemLike(menu) ? menu.type : menu);
+  if (rawType in legacyArtistCategoryMap) return "artist";
+  return rawType in menuRoutes ? (rawType as MenuType) : undefined;
 }
 
 function setPendingCaseMenuFilter(menu: MenuItemDto | MenuType | string) {
@@ -75,6 +80,14 @@ function articleMenuUrl(menu: MenuItemDto | MenuType | string) {
   return `/pages/articles/list${entries.length ? `?${entries.join("&")}` : ""}`;
 }
 
+function artistMenuUrl(menu: MenuItemDto | MenuType | string) {
+  const config = getMenuConfig(menu);
+  const rawMenuType = String(isMenuItemLike(menu) ? menu.type : menu);
+  const configuredCategory = typeof config.category === "string" ? config.category.trim() : "";
+  const category = configuredCategory || legacyArtistCategoryMap[rawMenuType] || "";
+  return category ? `/pages/artists/list?category=${encodeURIComponent(category)}` : "/pages/artists/list";
+}
+
 function detailPageMenuId(menu: MenuItemDto | MenuType | string) {
   const detailPageId = getMenuConfig(menu).detailPageId;
   return Number.isInteger(detailPageId) && Number(detailPageId) > 0 ? Number(detailPageId) : null;
@@ -91,7 +104,8 @@ export function consumePendingCaseMenuFilter(): CaseMenuFilter | undefined {
 }
 
 export function openMenu(menu: MenuItemDto | MenuType | string) {
-  const menuType = (isMenuItemLike(menu) ? menu.type : menu) as MenuType;
+  const menuType = normalizeMenuType(menu);
+  if (!menuType) return;
   if (menuType === "detail_page") {
     const detailPageId = detailPageMenuId(menu);
     if (detailPageId !== null) navigateToDetailPage(detailPageId);
@@ -107,6 +121,10 @@ export function openMenu(menu: MenuItemDto | MenuType | string) {
     }
     if (menuType === "article") {
       ignoreNavigationError(Taro.navigateTo({ url: articleMenuUrl(menu) }));
+      return;
+    }
+    if (menuType === "artist") {
+      ignoreNavigationError(Taro.navigateTo({ url: artistMenuUrl(menu) }));
       return;
     }
     ignoreNavigationError(Taro.navigateTo({ url }));

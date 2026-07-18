@@ -79,9 +79,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 
 ## Supported Menus
 
-- `host`: 主持人
-- `singer`: 歌手
-- `actor`: 演员
+- `artist`: 人员
 - `activity_case`: 活动案例
 - `article`: 文章
 - `detail_page`: 详情页直达

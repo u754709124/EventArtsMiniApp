@@ -1,7 +1,7 @@
 import Taro, { useLoad } from "@tarojs/taro";
 import { Input, Text, View } from "@tarojs/components";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ArtistListItemDto, ArtistType } from "@event-arts/shared";
+import type { ArtistListItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../../components/AppImage";
 import { PullDownRefreshIndicator } from "../../components/PageState";
@@ -19,23 +19,11 @@ type FilterOptions = {
   tags: string[];
 };
 
-const artistTypes: ArtistType[] = ["host", "singer", "actor"];
-
-const artistTypeLabels: Record<ArtistType, string> = {
+const legacyArtistCategoryMap: Record<string, string> = {
   host: "主持人",
   singer: "歌手",
   actor: "演员"
 };
-
-const artistCopy: Record<ArtistType, { searchPlaceholder: string }> = {
-  host: { searchPlaceholder: "搜索主持人姓名、擅长风格或活动类型" },
-  singer: { searchPlaceholder: "搜索歌手姓名、擅长风格或活动类型" },
-  actor: { searchPlaceholder: "搜索演员姓名、擅长风格或活动类型" }
-};
-
-function normalizeArtistType(value: unknown): ArtistType {
-  return artistTypes.includes(value as ArtistType) ? (value as ArtistType) : "host";
-}
 
 function getTags(item: ArtistListItem) {
   return Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())) : [];
@@ -45,15 +33,26 @@ function getText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildArtistListUrl(type: ArtistType, keyword: string, location: string, tag: string) {
+function normalizeArtistCategory(value: unknown) {
+  const rawCategory = getText(value);
+  let category = rawCategory;
+  try {
+    category = decodeURIComponent(rawCategory);
+  } catch {
+    // Keep malformed external deep-link values as plain text; the API will safely return an empty result.
+  }
+  return legacyArtistCategoryMap[category] || category;
+}
+
+function buildArtistListUrl(category: string, keyword: string, location: string, tag: string) {
   const entries = [
-    ["type", type],
+    ["category", category],
     ["q", keyword],
     ["location", location],
     ["tag", tag]
   ].filter(([, value]) => Boolean(value));
   const query = entries.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&");
-  return `/api/client/artists?${query}`;
+  return `/api/client/artists${query ? `?${query}` : ""}`;
 }
 
 function getFilterOptions(items: ArtistListItem[]): FilterOptions {
@@ -83,9 +82,10 @@ function getNavigationMetrics() {
   }
 }
 
-function ArtistCard({ item, type }: { item: ArtistListItem; type: ArtistType }) {
+function ArtistCard({ item }: { item: ArtistListItem }) {
   const tags = getTags(item).slice(0, 3);
   const clickable = Boolean(item.detailPageId);
+  const category = getText(item.type) || "人员";
   return (
     <View
       className={`artist-card ${clickable ? "artist-card--clickable" : "artist-card--static"}`}
@@ -101,14 +101,14 @@ function ArtistCard({ item, type }: { item: ArtistListItem; type: ArtistType }) 
         />
         <View className="artist-card__badge">
           <View className="artist-card__crown" aria-hidden />
-          <Text className="artist-card__badge-text">{getText(item.badge) || artistTypeLabels[type]}</Text>
+          <Text className="artist-card__badge-text">{getText(item.badge) || category}</Text>
         </View>
       </View>
       <View className="artist-card__body">
         <View className="artist-card__meta">
           <View className="artist-card__name-group">
             <Text className="artist-card__name">{getText(item.name) || "未命名人员"}</Text>
-            <Text className="artist-card__type">{artistTypeLabels[type]}</Text>
+            <Text className="artist-card__type">{category}</Text>
           </View>
           <View className="artist-card__location-group">
             <View className="artist-card__location-icon" aria-hidden />
@@ -221,7 +221,7 @@ function ArtistFilterPanel({
 }
 
 export default function ArtistList() {
-  const [type, setType] = useState<ArtistType>("host");
+  const [category, setCategory] = useState("");
   const [items, setItems] = useState<ArtistListItem[]>([]);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ locations: [], tags: [] });
   const [keywordInput, setKeywordInput] = useState("");
@@ -235,13 +235,13 @@ export default function ArtistList() {
   const [failed, setFailed] = useState(false);
   const requestToken = useRef(0);
   const metrics = useMemo(getNavigationMetrics, []);
-  const copy = artistCopy[type as ArtistType];
-  const title = artistTypeLabels[type as ArtistType];
+  const title = category || "人员";
+  const searchPlaceholder = category ? `搜索${category}姓名、擅长风格或活动类型` : "搜索人员姓名、分类、擅长风格或活动类型";
   const clickGuard = useRepeatClickGuard();
 
   useLoad((query) => {
-    const nextType = normalizeArtistType(query.type);
-    setType(nextType);
+    const nextCategory = normalizeArtistCategory(query.category || query.type);
+    setCategory(nextCategory);
     setItems([]);
     setFilterOptions({ locations: [], tags: [] });
     setKeywordInput("");
@@ -263,7 +263,7 @@ export default function ArtistList() {
       setFailed(false);
     }
     try {
-      const data = await request<ArtistListItem[]>(buildArtistListUrl(type, keyword, location, tag));
+      const data = await request<ArtistListItem[]>(buildArtistListUrl(category, keyword, location, tag));
       if (requestToken.current !== token) return;
       setItems(data);
       setFailed(false);
@@ -279,7 +279,7 @@ export default function ArtistList() {
 
   useEffect(() => {
     void load();
-  }, [keyword, location, tag, type]);
+  }, [category, keyword, location, tag]);
 
   const refreshing = usePullDownRefreshState(() => load(true));
 
@@ -316,7 +316,7 @@ export default function ArtistList() {
   }
 
   return (
-    <View className="artists-page" data-testid={`artist-list-page-${type}`}>
+    <View className="artists-page" data-testid="artist-list-page" data-artist-category={category || "all"}>
       {refreshing && <PullDownRefreshIndicator />}
       <View className="artists-nav" style={{ paddingTop: `${metrics.safeTop}px` }}>
         <View className="artists-nav__content" style={{ height: `${metrics.headerHeight}px` }}>
@@ -336,7 +336,7 @@ export default function ArtistList() {
             className="artist-search__input"
             data-testid="artist-search-input"
             value={keywordInput}
-            placeholder={copy.searchPlaceholder}
+            placeholder={searchPlaceholder}
             placeholderClass="artist-search__placeholder"
             maxlength={80}
             onInput={(event) => setKeywordInput(event.detail.value)}
@@ -354,10 +354,7 @@ export default function ArtistList() {
         ) : failed ? (
           <View className="artist-state" data-testid="artist-list-error">
             <Text className="artist-state__title">页面加载失败</Text>
-            <Text className="artist-state__desc">请稍后重试</Text>
-            <Text className="artist-state__action" data-testid="artist-list-retry" onClick={() => clickGuard("artist:retry", load)}>
-              重新加载
-            </Text>
+            <Text className="artist-state__desc">请下拉刷新重试</Text>
           </View>
         ) : items.length === 0 ? (
           <View className="artist-state" data-testid="artist-list-empty">
@@ -367,7 +364,7 @@ export default function ArtistList() {
         ) : (
           <View className="artist-grid">
             {items.map((item: ArtistListItem) => (
-              <ArtistCard key={item.id} item={item} type={type} />
+              <ArtistCard key={item.id} item={item} />
             ))}
           </View>
         )}

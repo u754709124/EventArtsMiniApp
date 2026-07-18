@@ -20,7 +20,7 @@ type Menu = { id: number; text: string; iconAssetId: number; type: string; statu
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
 type ArticleItem = { id: number; title: string; category: string; detailPageId: number | null; hasDetailPage: boolean };
 type ArticleListResponse = { items: ArticleItem[]; categories: string[]; total: number; page: number; pageSize: number };
-type ArtistListItem = { id: number; name: string; type: "host" | "singer" | "actor"; detailPageId: number | null };
+type ArtistListItem = { id: number; name: string; type: string; location: string; detailPageId: number | null };
 type CaseListItem = { id: number; title: string; detailPageId: number | null };
 type LinkedArtistListItem = ArtistListItem & { detailPageId: number };
 type LinkedCaseListItem = CaseListItem & { detailPageId: number };
@@ -58,6 +58,7 @@ type HomeResponse = {
     placeholderBannerUrl: string;
   };
   announcements: Announcement[];
+  banners: Array<{ id: number; imageUrl: string }>;
   featuredArticles: ArticleItem[];
 };
 
@@ -243,8 +244,30 @@ async function swipeHorizontally(page: Page, locator: Locator, direction: "left"
   await client.detach();
 }
 
+async function pullDownRefresh(page: Page) {
+  await clearDevOverlay(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const client = await page.context().newCDPSession(page);
+  const viewport = page.viewportSize() ?? { width: 390, height: 844 };
+  const x = viewport.width / 2;
+  const startY = 72;
+  const endY = Math.min(viewport.height - 96, 360);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x, y: startY }]
+  });
+  for (let step = 1; step <= 8; step += 1) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x, y: startY + ((endY - startY) * step) / 8 }]
+    });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await client.detach();
+}
+
 async function resolveDetailFixtures(request: APIRequestContext): Promise<DetailFixtures> {
-  const artists = await clientApi<ArtistListItem[]>(request, "/api/client/artists?type=host");
+  const artists = await clientApi<ArtistListItem[]>(request, `/api/client/artists?category=${encodeURIComponent("主持人")}`);
   const cases = await clientApi<CaseListItem[]>(request, "/api/client/cases");
   const artistBanner = artists.find((item) => item.name === "林然");
   const artistRich = artists.find((item) => item.name === "Jessica");
@@ -968,24 +991,37 @@ test("无 Banner 时显示默认图且有指示点", async ({ page, request }) =
   await expect(page.getByTestId("home-banner").locator(".swiper-pagination-bullet")).toHaveCount(1);
 });
 
-test("人员菜单进入统一列表页，并按类型展示固定双列卡片", async ({ page }) => {
-  const artistTypes = [
-    ["host", "主持人"],
-    ["singer", "歌手"],
-    ["actor", "演员"]
-  ] as const;
+test("人员菜单进入统一列表页，未配置分类时展示全部人员", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const expectedArtists = await clientApi<ArtistListItem[]>(request, "/api/client/artists");
+  const artistMenu = menus.items.find((item) => item.type === "artist");
+  if (!artistMenu) throw new Error("人员菜单种子数据缺失");
 
-  for (const [type, title] of artistTypes) {
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${artistMenu.id}`, {
+      configJson: {},
+      status: "enabled",
+      showOnHome: true
+    });
+
     await openHome(page);
-    const menu = page.getByTestId(`home-menu-${type}`).first();
+    const menu = page.getByTestId("home-menu-artist").first();
     await expect(menu).toBeVisible();
     await tap(page, menu);
-    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
+    const artistPage = page.getByTestId("artist-list-page").last();
     await expect(artistPage).toBeVisible();
-    await expect(page.getByTestId("artist-list-title")).toHaveText(title);
+    await expect(artistPage).toHaveAttribute("data-artist-category", "all");
+    await expect(page.getByTestId("artist-list-title")).toHaveText("人员");
     await expect(page.getByTestId("artist-search-input")).toBeVisible();
     await expect(page.getByTestId("artist-filter-button")).toBeVisible();
+    await expect(page.getByTestId("artist-card")).toHaveCount(expectedArtists.length);
     await expect(artistPage.getByTestId("artist-bottom-nav")).toHaveCount(0);
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${artistMenu.id}`, {
+      configJson: artistMenu.configJson ?? {},
+      status: artistMenu.status,
+      showOnHome: artistMenu.showOnHome
+    });
   }
 
   await openHome(page);
@@ -1001,27 +1037,59 @@ test("人员菜单进入统一列表页，并按类型展示固定双列卡片",
   await expect(page.getByTestId("contact-page")).toBeVisible();
 });
 
-test("分类页三个人员入口复用对应的列表路由", async ({ page }) => {
-  const artistTypes = [
-    ["host", "主持人"],
-    ["singer", "歌手"],
-    ["actor", "演员"]
-  ] as const;
+test("人员菜单配置任意中文分类后筛选对应列表", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const expectedArtists = await clientApi<ArtistListItem[]>(request, `/api/client/artists?category=${encodeURIComponent("歌手")}`);
+  const artistMenu = menus.items.find((item) => item.type === "artist");
+  if (!artistMenu) throw new Error("人员菜单种子数据缺失");
 
-  for (const [type, title] of artistTypes) {
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${artistMenu.id}`, {
+      configJson: { ...(artistMenu.configJson ?? {}), category: "歌手" },
+      status: "enabled",
+      showOnHome: true
+    });
+
     await openHome(page);
-    await tap(page, page.getByText("分类").last());
-    await expect(page.getByTestId("category-page")).toBeVisible();
-    await tap(page, page.getByTestId(`category-artist-${type}`));
-    await expect(page.getByTestId(`artist-list-page-${type}`)).toBeVisible();
-    await expect(page.getByTestId("artist-list-title")).toHaveText(title);
+    await tap(page, page.getByTestId("home-menu-artist").first());
+    const artistPage = page.getByTestId("artist-list-page").last();
+    await expect(artistPage).toBeVisible();
+    await expect(artistPage).toHaveAttribute("data-artist-category", "歌手");
+    await expect(page.getByTestId("artist-list-title")).toHaveText("歌手");
+    await expect(page.getByTestId("artist-card")).toHaveCount(expectedArtists.length);
+    await expect(page.locator(".artist-card__type").first()).toHaveText("歌手");
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${artistMenu.id}`, {
+      configJson: artistMenu.configJson ?? {},
+      status: artistMenu.status,
+      showOnHome: artistMenu.showOnHome
+    });
   }
+});
+
+test("旧人员类型深链兼容到分类筛选列表", async ({ page, request }) => {
+  const expectedArtists = await clientApi<ArtistListItem[]>(request, `/api/client/artists?category=${encodeURIComponent("主持人")}`);
+  await page.goto("/#/pages/artists/list?type=host");
+  const artistPage = page.getByTestId("artist-list-page").last();
+  await expect(artistPage).toBeVisible();
+  await expect(artistPage).toHaveAttribute("data-artist-category", "主持人");
+  await expect(page.getByTestId("artist-list-title")).toHaveText("主持人");
+  await expect(page.getByTestId("artist-card")).toHaveCount(expectedArtists.length);
+});
+
+test("分类页人员入口复用同一列表路由", async ({ page }) => {
+  await openHome(page);
+  await tap(page, page.getByText("分类").last());
+  await expect(page.getByTestId("category-page")).toBeVisible();
+  await tap(page, page.getByTestId("category-artist-artist"));
+  await expect(page.getByTestId("artist-list-page")).toBeVisible();
+  await expect(page.getByTestId("artist-list-title")).toHaveText("人员");
 });
 
 test("分类页使用后端菜单，首页隐藏项仍在分类页展示，停用项两处隐藏", async ({ page, request }) => {
   const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
-  const homeHidden = menus.items.find((item) => item.type === "host");
-  const disabled = menus.items.find((item) => item.type === "actor");
+  const homeHidden = menus.items.find((item) => item.type === "artist");
+  const disabled = menus.items.find((item) => item.type === "activity_case");
   if (!homeHidden || !disabled) throw new Error("菜单种子数据缺失");
 
   try {
@@ -1100,22 +1168,22 @@ test("详情页直达菜单从首页和分类页进入同一独立详情页", as
 });
 
 test("人员页作为子页面不渲染底部菜单", async ({ page }) => {
-  for (const type of ["host", "singer", "actor"] as const) {
-    await openHome(page);
-    await tap(page, page.getByTestId(`home-menu-${type}`).first());
-    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
-    await expect(artistPage).toBeVisible();
-    await expect(artistPage.getByTestId("artist-bottom-nav")).toHaveCount(0);
-  }
+  await openHome(page);
+  await tap(page, page.getByTestId("home-menu-artist").first());
+  const artistPage = page.getByTestId("artist-list-page").last();
+  await expect(artistPage).toBeVisible();
+  await expect(artistPage.getByTestId("artist-bottom-nav")).toHaveCount(0);
 });
 
-test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) => {
+test("人员页卡片、搜索、筛选和详情交互可用", async ({ page, request }) => {
+  const expectedArtists = await clientApi<ArtistListItem[]>(request, "/api/client/artists");
+  const expectedHangzhouArtists = expectedArtists.filter((item) => item.location === "杭州");
   await openHome(page);
-  await tap(page, page.getByTestId("home-menu-host").first());
+  await tap(page, page.getByTestId("home-menu-artist").first());
 
   const cards = page.getByTestId("artist-card");
   await expect(cards.first()).toBeVisible();
-  await expect(cards).toHaveCount(6);
+  await expect(cards).toHaveCount(expectedArtists.length);
   const dimensions = await cards.evaluateAll((nodes) =>
     nodes.slice(0, 2).map((node) => {
       const rect = node.getBoundingClientRect();
@@ -1132,12 +1200,12 @@ test("人员页卡片、搜索、筛选和详情交互可用", async ({ page }) 
   await expect(cards.first()).toContainText("林然");
 
   await searchInput.fill("");
-  await expect(cards).toHaveCount(6);
+  await expect(cards).toHaveCount(expectedArtists.length);
   await tap(page, page.getByTestId("artist-filter-button"));
   await expect(page.getByTestId("artist-filter-panel")).toBeVisible();
   await tap(page, page.getByTestId("artist-filter-location-杭州"));
   await tap(page, page.getByTestId("artist-filter-confirm"));
-  await expect(cards).toHaveCount(1);
+  await expect(cards).toHaveCount(expectedHangzhouArtists.length);
   await expect(cards.first()).toContainText("杭州");
 
   await tap(page, cards.first());
@@ -1268,7 +1336,7 @@ test("详情路由切换 ID 不显示上一条数据", async ({ page, request })
   await expect(page.getByTestId("detail-banner")).toHaveCount(0);
 });
 
-test("详情接口错误展示重试并可恢复", async ({ page, request }) => {
+test("详情接口错误无点击重载并可下拉刷新恢复", async ({ page, request }) => {
   const { artistRich } = await resolveDetailFixtures(request);
   let failed = false;
   await page.route(`**/api/client/detail-pages/${artistRich.detailPageId}`, async (route) => {
@@ -1289,9 +1357,92 @@ test("详情接口错误展示重试并可恢复", async ({ page, request }) => 
   await openDetail(page, artistRich.detailPageId);
   await expect(page.getByTestId("detail-state-error")).toBeVisible();
   await expect(page.getByText("页面加载失败")).toBeVisible();
-  await tap(page, page.getByTestId("detail-retry"));
+  await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+  await expect(page.getByTestId("detail-retry")).toHaveCount(0);
+  const recovered = page.waitForResponse((response) =>
+    response.url().includes(`/api/client/detail-pages/${artistRich.detailPageId}`) &&
+    response.request().method() === "GET" &&
+    response.ok()
+  );
+  await pullDownRefresh(page);
+  await recovered;
   await expect(page.getByTestId("detail-layout-rich-only")).toBeVisible();
   await expect(page.getByTestId("detail-navigation")).toContainText(artistRich.name);
+});
+
+test("旧人员和案例详情错误无点击重载并可下拉刷新恢复", async ({ page, request }) => {
+  const { artistBanner, caseBanner } = await resolveDetailFixtures(request);
+  const scenarios = [
+    {
+      url: `/#/pages/artists/detail?id=${artistBanner.id}`,
+      api: `/api/client/artists/${artistBanner.id}`,
+      stateTestId: "artist-detail-legacy-state"
+    },
+    {
+      url: `/#/pages/cases/detail?id=${caseBanner.id}`,
+      api: `/api/client/cases/${caseBanner.id}`,
+      stateTestId: "case-detail-legacy-state"
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    let failed = false;
+    await page.route(`**${scenario.api}`, async (route) => {
+      if (!failed) {
+        failed = true;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: false,
+            error: { code: "E2E_LEGACY_DETAIL_FAIL", message: "E2E 旧详情失败" }
+          })
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(scenario.url);
+    await expect(page.getByTestId(scenario.stateTestId)).toBeVisible();
+    await expect(page.getByText("页面加载失败")).toBeVisible();
+    await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+    await expect(page.getByTestId("detail-retry")).toHaveCount(0);
+    const recovered = page.waitForResponse((response) =>
+      response.url().includes(scenario.api) && response.request().method() === "GET" && response.ok()
+    );
+    await pullDownRefresh(page);
+    await recovered;
+    await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+    await page.unroute(`**${scenario.api}`);
+  }
+});
+
+test("详情 Banner 与视频失败只提示且无媒体点击重载", async ({ page, request }) => {
+  const { artistBanner, caseBanner } = await resolveDetailFixtures(request);
+  const artistDto = await clientApi<DetailPageDto>(request, `/api/client/detail-pages/${artistBanner.detailPageId}`);
+  const caseDto = await clientApi<DetailPageDto>(request, `/api/client/detail-pages/${caseBanner.detailPageId}`);
+  const firstBanner = artistDto.banners[0];
+  const videoBlock = caseDto.blocks.find((block): block is { type: "video"; url: string } => block.type === "video");
+  if (!firstBanner || !videoBlock) throw new Error("详情媒体 E2E seed 不完整");
+  const bannerUrl = assetUrl(firstBanner.url);
+
+  await page.route(bannerUrl, (route) =>
+    route.fulfill({ status: 503, contentType: "text/plain", body: "banner unavailable" })
+  );
+  await openDetail(page, artistBanner.detailPageId);
+  await expect(page.getByTestId("detail-banner-media-error")).toBeVisible();
+  await expect(page.getByText(/BANNER 图片加载失败/u)).toBeVisible();
+  await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+  await expect(page.getByTestId("detail-banner-media-retry")).toHaveCount(0);
+  await expect(page.getByText("重新加载图片")).toHaveCount(0);
+
+  await page.route(assetUrl(videoBlock.url), (route) =>
+    route.fulfill({ status: 503, contentType: "text/plain", body: "video unavailable" })
+  );
+  await openDetail(page, caseBanner.detailPageId);
+  await expect(page.getByTestId("detail-video-error")).toBeVisible();
+  await expect(page.getByText("视频加载失败，请下拉刷新重试")).toBeVisible();
+  await expect(page.getByText("重新加载")).toHaveCount(0);
 });
 
 test("四种详情页视觉截图与人员详情对齐差异图", async ({ page, request }) => {
@@ -1314,21 +1465,21 @@ test("四种详情页视觉截图与人员详情对齐差异图", async ({ page,
   await createDetailComparison("docs/design/actual-artist-banner-rich-text.png");
 });
 
-test("分类页的人员入口复用同一类型化列表", async ({ page }) => {
+test("分类页的人员入口复用同一人员列表", async ({ page }) => {
   await openHome(page);
   await tap(page, page.getByText("分类").last());
   await expect(page.getByTestId("category-page")).toBeVisible();
-  await tap(page, page.getByTestId("category-artist-singer"));
-  await expect(page.getByTestId("artist-list-page-singer")).toBeVisible();
-  await expect(page.getByTestId("artist-list-title")).toHaveText("歌手");
+  await tap(page, page.getByTestId("category-artist-artist"));
+  await expect(page.getByTestId("artist-list-page")).toBeVisible();
+  await expect(page.getByTestId("artist-list-title")).toHaveText("人员");
 });
 
 test("人员列表设计复核截图与参考差异图", async ({ page, request }) => {
   await prepareDesignReviewData(request);
-  async function capture(type: "host" | "singer" | "actor", filename: string) {
+  async function capture(filename: string) {
     await openHome(page);
-    await tap(page, page.getByTestId(`home-menu-${type}`).first());
-    const artistPage = page.getByTestId(`artist-list-page-${type}`).last();
+    await tap(page, page.getByTestId("home-menu-artist").first());
+    const artistPage = page.getByTestId("artist-list-page").last();
     await expect(artistPage).toBeVisible();
     await expect(page.getByTestId("artist-card").first()).toBeVisible();
     await expect(artistPage.locator("img").last()).toBeVisible();
@@ -1336,9 +1487,7 @@ test("人员列表设计复核截图与参考差异图", async ({ page, request 
     await artistPage.screenshot({ path: `docs/design/${filename}` });
   }
 
-  await capture("host", "actual-artists-host.png");
-  await capture("singer", "actual-artists-singer.png");
-  await capture("actor", "actual-artists-actor.png");
+  await capture("actual-artists-host.png");
 
   const hostPath = "docs/design/actual-artists-host.png";
   const host = await sharp(hostPath).metadata();
@@ -1476,7 +1625,7 @@ test("精选案例展示并可进入详情页", async ({ page }) => {
   await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
 });
 
-test("首页接口失败展示异常页，重新加载可恢复", async ({ page }) => {
+test("首页接口失败展示异常页，下拉刷新可恢复且无点击重载", async ({ page }) => {
   await page.route(`${apiBase}/api/client/home`, (route) =>
     route.fulfill({
       status: 500,
@@ -1487,9 +1636,82 @@ test("首页接口失败展示异常页，重新加载可恢复", async ({ page 
   await page.goto("/");
   await expect(page.getByTestId("home-error-state")).toBeVisible();
   await expect(page.getByText("页面加载失败")).toBeVisible();
+  await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+  await expect(page.getByTestId("home-reload")).toHaveCount(0);
   await page.unroute(`${apiBase}/api/client/home`);
-  await tap(page, page.getByTestId("home-reload"));
+  const recovered = page.waitForResponse((response) =>
+    response.url().includes("/api/client/home") && response.request().method() === "GET" && response.ok()
+  );
+  await pullDownRefresh(page);
+  await recovered;
   await expect(page.getByTestId("miniapp-home")).toBeVisible();
+});
+
+test("首页三张 Banner 图片失败后仅提示并通过下拉刷新恢复", async ({ page, request }) => {
+  const previousBanners = await adminApi<AdminList<Banner>>(request, "GET", "/api/admin/banners");
+  await setBannerStatus(request, "disabled");
+  const assets = await adminApi<AdminList<MediaAsset>>(request, "GET", "/api/admin/media-assets?mediaType=image&pageSize=100");
+  const bannerAssets = assets.items.slice(0, 3);
+  if (bannerAssets.length < 3) throw new Error("首页 Banner E2E 需要至少三张图片资源");
+  const created: Banner[] = [];
+
+  try {
+    for (const [index, asset] of bannerAssets.entries()) {
+      created.push(await createBanner(request, {
+        title: `E2E 失败恢复 Banner ${index + 1}`,
+        imageAssetId: asset.id,
+        sortOrder: 900 + index,
+        switchDurationMs: 60_000
+      }));
+    }
+
+    const home = await clientApi<HomeResponse>(request, "/api/client/home");
+    const expectedBanners = home.banners.filter((banner) => created.some((item) => item.id === banner.id));
+    expect(expectedBanners).toHaveLength(3);
+    const bannerUrls = expectedBanners.map((banner) => assetUrl(banner.imageUrl));
+    let failImages = true;
+    let imageAttempts = 0;
+
+    for (const url of bannerUrls) {
+      await page.route(url, (route) => {
+        imageAttempts += 1;
+        return failImages
+          ? route.fulfill({ status: 503, contentType: "text/plain", body: "image unavailable" })
+          : route.continue();
+      });
+    }
+
+    await openHome(page);
+    const images = page.getByTestId("home-banner-image");
+    const bannerState = page.getByTestId("home-banner-state");
+    await expect(images).toHaveCount(3);
+    await expect(bannerState).toHaveAttribute("data-failed-count", "3");
+    await expect(page.getByTestId("home-banner-failure")).toHaveText("图片加载失败，请下拉刷新");
+    await expect(page.getByText("重新加载图片")).toHaveCount(0);
+    await expect(page.getByText("重新加载")).toHaveCount(0);
+    await expect(bannerState).toHaveAttribute("data-media-refresh-version", "0");
+    expect(imageAttempts).toBeGreaterThanOrEqual(3);
+
+    failImages = false;
+    const refreshed = page.waitForResponse((response) =>
+      response.url().includes("/api/client/home") && response.request().method() === "GET" && response.ok()
+    );
+    await pullDownRefresh(page);
+    await refreshed;
+    await expect(bannerState).toHaveAttribute("data-media-refresh-version", "1");
+    for (const [index, banner] of expectedBanners.entries()) {
+      await expect(images.nth(index)).toHaveAttribute("data-current-src", banner.imageUrl);
+    }
+    await expect(bannerState).toHaveAttribute("data-failed-count", "0");
+    await expect(page.getByTestId("home-banner-failure")).toHaveCount(0);
+  } finally {
+    await Promise.all(created.map((banner) => adminApi(request, "DELETE", `/api/admin/banners/${banner.id}`)));
+    await Promise.all(
+      previousBanners.items.map((banner) =>
+        adminApi(request, "PUT", `/api/admin/banners/${banner.id}`, { status: banner.status })
+      )
+    );
+  }
 });
 
 test("我的页面复用后台配置的小程序名与副标题", async ({ page, request }) => {
@@ -1516,6 +1738,47 @@ test("我的页面复用后台配置的小程序名与副标题", async ({ page,
   } finally {
     await adminApi(request, "PUT", "/api/admin/site-config", originalSite);
   }
+});
+
+test("分类和我的页面失败态无点击重载，下拉刷新恢复数据", async ({ page }) => {
+  await page.route(`${apiBase}/api/client/menu-items`, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ success: false, error: { code: "E2E_MENU_FAIL", message: "E2E menu failure" } })
+    })
+  );
+  await page.goto("/#/pages/category/index");
+  await expect(page.getByTestId("category-error-state")).toBeVisible();
+  await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+  await expect(page.getByTestId("category-reload")).toHaveCount(0);
+  await page.unroute(`${apiBase}/api/client/menu-items`);
+  const categoryRecovered = page.waitForResponse((response) =>
+    response.url().includes("/api/client/menu-items") && response.request().method() === "GET" && response.ok()
+  );
+  await pullDownRefresh(page);
+  await categoryRecovered;
+  await expect(page.getByTestId("category-page")).toBeVisible();
+  await expect(page.getByTestId("category-error-state")).toHaveCount(0);
+
+  await page.route(`${apiBase}/api/client/home`, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ success: false, error: { code: "E2E_MINE_FAIL", message: "E2E mine failure" } })
+    })
+  );
+  await page.goto("/#/pages/mine/index");
+  await expect(page.getByTestId("home-error-state")).toBeVisible();
+  await expect(page.getByText("请下拉刷新重试")).toBeVisible();
+  await expect(page.getByTestId("home-reload")).toHaveCount(0);
+  await page.unroute(`${apiBase}/api/client/home`);
+  const mineRecovered = page.waitForResponse((response) =>
+    response.url().includes("/api/client/home") && response.request().method() === "GET" && response.ok()
+  );
+  await pullDownRefresh(page);
+  await mineRecovered;
+  await expect(page.getByTestId("mine-page")).toBeVisible();
 });
 
 test("无 Banner 时使用占位图", async ({ page, request }) => {

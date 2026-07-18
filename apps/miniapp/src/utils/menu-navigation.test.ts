@@ -58,7 +58,7 @@ describe("menu navigation", () => {
     expect(taroMock.switchTab).not.toHaveBeenCalled();
   });
 
-  it("keeps existing case, article, and artist navigation behavior", () => {
+  it("keeps existing case and article navigation behavior", () => {
     openMenu(menu("activity_case", { category: "婚礼主持" }));
     expect(taroMock.setStorageSync).toHaveBeenCalledWith("event-arts:case-menu-filter", { category: "婚礼主持" });
     expect(taroMock.switchTab).toHaveBeenCalledWith({ url: "/pages/cases/list" });
@@ -67,12 +67,35 @@ describe("menu navigation", () => {
     expect(taroMock.navigateTo).toHaveBeenCalledWith({
       url: "/pages/articles/list?category=%E5%A9%9A%E7%A4%BC%E6%94%BB%E7%95%A5&pageSize=6"
     });
-
-    openMenu(menu("host"));
-    expect(taroMock.navigateTo).toHaveBeenCalledWith({ url: "/pages/artists/list?type=host" });
   });
 
-  it("defines display copy for the seventh menu type", () => {
+  it("opens artist menus with optional encoded categories", () => {
+    openMenu(menu("artist"));
+    expect(taroMock.navigateTo).toHaveBeenCalledWith({ url: "/pages/artists/list" });
+
+    openMenu(menu("artist", { category: "儿童主持 / 双语" }));
+    expect(taroMock.navigateTo).toHaveBeenCalledWith({
+      url: "/pages/artists/list?category=%E5%84%BF%E7%AB%A5%E4%B8%BB%E6%8C%81%20%2F%20%E5%8F%8C%E8%AF%AD"
+    });
+  });
+
+  it("falls back to the unfiltered artist list for invalid artist menu config", () => {
+    openMenu(menu("artist", { category: 42 }));
+
+    expect(taroMock.navigateTo).toHaveBeenCalledWith({ url: "/pages/artists/list" });
+  });
+
+  it("maps legacy artist menu types to category-filtered artist lists", () => {
+    openMenu({ ...menu("artist"), type: "host" as unknown as MenuItemDto["type"] });
+
+    expect(taroMock.navigateTo).toHaveBeenCalledWith({
+      url: "/pages/artists/list?category=%E4%B8%BB%E6%8C%81%E4%BA%BA"
+    });
+  });
+
+  it("defines display copy for the canonical artist menu type", () => {
+    expect(menuLabels.artist).toBe("人员");
+    expect(menuSummaries.artist).toBeTruthy();
     expect(menuLabels.detail_page).toBe("详情页直达");
     expect(menuSummaries.detail_page).toBeTruthy();
   });

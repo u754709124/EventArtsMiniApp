@@ -230,13 +230,15 @@ describe("client home aggregation", () => {
     ]);
     expect(body.data.site.appName).toBe("喜缘主持・演艺服务");
     expect(body.data.menus.map((menu: { type: string }) => menu.type)).toEqual([
-      "host",
-      "singer",
-      "actor",
+      "artist",
       "activity_case",
       "article",
       "contact"
     ]);
+    expect(body.data.menus.find((menu: { type: string }) => menu.type === "artist").configJson).toEqual({
+      defaultSort: "sortOrder",
+      pageSize: 10
+    });
     expect(body.data.menus.every((menu: { showOnHome: boolean }) => menu.showOnHome)).toBe(true);
     expect(body.data.featuredCases).toHaveLength(3);
     expect(body.data.featuredArticles).toHaveLength(2);
@@ -473,16 +475,16 @@ describe("client home aggregation", () => {
 
   it("updates an existing seeded menu with the complete editable payload", async () => {
     const token = await login();
-    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "artist" } });
     const response = await app.inject({
       method: "PUT",
       url: `/api/admin/menu-items/${existing.id}`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        text: "主持人服务",
+        text: "人员服务",
         iconAssetId: existing.iconAssetId,
         type: existing.type,
-        configJson: { defaultSort: "newest", pageSize: 12 },
+        configJson: { category: "主持人", defaultSort: "newest", pageSize: 12 },
         showOnHome: false,
         sortOrder: 7,
         status: "enabled"
@@ -493,18 +495,18 @@ describe("client home aggregation", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
       id: existing.id,
-      text: "主持人服务",
-      type: "host",
+      text: "人员服务",
+      type: "artist",
       showOnHome: false,
       sortOrder: 7,
       status: "enabled"
     });
-    expect(JSON.parse(saved.configJson)).toEqual({ defaultSort: "newest", pageSize: 12 });
+    expect(JSON.parse(saved.configJson)).toEqual({ category: "主持人", defaultSort: "newest", pageSize: 12 });
   });
 
   it("keeps menu updates strict when response-only fields are submitted", async () => {
     const token = await login();
-    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "artist" } });
     const response = await app.inject({
       method: "PUT",
       url: `/api/admin/menu-items/${existing.id}`,
@@ -667,7 +669,7 @@ describe("client home aggregation", () => {
     expect(mismatched.json().error.code).toBe("VALIDATION_ERROR");
     expect(await prisma.menuItem.count()).toBe(beforeCount);
 
-    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const existing = await prisma.menuItem.findFirstOrThrow({ where: { type: "artist" } });
     const switchedWithConfig = await app.inject({
       method: "PUT",
       url: `/api/admin/menu-items/${existing.id}`,
@@ -691,7 +693,7 @@ describe("client home aggregation", () => {
       detailPageId: detail.id
     });
 
-    const anotherExisting = await prisma.menuItem.findFirstOrThrow({ where: { type: "singer" } });
+    const anotherExisting = await prisma.menuItem.findFirstOrThrow({ where: { type: "contact" } });
     const switchedWithoutConfig = await app.inject({
       method: "PUT",
       url: `/api/admin/menu-items/${anotherExisting.id}`,
@@ -699,12 +701,12 @@ describe("client home aggregation", () => {
       payload: { type: "detail_page" }
     });
     expect(switchedWithoutConfig.statusCode).toBe(400);
-    expect((await prisma.menuItem.findUniqueOrThrow({ where: { id: anotherExisting.id } })).type).toBe("singer");
+    expect((await prisma.menuItem.findUniqueOrThrow({ where: { id: anotherExisting.id } })).type).toBe("contact");
   });
 
   it("degrades damaged direct detail-page configs without failing menu responses", async () => {
     const token = await login();
-    const menu = await prisma.menuItem.findFirstOrThrow({ where: { type: "host" } });
+    const menu = await prisma.menuItem.findFirstOrThrow({ where: { type: "artist" } });
     await prisma.menuItem.update({
       where: { id: menu.id },
       data: { type: "detail_page", configJson: JSON.stringify({ detailPageType: "rich_text", detailPageId: 0 }) }
@@ -765,14 +767,14 @@ describe("admin case category options", () => {
 });
 
 describe("artist client and admin contracts", () => {
-  it("defaults the client artist list to host, serializes cards, and filters only enabled matching types", async () => {
-    await prisma.artist.updateMany({ where: { type: "singer" }, data: { status: "disabled" } });
+  it("defaults the client artist list to all enabled personnel and serializes category cards", async () => {
+    await prisma.artist.updateMany({ where: { type: "歌手" }, data: { status: "disabled" } });
     const response = await clientInject({ method: "GET", url: "/api/client/artists" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        type: "host",
+        type: "主持人",
         coverUrl: expect.any(String),
         avatarUrl: expect.any(String),
         location: expect.any(String),
@@ -780,20 +782,21 @@ describe("artist client and admin contracts", () => {
         tags: expect.any(Array)
       })
     ]));
-    expect(response.json().data.every((artist: { type: string; status: string }) => artist.type === "host" && artist.status === "enabled")).toBe(true);
+    expect(response.json().data).toHaveLength(12);
+    expect(response.json().data.every((artist: { type: string; status: string }) => artist.type !== "歌手" && artist.status === "enabled")).toBe(true);
   });
 
-  it("strictly rejects an invalid client artist type", async () => {
-    const response = await clientInject({ method: "GET", url: "/api/client/artists?type=unknown" });
+  it("rejects conflicting client artist category aliases", async () => {
+    const response = await clientInject({ method: "GET", url: "/api/client/artists?type=host&category=%E6%AD%8C%E6%89%8B" });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("returns six enabled records for each artist type and preserves the required host seed copy", async () => {
+  it("returns six enabled records for each personnel category and supports legacy type aliases", async () => {
     const [host, singer, actor] = await Promise.all([
       clientInject({ method: "GET", url: "/api/client/artists?type=host" }),
-      clientInject({ method: "GET", url: "/api/client/artists?type=singer" }),
-      clientInject({ method: "GET", url: "/api/client/artists?type=actor" })
+      clientInject({ method: "GET", url: "/api/client/artists?category=%E6%AD%8C%E6%89%8B" }),
+      clientInject({ method: "GET", url: "/api/client/artists?category=%E6%BC%94%E5%91%98" })
     ]);
 
     expect(host.json().data).toHaveLength(6);
@@ -806,21 +809,22 @@ describe("artist client and admin contracts", () => {
       tags: ["10年经验", "婚礼主持", "高端晚宴", "控场力强"],
       summary: "风格大气沉稳，擅长情感共鸣，深受新人喜爱，让每一场仪式都温暖动人。"
     });
-    expect(singer.json().data.every((artist: { type: string }) => artist.type === "singer")).toBe(true);
-    expect(actor.json().data.every((artist: { type: string }) => artist.type === "actor")).toBe(true);
+    expect(host.json().data.every((artist: { type: string }) => artist.type === "主持人")).toBe(true);
+    expect(singer.json().data.every((artist: { type: string }) => artist.type === "歌手")).toBe(true);
+    expect(actor.json().data.every((artist: { type: string }) => artist.type === "演员")).toBe(true);
   });
 
   it("filters artists by keyword, location and tag while keeping sort order stable", async () => {
-    const hostArtists = await prisma.artist.findMany({ where: { type: "host" }, orderBy: { sortOrder: "asc" } });
+    const hostArtists = await prisma.artist.findMany({ where: { type: "主持人" }, orderBy: { sortOrder: "asc" } });
     await prisma.artist.update({ where: { id: hostArtists[0].id }, data: { sortOrder: 5, location: "绍兴", summary: "独特风格描述" } });
     await prisma.artist.update({ where: { id: hostArtists[1].id }, data: { sortOrder: 5, location: "杭州", tagsJson: '["独特标签"]' } });
 
-    const bySummary = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E9%A3%8E%E6%A0%BC" });
-    const byName = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9E%97%E7%84%B6" });
-    const byLocationKeyword = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E6%9D%AD%E5%B7%9E" });
-    const byTagKeyword = await clientInject({ method: "GET", url: "/api/client/artists?type=host&q=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
-    const byLocationAndTag = await clientInject({ method: "GET", url: "/api/client/artists?type=host&location=%E6%9D%AD%E5%B7%9E&tag=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
-    const ordered = await clientInject({ method: "GET", url: "/api/client/artists?type=host" });
+    const bySummary = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA&q=%E7%8B%AC%E7%89%B9%E9%A3%8E%E6%A0%BC" });
+    const byName = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA&q=%E6%9E%97%E7%84%B6" });
+    const byLocationKeyword = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA&q=%E6%9D%AD%E5%B7%9E" });
+    const byTagKeyword = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA&q=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const byLocationAndTag = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA&location=%E6%9D%AD%E5%B7%9E&tag=%E7%8B%AC%E7%89%B9%E6%A0%87%E7%AD%BE" });
+    const ordered = await clientInject({ method: "GET", url: "/api/client/artists?category=%E4%B8%BB%E6%8C%81%E4%BA%BA" });
 
     expect(bySummary.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
     expect(byName.json().data.map((artist: { id: number }) => artist.id)).toEqual([hostArtists[0].id]);
@@ -832,7 +836,7 @@ describe("artist client and admin contracts", () => {
   });
 
   it("safely falls back from damaged tags JSON and never exposes it to client cards", async () => {
-    const artist = await prisma.artist.findFirstOrThrow({ where: { type: "host" } });
+    const artist = await prisma.artist.findFirstOrThrow({ where: { type: "主持人" } });
     await prisma.artist.update({ where: { id: artist.id }, data: { tagsJson: "not-json" } });
 
     const response = await clientInject({ method: "GET", url: `/api/client/artists/${artist.id}` });
@@ -856,7 +860,7 @@ describe("artist client and admin contracts", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         name: "新建主持人",
-        type: "host",
+        type: "  ＶＩＰ   主持 ",
         avatarAssetId: cover.id,
         location: "杭州",
         badge: "金牌主持",
@@ -870,6 +874,7 @@ describe("artist client and admin contracts", () => {
 
     expect(incomplete.statusCode).toBe(400);
     expect(created.statusCode).toBe(200);
+    expect(created.json().data.type).toBe("VIP 主持");
     expect(created.json().data.tags).toEqual(["婚礼主持", "高端晚宴"]);
     expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["婚礼主持","高端晚宴"]');
 
@@ -882,6 +887,67 @@ describe("artist client and admin contracts", () => {
     expect(updated.statusCode).toBe(200);
     expect(updated.json().data.tags).toEqual(["论坛主持"]);
     expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["论坛主持"]');
+  });
+
+  it("requires admin auth for artist category options and returns normalized distinct categories", async () => {
+    await prisma.artist.create({
+      data: {
+        name: "重复分类人员",
+        type: " host ",
+        avatarAssetId: null,
+        location: "杭州",
+        badge: "主持",
+        tagsJson: '["主持"]',
+        summary: "分类去重测试",
+        detail: "",
+        sortOrder: 100,
+        status: "enabled"
+      }
+    });
+    const unauthorized = await app.inject({ method: "GET", url: "/api/admin/artist-categories" });
+    const token = await login();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/artist-categories",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.items).toEqual(["歌手", "演员", "主持人"]);
+  });
+
+  it("rejects empty and over-limit artist categories on admin writes", async () => {
+    const token = await login();
+    const cover = await prisma.mediaAsset.findFirstOrThrow();
+    const empty = await app.inject({
+      method: "POST",
+      url: "/api/admin/artists",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: "空分类人员",
+        type: "   ",
+        avatarAssetId: cover.id,
+        location: "杭州",
+        badge: "主持",
+        tags: ["婚礼主持"],
+        summary: "专业稳重的主持人。",
+        detailPageId: null,
+        sortOrder: 99,
+        status: "enabled"
+      }
+    });
+    const tooLong = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${(await prisma.artist.findFirstOrThrow()).id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { type: "很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长的人员分类" }
+    });
+
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json().error.message).toContain("人员分类不能为空");
+    expect(tooLong.statusCode).toBe(400);
+    expect(tooLong.json().error.message).toContain("人员分类不能超过 30 个字符");
   });
 
   it("returns full admin edit records by id and validates invalid ids", async () => {

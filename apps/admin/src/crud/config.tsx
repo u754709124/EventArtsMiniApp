@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { AutoComplete, DatePicker, Form, Input, InputNumber, Select, Switch, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
-  artistTypeLabels,
-  artistTypeValues,
   detailPageTypeDefinitions,
   detailPageTypeValues,
   normalizeArticleCategory,
+  normalizeArtistCategory,
+  normalizeLegacyArtistCategory,
   menuConfigSchemaByType,
   type DetailPageType,
   type MenuType
@@ -50,8 +50,11 @@ export function prepareCrudEditValues(record: AnyRecord): AnyRecord {
   const preparedConfigJson = record.type === "article" && (!configJson || typeof configJson !== "object" || !("category" in configJson))
     ? { ...(configJson && typeof configJson === "object" ? configJson : {}), category: allArticlesCategoryValue }
     : configJson;
+  const isArtistRecord = "avatarAssetId" in record || "avatarAsset" in record;
+  const preparedType = isArtistRecord && typeof record.type === "string" ? normalizeLegacyArtistCategory(record.type) : record.type;
   return {
     ...record,
+    type: preparedType,
     eventDate: record.eventDate ? dayjs(String(record.eventDate)) : undefined,
     publishedAt: record.publishedAt ? dayjs(String(record.publishedAt)) : undefined,
     configJson: preparedConfigJson,
@@ -96,6 +99,10 @@ type CaseCategoryListResponse = {
 
 type ArticleCategoryListResponse = {
   categories: string[];
+};
+
+type ArtistCategoryListResponse = {
+  items: string[];
 };
 
 function useCaseCategoryOptions() {
@@ -144,6 +151,29 @@ function useArticleCategoryOptions() {
   return options;
 }
 
+function useArtistCategoryOptions() {
+  const [options, setOptions] = useState<Array<{ value: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void request<ArtistCategoryListResponse>("/api/admin/artist-categories")
+      .then((data) => {
+        if (!active) return;
+        const categories = [...new Set(data.items
+          .map((item) => normalizeArtistCategory(item))
+          .filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "zh-CN"));
+        setOptions(categories.map((value) => ({ value })));
+      })
+      .catch(() => {
+        if (active) setOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return options;
+}
+
 type StringFieldProps = {
   testid: string;
   value?: string;
@@ -179,6 +209,23 @@ function CaseCategoryAutoComplete({ testid, value, onChange }: StringFieldProps)
       }
     >
       <Input data-testid={testid} />
+    </AutoComplete>
+  );
+}
+
+function ArtistCategoryAutoComplete({ testid, value, onChange }: StringFieldProps) {
+  const options = useArtistCategoryOptions();
+  return (
+    <AutoComplete
+      allowClear
+      value={value}
+      onChange={onChange}
+      options={options}
+      filterOption={(inputValue, option) =>
+        String(option?.value ?? "").toLocaleLowerCase("zh-CN").includes(inputValue.trim().toLocaleLowerCase("zh-CN"))
+      }
+    >
+      <Input data-testid={testid} maxLength={30} showCount />
     </AutoComplete>
   );
 }
@@ -249,9 +296,12 @@ export function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useFor
   const type = Form.useWatch("type", form) as MenuType | undefined;
   const detailPageType = Form.useWatch(["configJson", "detailPageType"], form) as DetailPageType | undefined;
   if (!type) return null;
-  if (["host", "singer", "actor"].includes(type)) {
+  if (type === "artist") {
     return (
       <>
+        <Form.Item label="人员分类" name={["configJson", "category"]}>
+          <ArtistCategoryAutoComplete testid="menu-config-artist-category" />
+        </Form.Item>
         <Form.Item label="默认排序" name={["configJson", "defaultSort"]} initialValue="sortOrder">
           <Select
             data-testid="menu-config-default-sort"
@@ -346,6 +396,7 @@ export function MenuConfigFields({ form }: { form: ReturnType<typeof Form.useFor
 function normalizeArtistPayload(values: AnyRecord) {
   return {
     ...omitBusinessDetailFields(values),
+    type: normalizeLegacyArtistCategory(String(values.type ?? "")),
     tags: normalizeArtistFormTags(values.tags),
     detailPageId: values.detailPageId ?? null
   };
@@ -379,7 +430,7 @@ function normalizeMenuPayload(values: AnyRecord) {
   }
   if (Object.hasOwn(values, "configJson") || isMenuType(values.type)) {
     const rawConfig: AnyRecord = values.configJson && typeof values.configJson === "object" ? { ...values.configJson } : {};
-    if (values.type === "article" && rawConfig.category === allArticlesCategoryValue) delete rawConfig.category;
+    if (rawConfig.category === allArticlesCategoryValue) delete rawConfig.category;
     body.configJson = isMenuType(values.type)
       ? menuConfigSchemaByType[values.type].parse(rawConfig)
       : rawConfig;
@@ -527,8 +578,8 @@ function ArtistBasicFields() {
       <Form.Item label="姓名/艺名" name="name" rules={[{ required: true, message: "请输入姓名/艺名" }]}>
         <Input data-testid="artist-name" />
       </Form.Item>
-      <Form.Item label="类型" name="type" rules={[{ required: true, message: "请选择类型" }]}>
-        <Select data-testid="artist-type" options={artistTypeValues.map((value) => ({ value, label: artistTypeLabels[value] }))} />
+      <Form.Item label="分类" name="type" rules={[{ required: true, message: "请输入分类" }, { max: 30 }]}>
+        <ArtistCategoryAutoComplete testid="artist-type" />
       </Form.Item>
       <Form.Item label="演绎地点" name="location" rules={[{ required: true, message: "请输入演绎地点" }, { max: 30 }]}>
         <Input data-testid="artist-location" maxLength={30} showCount />
@@ -693,9 +744,7 @@ export const configs: Record<string, CrudConfig> = {
           <Select
             data-testid="menu-type-select"
             options={[
-              { value: "host", label: "主持人" },
-              { value: "singer", label: "歌手" },
-              { value: "actor", label: "演员" },
+              { value: "artist", label: "人员" },
               { value: "activity_case", label: "活动案例" },
               { value: "article", label: "文章" },
               { value: "detail_page", label: "详情页直达" },
@@ -803,7 +852,7 @@ export const configs: Record<string, CrudConfig> = {
     path: "/api/admin/artists",
     routePath: "/artists",
     testid: "artists",
-    searchPlaceholder: "搜索姓名、类型、地点、标签",
+    searchPlaceholder: "搜索姓名、分类、地点、标签",
     searchFields: ["name", "type", "location", "badge", "tags"],
     formMode: "page",
     sortable: true,
@@ -815,7 +864,7 @@ export const configs: Record<string, CrudConfig> = {
         render: (asset) => asset && typeof asset === "object" && "url" in asset ? <img className="artist-cover-thumb" src={String(asset.url)} alt="列表封面图" /> : "—"
       },
       { title: "姓名/艺名", dataIndex: "name" },
-      { title: "人员类型", dataIndex: "type", render: (value) => artistTypeLabels[value as keyof typeof artistTypeLabels] ?? String(value) },
+      { title: "分类", dataIndex: "type", render: (value) => String(value ?? "") },
       { title: "演绎地点", dataIndex: "location", ellipsis: true },
       { title: "左上角标签", dataIndex: "badge", ellipsis: true },
       {

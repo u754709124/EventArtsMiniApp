@@ -55,7 +55,7 @@ import {
 
 describe("shared contracts", () => {
   it("keeps the phase-one menu enum aligned with supported home menu types", () => {
-    expect(menuTypeValues).toEqual(["host", "singer", "actor", "activity_case", "article", "detail_page", "contact"]);
+    expect(menuTypeValues).toEqual(["artist", "activity_case", "article", "detail_page", "contact"]);
   });
 
   it("validates detail-page menu configuration strictly", () => {
@@ -102,6 +102,13 @@ describe("shared contracts", () => {
       .toEqual({ category: "婚礼攻略", pageSize: 6 });
     expect(menuConfigSchemaByType.article.parse({ category: "   " })).toEqual({ category: undefined, pageSize: 10 });
     expect(() => menuConfigSchemaByType.article.parse({ pageSize: 51 })).toThrow();
+    expect(menuConfigSchemaByType.artist.parse({ category: "  主持   人 ", pageSize: 8 }))
+      .toEqual({ category: "主持 人", defaultSort: "sortOrder", pageSize: 8 });
+    expect(menuConfigSchemaByType.artist.parse({ category: "   " })).toEqual({
+      category: undefined,
+      defaultSort: "sortOrder",
+      pageSize: 10
+    });
   });
 
   it("normalizes and validates article contracts", () => {
@@ -497,7 +504,7 @@ describe("shared contracts", () => {
     expectTypeOf<ActivityCaseDetailDto>().toMatchTypeOf<{ detailPage: DetailPageConfigDto | null }>();
   });
 
-  it("normalizes artist tags once and exposes Chinese artist labels", () => {
+  it("normalizes artist tags once and keeps legacy slug labels for compatibility", () => {
     expect(artistTypeLabels).toEqual({ host: "主持人", singer: "歌手", actor: "演员" });
     expect(normalizeArtistTags(["  婚礼主持 ", "婚礼主持", "", "高端晚宴"])).toEqual(["婚礼主持", "高端晚宴"]);
     expect(normalizeArtistTags('["婚礼主持", "高端晚宴"]')).toEqual(["婚礼主持", "高端晚宴"]);
@@ -505,11 +512,11 @@ describe("shared contracts", () => {
     expect(serializeArtistTags('["婚礼主持", "高端晚宴"]')).toBe('["婚礼主持","高端晚宴"]');
   });
 
-  it("validates the complete artist create payload and strict client list query", () => {
+  it("validates the complete artist create payload and normalized client list query", () => {
     expect(
       ArtistCreateRequestSchema.parse({
         name: " 林然 ",
-        type: "host",
+        type: " 主持   人 ",
         avatarAssetId: 12,
         location: " 杭州 ",
         badge: " 金牌主持 ",
@@ -519,7 +526,7 @@ describe("shared contracts", () => {
         sortOrder: 1,
         status: "enabled"
       })
-    ).toMatchObject({ name: "林然", location: "杭州", badge: "金牌主持", tags: ["10年经验", "婚礼主持"], detailPageId: null });
+    ).toMatchObject({ name: "林然", type: "主持 人", location: "杭州", badge: "金牌主持", tags: ["10年经验", "婚礼主持"], detailPageId: null });
     expect(
       ArtistCreateRequestSchema.parse({
         name: "旧记录",
@@ -536,7 +543,31 @@ describe("shared contracts", () => {
     ).toEqual(["婚礼主持"]);
     expect(() => ArtistCreateRequestSchema.parse({
       name: "林然",
-      type: "host",
+      type: "   ",
+      avatarAssetId: 14,
+      location: "杭州",
+      badge: "金牌主持",
+      tags: ["婚礼主持"],
+      summary: "简介",
+      detailPageId: null,
+      sortOrder: 1,
+      status: "enabled"
+    })).toThrow();
+    expect(() => ArtistCreateRequestSchema.parse({
+      name: "林然",
+      type: "很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长的人员分类",
+      avatarAssetId: 14,
+      location: "杭州",
+      badge: "金牌主持",
+      tags: ["婚礼主持"],
+      summary: "简介",
+      detailPageId: null,
+      sortOrder: 1,
+      status: "enabled"
+    })).toThrow();
+    expect(() => ArtistCreateRequestSchema.parse({
+      name: "林然",
+      type: "主持人",
       location: "杭州",
       badge: "金牌主持",
       tags: [],
@@ -547,7 +578,7 @@ describe("shared contracts", () => {
     })).toThrow();
     expect(() => ArtistCreateRequestSchema.parse({
       name: "林然",
-      type: "host",
+      type: "主持人",
       avatarAssetId: 14,
       location: "杭州",
       badge: "金牌主持",
@@ -558,12 +589,15 @@ describe("shared contracts", () => {
       status: "enabled"
     })).toThrow();
     expect(artistListQuerySchema.parse({ q: " 林 ", tag: " 婚礼主持 " })).toEqual({
-      type: "host",
       q: "林",
       tag: "婚礼主持"
     });
+    expect(artistListQuerySchema.parse({ category: " 主持   人 " })).toEqual({ category: "主持 人" });
+    expect(artistListQuerySchema.parse({ type: "host" })).toEqual({ category: "主持人" });
+    expect(artistListQuerySchema.parse({ type: "host", category: "主持人" })).toEqual({ category: "主持人" });
     expect(caseListQuerySchema.parse({ q: " 年会 ", category: " 歌手演出 " })).toEqual({ q: "年会", category: "歌手演出" });
     expect(caseListQuerySchema.parse({ q: "   ", category: "   " })).toEqual({ q: undefined, category: undefined });
-    expect(() => artistListQuerySchema.parse({ type: "invalid" })).toThrow();
+    expect(() => artistListQuerySchema.parse({ type: "host", category: "歌手" })).toThrow();
+    expect(() => artistListQuerySchema.parse({ unknown: "invalid" })).toThrow();
   });
 });

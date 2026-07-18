@@ -50,7 +50,7 @@ React + Vite + TypeScript + Ant Design。
 - 已实现首页配置，支持从资源库选择默认图和占位图。
 - 已实现公告、Banner、分类菜单抽屉表单，以及案例、人员独立新增/编辑页和分页表格。
 - 已增加通用页面头、分组表单、固定操作栏、未保存修改保护和编辑前完整记录 GET 回填。
-- 分类菜单管理保留 `/menu-items` 路由和 `/api/admin/menu-items` 接口，支持 7 种固定类型、按类型动态展示配置字段，并通过 `showOnHome` 控制是否进入首页菜单区。
+- 分类菜单管理保留 `/menu-items` 路由和 `/api/admin/menu-items` 接口，支持 `artist`、`activity_case`、`article`、`detail_page`、`contact` 5 种规范类型、按类型动态展示配置字段，并通过 `showOnHome` 控制是否进入首页菜单区。`artist` 可选 `category` 配置用于进入指定人员分类，未配置时进入全部人员列表。
 - “详情页直达”菜单先选择 `banner_rich_text` 或 `rich_text`，再从对应类型的详情页选项中选择目标；类型变化会清空旧目标，编辑时正确回填，详情页反向引用可跳回菜单管理。
 - 已抽取共享 API 客户端、媒体探测模块、MD5 Web Worker、上传流程、资源选择弹窗和 `MediaField` 控件。
 - 空媒体字段统一显示“+”，已选字段显示预览和右上角解除按钮；hover 展示资源名，字段旁明确展示类型与推荐尺寸。

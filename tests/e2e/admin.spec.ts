@@ -946,7 +946,7 @@ test("新增 Banner", async ({ page, request }) => {
   await expect(page.getByRole("row", { name: /E2E Banner/ })).toBeVisible();
 });
 
-test("新增菜单项并验证七种类型、首页显示和动态配置", async ({ page, request }) => {
+test("新增菜单项并验证五种规范类型、首页显示和动态配置", async ({ page, request }) => {
   const existing = await adminApi<{ items: Array<{ id: number; text: string }> }>(request, "GET", "/api/admin/menu-items");
   for (const menu of existing.items.filter((item) => item.text === "E2E 联系我们")) {
     await adminApi(request, "DELETE", `/api/admin/menu-items/${menu.id}`);
@@ -954,9 +954,9 @@ test("新增菜单项并验证七种类型、首页显示和动态配置", async
   await loginAdminUi(page);
   await page.getByTestId("sidebar-menu-items").click();
   await expect(page.getByText("分类菜单").first()).toBeVisible();
-  const seededRow = page.getByRole("row", { name: /主持人/ }).first();
+  const seededRow = page.getByRole("row", { name: /人员/ }).first();
   await seededRow.getByTestId("menu-items-edit").click();
-  await expect(page.getByTestId("menu-text")).toHaveValue("主持人");
+  await expect(page.getByTestId("menu-text")).toHaveValue("人员");
   await page.getByTestId("menu-items-save").click();
   await waitForToast(page, "保存成功");
 
@@ -966,10 +966,14 @@ test("新增菜单项并验证七种类型、首页显示和动态配置", async
   await expect(page.getByTestId("menu-show-on-home")).toHaveAttribute("aria-checked", "true");
 
   await page.getByTestId("menu-type-select").click();
-  for (const label of ["主持人", "歌手", "演员", "活动案例", "文章", "详情页直达", "联系我们"]) {
+  for (const label of ["人员", "活动案例", "文章", "详情页直达", "联系我们"]) {
     await expect(visibleSelectOption(page, label)).toBeVisible();
   }
-  await visibleSelectOption(page, "主持人").click();
+  for (const removedLabel of ["主持人", "歌手", "演员"]) {
+    await expect(visibleSelectOption(page, removedLabel)).toHaveCount(0);
+  }
+  await visibleSelectOption(page, "人员").click();
+  await expect(page.getByTestId("menu-config-artist-category")).toBeVisible();
   await expect(page.getByTestId("menu-config-default-sort")).toBeVisible();
   await expect(page.getByTestId("menu-config-page-size")).toBeVisible();
 
@@ -1364,7 +1368,7 @@ test("表单本地上传允许非推荐尺寸，引用资源不可删除", async
   await adminApi(request, "POST", "/api/admin/menu-items", {
     text: "E2E 引用资源菜单",
     iconAssetId: referencedAssetId,
-    type: "host",
+    type: "artist",
     configJson: { defaultSort: "sortOrder", pageSize: 1 },
     sortOrder: 1000,
     status: "disabled"

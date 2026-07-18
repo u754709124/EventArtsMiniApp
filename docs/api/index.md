@@ -63,7 +63,7 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 - `GET /api/client/cases?q=&category=`
 - `GET /api/client/cases/:id`
 - `GET /api/client/articles?q=&category=&page=&pageSize=`
-- `GET /api/client/artists?type=host|singer|actor&q=&location=&tag=`（`type` 省略时默认为 `host`）
+- `GET /api/client/artists?category=&q=&location=&tag=`（`category` 省略时返回全部启用人员；旧 `type=host|singer|actor` 仅作为兼容别名）
 - `GET /api/client/artists/:id`
 - `POST /api/client/track/page-view`
 
@@ -185,7 +185,7 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 ### Artist client APIs
 
-`GET /api/client/artists` 仅返回启用人员，严格按 `type` 过滤，并以 `sortOrder`、`id` 升序排序。`type` 仅允许 `host`、`singer`、`actor`；非法值返回 `400 VALIDATION_ERROR`。可选 `q` 会匹配姓名、演绎地点、左上标签、下方标签和描述；`location`、`tag` 分别精确筛选地点和标签。
+`GET /api/client/artists` 仅返回启用人员，并以 `sortOrder`、`id` 升序排序。`category` 是可选人员分类；省略时返回全部启用人员，传入时按人员记录的 `type` 分类精确筛选。旧查询参数 `type=host|singer|actor` 仅作为兼容别名，服务端会分别映射为 `主持人`、`歌手`、`演员`；其他任意合法分类字符串应使用 `category`。可选 `q` 会匹配姓名、分类、演绎地点、左上标签、下方标签和描述；`location`、`tag` 分别精确筛选地点和标签。
 
 列表和详情都返回以下人员基础字段，客户端不会收到数据库中的原始 `tagsJson` 字符串；只有 `GET /api/client/artists/:id` 额外返回 `detailPage`，并把兼容 `detail` 从其富文本派生：
 
@@ -193,7 +193,7 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 {
   "id": 1,
   "name": "林然",
-  "type": "host",
+  "type": "主持人",
   "coverUrl": "http://127.0.0.1:3001/uploads/seed/xxx.png",
   "avatarUrl": "http://127.0.0.1:3001/uploads/seed/xxx.png",
   "location": "杭州",
@@ -434,7 +434,7 @@ cron 统一按 `Asia/Shanghai` 解释；`nextExecutionAt` 是严格晚于服务�
 
 公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
 
-菜单类型共有 7 种：`host`、`singer`、`actor`、`activity_case`、`article`、`detail_page`、`contact`。创建或更新 `detail_page` 时提交严格配置：
+菜单类型共有 5 种：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 可在 `configJson.category` 中提交可选人员分类字符串，省略或提交空值时跳转到全部人员列表；创建或更新 `detail_page` 时提交严格配置：
 
 ```json
 {
@@ -508,7 +508,7 @@ Article admin create body:
 ```json
 {
   "name": "林然",
-  "type": "host",
+  "type": "主持人",
   "avatarAssetId": 1,
   "location": "杭州",
   "badge": "金牌主持",
@@ -520,7 +520,7 @@ Article admin create body:
 }
 ```
 
-`name`、`location`、`badge`、`summary` 均会 trim 后校验非空；`location` 最长 30 字，`badge` 和单个标签最长 12 字，`tags` 为去空、去重后的 1 至 4 项。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。`detailPageId` 可为 `null`，非空时必须引用已存在详情页；`PUT /api/admin/artists/:id` 支持基础字段和 `detailPageId` 局部更新。
+`name`、`type`、`location`、`badge`、`summary` 均会 trim 后校验非空；`type` 是人员分类字符串，不再限制为固定枚举，旧 `host`、`singer`、`actor` 会兼容归一为中文分类。`location` 最长 30 字，`badge` 和单个标签最长 12 字，`tags` 为去空、去重后的 1 至 4 项。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。`detailPageId` 可为 `null`，非空时必须引用已存在详情页；`PUT /api/admin/artists/:id` 支持基础字段和 `detailPageId` 局部更新。
 
 后台人员列表和创建/更新响应都会返回安全的 `tags: string[]`，同时保留已解析为数组的兼容 `tagsJson`；服务端只通过统一的标签序列化方法写入一次 JSON，避免双重编码。
 

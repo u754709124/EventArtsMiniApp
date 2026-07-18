@@ -7,7 +7,7 @@ export * from "./admin-notifications";
 export * from "./scheduled-tasks";
 
 export const statusValues = ["enabled", "disabled"] as const;
-export const menuTypeValues = ["host", "singer", "actor", "activity_case", "article", "detail_page", "contact"] as const;
+export const menuTypeValues = ["artist", "activity_case", "article", "detail_page", "contact"] as const;
 export const artistTypeValues = ["host", "singer", "actor"] as const;
 export const bannerLinkTypeValues = ["none", "announcement", "case", "internal"] as const;
 export const mediaTypeValues = ["image", "video"] as const;
@@ -27,14 +27,14 @@ export const mediaFieldKeyValues = [
 
 export type Status = (typeof statusValues)[number];
 export type MenuType = (typeof menuTypeValues)[number];
-export type ArtistType = (typeof artistTypeValues)[number];
+export type LegacyArtistType = (typeof artistTypeValues)[number];
+export type ArtistType = string;
 export type BannerLinkType = (typeof bannerLinkTypeValues)[number];
 export type MediaType = (typeof mediaTypeValues)[number];
 export type MediaFieldKey = (typeof mediaFieldKeyValues)[number];
 
 export const StatusSchema = z.enum(statusValues);
 export const MenuTypeSchema = z.enum(menuTypeValues);
-export const ArtistTypeSchema = z.enum(artistTypeValues);
 export const BannerLinkTypeSchema = z.enum(bannerLinkTypeValues);
 export const MediaTypeSchema = z.enum(mediaTypeValues);
 export const MediaFieldKeySchema = z.enum(mediaFieldKeyValues);
@@ -112,11 +112,12 @@ export type EdgeOnePrefetchListQuery = z.infer<typeof edgeOnePrefetchListQuerySc
 export type EdgeOnePrefetchResourceDto = z.infer<typeof edgeOnePrefetchResourceDtoSchema>;
 export type EdgeOnePrefetchListResponse = z.infer<typeof edgeOnePrefetchListResponseSchema>;
 
-export const artistTypeLabels: Record<ArtistType, string> = {
+export const artistTypeLabels: Record<LegacyArtistType, string> = {
   host: "主持人",
   singer: "歌手",
   actor: "演员"
 };
+export const legacyArtistTypeToCategory: Record<LegacyArtistType, string> = artistTypeLabels;
 
 export type MediaFieldRule = {
   label: string;
@@ -178,6 +179,29 @@ export function normalizeArticleCategory(value: string) {
   return value.normalize("NFKC").trim().replace(/\s+/g, " ");
 }
 
+export function normalizeArtistCategory(value: string) {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ");
+}
+
+export function normalizeLegacyArtistCategory(value: string) {
+  const normalized = normalizeArtistCategory(value);
+  return Object.hasOwn(legacyArtistTypeToCategory, normalized)
+    ? legacyArtistTypeToCategory[normalized as LegacyArtistType]
+    : normalized;
+}
+
+export function normalizeArtistCategories(input: unknown): string[] {
+  const rawValues = Array.isArray(input) ? input : [];
+  const categories = new Map<string, string>();
+  for (const value of rawValues) {
+    if (typeof value !== "string") continue;
+    const category = normalizeLegacyArtistCategory(value);
+    const key = category.toLocaleLowerCase("zh-CN");
+    if (category && !categories.has(key)) categories.set(key, category);
+  }
+  return [...categories.values()];
+}
+
 export function normalizeArticleCategories(input: unknown): string[] {
   const rawValues = Array.isArray(input) ? input : [];
   const categories = new Map<string, string>();
@@ -228,6 +252,18 @@ const articleOptionalCategorySchema = z
   .transform((value) => value || undefined)
   .refine((value) => value === undefined || value.length <= 30, "文章分类不能超过 30 个字符")
   .optional();
+const artistCategorySchema = z
+  .string()
+  .transform((value) => normalizeLegacyArtistCategory(value))
+  .refine((value) => value.length > 0, "人员分类不能为空")
+  .refine((value) => value.length <= 30, "人员分类不能超过 30 个字符");
+const artistOptionalCategorySchema = z
+  .string()
+  .transform((value) => normalizeLegacyArtistCategory(value))
+  .transform((value) => value || undefined)
+  .refine((value) => value === undefined || value.length <= 30, "人员分类不能超过 30 个字符")
+  .optional();
+export const ArtistTypeSchema = artistCategorySchema;
 const isoDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const isoDateInputSchema = z
   .union([z.string().trim().min(1), z.date()])
@@ -253,7 +289,7 @@ function requireArtistTags(value: { tags?: string[]; tagsJson?: string[] }, cont
 export const ArtistCreateRequestSchema = z
   .object({
     name: artistNameSchema,
-    type: ArtistTypeSchema,
+    type: artistCategorySchema,
     avatarAssetId: positiveIntFromInput,
     location: artistLocationSchema,
     badge: artistBadgeSchema,
@@ -270,7 +306,7 @@ export const ArtistCreateRequestSchema = z
 export const ArtistUpdateRequestSchema = z
   .object({
     name: artistNameSchema.optional(),
-    type: ArtistTypeSchema.optional(),
+    type: artistCategorySchema.optional(),
     avatarAssetId: positiveIntFromInput.nullable().optional(),
     location: artistLocationSchema.optional(),
     badge: artistBadgeSchema.optional(),
@@ -283,12 +319,26 @@ export const ArtistUpdateRequestSchema = z
   .strict()
   .transform(normalizeArtistRequestTags);
 
-export const artistListQuerySchema = z.object({
-  type: ArtistTypeSchema.default("host"),
-  q: artistQueryTextSchema,
-  location: artistQueryTextSchema,
-  tag: artistQueryTextSchema
-});
+export const artistListQuerySchema = z
+  .object({
+    category: artistOptionalCategorySchema,
+    /** @deprecated Use category. Legacy slugs host/singer/actor are mapped to their Chinese categories. */
+    type: artistOptionalCategorySchema,
+    q: artistQueryTextSchema,
+    location: artistQueryTextSchema,
+    tag: artistQueryTextSchema
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.category && value.type && value.category !== value.type) {
+      context.addIssue({
+        code: "custom",
+        path: ["type"],
+        message: "type 与 category 不能同时指定为不同人员分类"
+      });
+    }
+  })
+  .transform(({ category, type, ...rest }) => ({ category: category ?? type, ...rest }));
 
 export const caseListQuerySchema = z.object({
   q: optionalQueryTextSchema,
@@ -1070,15 +1120,8 @@ export const DetailPageMenuConfigSchema = z
 export type DetailPageMenuConfig = z.infer<typeof DetailPageMenuConfigSchema>;
 
 export const menuConfigSchemaByType = {
-  host: z.object({
-    defaultSort: z.enum(["sortOrder", "newest"]).default("sortOrder"),
-    pageSize: z.number().int().positive().default(10)
-  }),
-  singer: z.object({
-    defaultSort: z.enum(["sortOrder", "newest"]).default("sortOrder"),
-    pageSize: z.number().int().positive().default(10)
-  }),
-  actor: z.object({
+  artist: z.object({
+    category: artistOptionalCategorySchema,
     defaultSort: z.enum(["sortOrder", "newest"]).default("sortOrder"),
     pageSize: z.number().int().positive().default(10)
   }),

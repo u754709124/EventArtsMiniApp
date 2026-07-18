@@ -159,4 +159,68 @@ describe("detail page SQLite schema", () => {
 
     await prisma.$disconnect();
   });
+
+  it("migrates legacy personnel categories and menu types idempotently without deleting menu rows", async () => {
+    await mkdir(root, { recursive: true });
+    const prisma = createPrismaClient(`file:${path.join(root, "legacy-personnel-menu.db")}`);
+    await prisma.$executeRawUnsafe(`CREATE TABLE artists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      avatarAssetId INTEGER,
+      location TEXT NOT NULL DEFAULT '',
+      badge TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL,
+      tagsJson TEXT NOT NULL,
+      detail TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'enabled',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await prisma.$executeRawUnsafe(`CREATE TABLE menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      iconAssetId INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      configJson TEXT NOT NULL,
+      showOnHome BOOLEAN NOT NULL DEFAULT true,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'enabled',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await prisma.$executeRawUnsafe(
+      "INSERT INTO artists (name, type, summary, tagsJson, detail) VALUES ('旧主持', 'host', '简介', '[]', ''), ('旧歌手', 'singer', '简介', '[]', ''), ('新分类', '  嘉宾   统筹 ', '简介', '[]', '')"
+    );
+    await prisma.$executeRawUnsafe(
+      "INSERT INTO menu_items (text, iconAssetId, type, configJson, sortOrder, status) VALUES ('主持菜单', 1, 'host', '{\"pageSize\":6}', 1, 'enabled'), ('歌手菜单', 1, 'singer', '{}', 2, 'enabled'), ('案例菜单', 1, 'activity_case', '{}', 3, 'enabled')"
+    );
+
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(root, "uploads") });
+    const firstArtists = await prisma.$queryRawUnsafe<Array<{ name: string; type: string }>>(
+      "SELECT name, type FROM artists ORDER BY id"
+    );
+    const firstMenus = await prisma.$queryRawUnsafe<Array<{ text: string; type: string; configJson: string }>>(
+      "SELECT text, type, configJson FROM menu_items ORDER BY id"
+    );
+
+    await ensureDatabaseSchema(prisma, { uploadDir: path.join(root, "uploads") });
+    const secondArtists = await prisma.$queryRawUnsafe<Array<{ name: string; type: string }>>(
+      "SELECT name, type FROM artists ORDER BY id"
+    );
+    const secondMenus = await prisma.$queryRawUnsafe<Array<{ text: string; type: string; configJson: string }>>(
+      "SELECT text, type, configJson FROM menu_items ORDER BY id"
+    );
+
+    expect(firstArtists.map((artist) => artist.type)).toEqual(["主持人", "歌手", "嘉宾 统筹"]);
+    expect(secondArtists).toEqual(firstArtists);
+    expect(firstMenus).toHaveLength(3);
+    expect(firstMenus.map((menu) => menu.type)).toEqual(["artist", "artist", "activity_case"]);
+    expect(JSON.parse(firstMenus[0].configJson)).toEqual({ category: "主持人", defaultSort: "sortOrder", pageSize: 6 });
+    expect(JSON.parse(firstMenus[1].configJson)).toEqual({ category: "歌手", defaultSort: "sortOrder", pageSize: 10 });
+    expect(secondMenus).toEqual(firstMenus);
+
+    await prisma.$disconnect();
+  });
 });

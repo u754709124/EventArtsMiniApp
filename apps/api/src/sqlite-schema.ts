@@ -3,7 +3,12 @@ import { execFile } from "node:child_process";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { normalizeResourceName } from "@event-arts/shared";
+import {
+  menuConfigSchemaByType,
+  normalizeLegacyArtistCategory,
+  normalizeResourceName,
+  type LegacyArtistType
+} from "@event-arts/shared";
 import ffprobe from "@ffprobe-installer/ffprobe";
 import sharp from "sharp";
 import type { AppPrismaClient } from "./db";
@@ -431,6 +436,58 @@ async function ensureMenuItemColumns(prisma: AppPrismaClient) {
   }
 }
 
+const legacyArtistTypeToCategory: Record<LegacyArtistType, string> = {
+  host: "主持人",
+  singer: "歌手",
+  actor: "演员"
+};
+
+function isLegacyArtistType(value: string): value is LegacyArtistType {
+  return Object.hasOwn(legacyArtistTypeToCategory, value);
+}
+
+function parseConfigJson(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function migrateLegacyPersonnelMenusAndCategories(prisma: AppPrismaClient) {
+  if (await tableExists(prisma, "artists")) {
+    const artists = await prisma.$queryRawUnsafe<Array<{ id: number; type: string }>>(
+      "SELECT id, type FROM artists"
+    );
+    for (const artist of artists) {
+      const normalized = normalizeLegacyArtistCategory(artist.type);
+      if (normalized && normalized !== artist.type) {
+        await prisma.$executeRawUnsafe("UPDATE artists SET type = ? WHERE id = ?", normalized, artist.id);
+      }
+    }
+  }
+
+  if (!(await tableExists(prisma, "menu_items"))) return;
+  const menus = await prisma.$queryRawUnsafe<Array<{ id: number; type: string; configJson: string }>>(
+    "SELECT id, type, configJson FROM menu_items WHERE type IN ('host', 'singer', 'actor')"
+  );
+  for (const menu of menus) {
+    if (!isLegacyArtistType(menu.type)) continue;
+    const config = {
+      ...parseConfigJson(menu.configJson),
+      category: legacyArtistTypeToCategory[menu.type]
+    };
+    const parsed = menuConfigSchemaByType.artist.safeParse(config);
+    const nextConfig = parsed.success ? parsed.data : { category: legacyArtistTypeToCategory[menu.type], defaultSort: "sortOrder", pageSize: 10 };
+    await prisma.$executeRawUnsafe(
+      "UPDATE menu_items SET type = 'artist', configJson = ? WHERE id = ?",
+      JSON.stringify(nextConfig),
+      menu.id
+    );
+  }
+}
+
 async function ensurePageViewEventColumns(prisma: AppPrismaClient) {
   if (!(await tableExists(prisma, "page_view_events"))) return;
   const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(page_view_events)");
@@ -633,6 +690,7 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
   }
   await ensureArtistColumns(prisma);
   await ensureMenuItemColumns(prisma);
+  await migrateLegacyPersonnelMenusAndCategories(prisma);
   await ensurePageViewEventColumns(prisma);
   await runDetailPageMigration(prisma);
 }

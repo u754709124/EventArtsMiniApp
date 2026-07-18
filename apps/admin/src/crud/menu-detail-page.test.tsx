@@ -6,6 +6,12 @@ import { Form, type FormInstance } from "antd";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildCrudSaveRequest, configs, prepareCrudEditValues } from "./config";
 
+const requestMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../api", () => ({
+  request: requestMock
+}));
+
 vi.mock("../media/MediaField", () => ({
   MediaField: () => <div data-testid="mock-media-field" />
 }));
@@ -49,6 +55,9 @@ beforeAll(() => {
 });
 
 afterEach(cleanup);
+afterEach(() => {
+  requestMock.mockReset();
+});
 
 let form: FormInstance;
 
@@ -63,7 +72,62 @@ async function chooseDetailType(label: string) {
   fireEvent.click(await screen.findByText(label, { selector: ".ant-select-item-option-content" }));
 }
 
+function mockCategoryRequests() {
+  requestMock.mockImplementation((path: string) => {
+    if (path === "/api/admin/artist-categories") return Promise.resolve({ items: ["歌手", "演员", "主持人"] });
+    if (path === "/api/admin/case-categories") return Promise.resolve({ items: ["婚礼主持", "企业年会"] });
+    if (path === "/api/admin/articles/categories") return Promise.resolve({ categories: ["婚礼攻略", "活动策划"] });
+    return Promise.resolve({});
+  });
+}
+
 describe("direct detail-page menu form", () => {
+  it("菜单类型只提供统一人员入口，不再提供旧人员类型", async () => {
+    render(<Harness initialValues={{ type: "contact", configJson: {} }} />);
+
+    const typeSelect = screen.getByTestId("menu-type-select");
+    fireEvent.mouseDown(typeSelect.querySelector(".ant-select-selector") ?? typeSelect);
+    await screen.findByText("人员", { selector: ".ant-select-item-option-content" });
+    const optionTexts = [...document.querySelectorAll(".ant-select-item-option-content")].map((item) => item.textContent);
+
+    expect(optionTexts).toEqual(expect.arrayContaining(["人员", "活动案例", "文章", "详情页直达", "联系我们"]));
+    expect(optionTexts).not.toEqual(expect.arrayContaining(["主持人", "歌手", "演员"]));
+  });
+
+  it("人员菜单分类控件使用人员分类接口并支持当前分类回显", async () => {
+    mockCategoryRequests();
+    render(<Harness initialValues={{ type: "artist", configJson: { category: "主持人", defaultSort: "sortOrder", pageSize: 10 } }} />);
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith("/api/admin/artist-categories"));
+    expect((screen.getByTestId("menu-config-artist-category") as HTMLInputElement).value).toBe("主持人");
+    expect(screen.getByTestId("menu-config-default-sort")).toBeTruthy();
+    expect(screen.getByTestId("menu-config-page-size")).toBeTruthy();
+  });
+
+  it("活动案例菜单分类控件只消费案例分类接口，且不显示文章哨兵选项", async () => {
+    mockCategoryRequests();
+    render(<Harness initialValues={{ type: "activity_case", configJson: { category: "婚礼主持" } }} />);
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith("/api/admin/case-categories"));
+    expect(requestMock).not.toHaveBeenCalledWith("/api/admin/articles/categories");
+    expect(requestMock).not.toHaveBeenCalledWith("/api/admin/artist-categories");
+    expect(screen.queryByText("全部文章")).toBeNull();
+    expect(document.body.textContent).not.toContain("__ALL_ARTICLES__");
+  });
+
+  it("文章菜单用全部文章文案回显内部哨兵值", async () => {
+    mockCategoryRequests();
+    render(<Harness initialValues={{ type: "article", configJson: { category: "__ALL_ARTICLES__", pageSize: 10 } }} />);
+
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith("/api/admin/articles/categories"));
+    const categorySelect = screen.getByTestId("menu-config-article-category");
+    fireEvent.mouseDown(categorySelect.querySelector(".ant-select-selector") ?? categorySelect);
+
+    expect(await screen.findByText("全部文章", { selector: ".ant-select-item-option-content" })).toBeTruthy();
+    expect(categorySelect.textContent).toContain("全部文章");
+    expect(categorySelect.textContent).not.toContain("__ALL_ARTICLES__");
+  });
+
   it("renders the cascade, filters by selected type, and clears an incompatible target", async () => {
     render(
       <Harness
