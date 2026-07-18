@@ -377,6 +377,13 @@ describe("detail page presentation resolver", () => {
     expect(enhanceDetailRichTextForPresentation(upgraded, { target: "weapp" })).toBe(upgraded);
   });
 
+  it("hides the legacy default 内容 heading while preserving its body", () => {
+    const enhanced = enhanceDetailRichTextForPresentation("<h1>内容</h1><p>实际正文</p>", { target: "admin" });
+    expect(enhanced).not.toContain("data-detail-heading");
+    expect(enhanced).not.toContain("<h1");
+    expect(enhanced).toContain("<p>实际正文</p>");
+  });
+
   it("migrates the previous baseline-offset marker without duplicating nodes", () => {
     const legacy = [
       '<h1 style="display:block;padding-left:0.6em">',

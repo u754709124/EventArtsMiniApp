@@ -18,6 +18,7 @@ import { DetailPageReferenceField } from "../detail-pages/DetailPageReferenceFie
 import { DurationSecondsField, SortField, StatusSwitchField } from "../forms/common-fields";
 import { normalizeArtistFormTags, omitBusinessDetailFields, type AnyRecord } from "../forms/form-utils";
 import { request } from "../api";
+import type { CrudDefaultValues } from "./create-defaults";
 
 export type CrudConfig = {
   title: string;
@@ -39,7 +40,8 @@ export type CrudConfig = {
     fields: (form: ReturnType<typeof Form.useForm>[0], editing: AnyRecord | null) => React.ReactNode;
   }>;
   normalize?: (values: AnyRecord) => AnyRecord;
-  defaultValues?: AnyRecord;
+  defaultValues?: CrudDefaultValues;
+  sortFields?: string[];
   drawerWidth?: number;
   formMode: "drawer" | "page";
   sortable?: boolean;
@@ -777,6 +779,7 @@ export const configs: Record<string, CrudConfig> = {
     searchFields: ["title", "category", "tag", "location"],
     formMode: "page",
     sortable: true,
+    sortFields: ["sortOrder", "featuredSortOrder"],
     columns: [
       { title: "标题", dataIndex: "title" },
       { title: "分类", dataIndex: "category" },
@@ -803,6 +806,8 @@ export const configs: Record<string, CrudConfig> = {
     searchFields: ["title", "category", "summary"],
     formMode: "page",
     sortable: true,
+    defaultValues: () => ({ publishedAt: dayjs() }),
+    sortFields: ["sortOrder", "featuredSortOrder"],
     toolbarFilters: (filters, setFilter) => (
       <>
         <ArticleCategoryFilter

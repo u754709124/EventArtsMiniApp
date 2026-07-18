@@ -35,6 +35,7 @@ export type DetailRichTextPresentationOptions =
 
 const styleAttributePattern = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu;
 const detailHeadingPattern = /(<h1\b[^>]*>)([\s\S]*?)(<\/h1\s*>)/giu;
+const defaultContentHeadingPattern = /<h1\b[^>]*>\s*内容\s*<\/h1\s*>/giu;
 const detailWeappHeadingPattern =
   /(<div\b(?=[^>]*\bdata-detail-heading\s*=\s*(?:"true"|'true'|true))[^>]*>)([\s\S]*?)(<\/div\s*>)/giu;
 const detailHeadingMarkerElementPattern =
@@ -226,6 +227,7 @@ export function enhanceDetailRichTextForPresentation(
   if (existingRoot.target === target && currentDetailPresentationVersionPattern.test(html)) return html;
 
   const headingNormalized = existingRoot.html
+    .replace(defaultContentHeadingPattern, "")
     .replace(detailHeadingPattern, (_match, openingTag: string, content: string) =>
       renderHeading(openingTag, content, target)
     )

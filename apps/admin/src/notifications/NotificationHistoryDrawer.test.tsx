@@ -92,4 +92,22 @@ describe("NotificationHistoryDrawer", () => {
     await waitFor(() => expect(api.listAdminNotifications).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("最近 7 天暂无失败日志")).toBeTruthy();
   });
+
+  it("clears only visible logs and reloads server history after reopening", async () => {
+    api.listAdminNotifications.mockResolvedValue({
+      items: [item(1, "error", "服务端仍保留的失败日志")],
+      pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 }
+    });
+    const view = render(<NotificationHistoryDrawer open onClose={vi.fn()} />);
+
+    expect(await screen.findByText("服务端仍保留的失败日志")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "清空界面日志" }));
+    expect(await screen.findByText("最近 7 天暂无失败日志")).toBeTruthy();
+    expect(api.listAdminNotifications).toHaveBeenCalledTimes(1);
+
+    view.rerender(<NotificationHistoryDrawer open={false} onClose={vi.fn()} />);
+    view.rerender(<NotificationHistoryDrawer open onClose={vi.fn()} />);
+    expect(await screen.findByText("服务端仍保留的失败日志")).toBeTruthy();
+    expect(api.listAdminNotifications).toHaveBeenCalledTimes(2);
+  });
 });

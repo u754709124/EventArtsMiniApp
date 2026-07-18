@@ -390,7 +390,7 @@ async function runH1DetailCardsMigration(prisma: AppPrismaClient) {
     for (const detail of details) {
       let richTextHtml = "";
       try {
-        const sourceHtml = detail.richTextHtml.trim() ? detail.richTextHtml : "<h1>内容</h1><p>内容</p>";
+        const sourceHtml = detail.richTextHtml.trim() ? detail.richTextHtml : "<p>内容</p>";
         richTextHtml = normalizeDetailRichTextToH1Cards(sourceHtml, assetMap);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

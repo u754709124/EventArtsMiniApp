@@ -80,6 +80,8 @@ async function expectLivePreviewContract(
     )
   );
   expect(blockTypes).toEqual(expected.blockTypes);
+  await expect(preview.locator(".detail-preview-rich-text h1")).toHaveCount(1);
+  await expect(preview.locator(".detail-preview-rich-text h1 [data-detail-heading-marker='true']")).toHaveCount(1);
   const geometry = await preview.evaluate((root) => {
     const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
     const navigation = root.querySelector(".detail-preview-nav--overlay")?.getBoundingClientRect();
@@ -904,7 +906,7 @@ test("新增公告保存并继续会清空表单并连续创建", async ({ page,
     await expect(page.getByTestId("announcement-summary")).toHaveValue("");
     await expect(page.getByTestId("announcement-content")).toHaveValue("");
     await expect(page.getByTestId("announcement-display-duration")).toHaveValue("3.0");
-    await expect(page.getByTestId("sort-order")).toHaveValue("1");
+    await expect(page.getByTestId("sort-order")).toHaveValue("92");
     await expect(page.getByTestId("status-select")).toHaveAttribute("aria-checked", "true");
 
     await page.getByTestId("announcement-summary").fill(summaries[1]);
@@ -912,7 +914,7 @@ test("新增公告保存并继续会清空表单并连续创建", async ({ page,
     await page.getByTestId("announcements-save").click();
     await waitForToast(page, "保存成功");
 
-    const saved = await adminApi<{ items: Array<{ id: number; summary: string; content: string }> }>(
+    const saved = await adminApi<{ items: Array<{ id: number; summary: string; content: string; sortOrder: number }> }>(
       request,
       "GET",
       "/api/admin/announcements"
@@ -922,6 +924,7 @@ test("新增公告保存并继续会清空表单并连续创建", async ({ page,
     expect(new Set(created.map((item) => item.id)).size).toBe(2);
     expect(created.find((item) => item.summary === summaries[0])?.content).toBe("第一条连续创建内容");
     expect(created.find((item) => item.summary === summaries[1])?.content).toBe("第二条连续创建内容");
+    expect(created.find((item) => item.summary === summaries[1])?.sortOrder).toBe(92);
   } finally {
     await removeFixtures();
   }
@@ -1137,6 +1140,9 @@ test("详情页管理预览可创建 BANNER 富文本并被人员引用", async 
   await editor.fill("E2E 人员详情标题");
   await editor.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
   await page.getByLabel("段落与标题").selectOption("h1");
+  const editorHeading = editor.locator("h1");
+  await expect(editorHeading).toContainText("E2E 人员详情标题");
+  await editorHeading.click();
   await editor.press("End");
   await editor.press("Enter");
   await editor.type("E2E 人员详情正文");

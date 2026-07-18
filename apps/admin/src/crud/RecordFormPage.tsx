@@ -11,6 +11,7 @@ import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { notify } from "../notifications/notification";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
+import { createCrudFormDefaults, loadAllCrudRecords } from "./create-defaults";
 
 export function RecordFormPage({ config }: { config: CrudConfig }) {
   const params = useParams();
@@ -19,7 +20,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
   const [form] = Form.useForm();
   const id = params.id ? Number(params.id) : null;
   const isNew = !id;
-  const [loading, setLoading] = useState(!isNew);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AnyRecord | null>(null);
@@ -36,9 +37,13 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
 
   async function load() {
     if (isNew) {
+      setLoading(true);
       hydrating.current = true;
       form.resetFields();
-      form.setFieldsValue({ status: "enabled", sortOrder: 1, isFeatured: false, featuredSortOrder: 1, detailPageId: null });
+      const records = config.sortable
+        ? await loadAllCrudRecords(config.path).catch(() => [])
+        : [];
+      form.setFieldsValue(createCrudFormDefaults(records, config.defaultValues, config.sortFields));
       setDirty(false);
       setLoading(false);
       window.setTimeout(() => {
@@ -147,7 +152,7 @@ export function RecordFormPage({ config }: { config: CrudConfig }) {
             onValuesChange={() => {
               if (!hydrating.current) setDirty(true);
             }}
-            initialValues={{ status: "enabled", sortOrder: 1, isFeatured: false, featuredSortOrder: 1, detailPageId: null }}
+            initialValues={createCrudFormDefaults([], config.defaultValues, config.sortFields)}
           >
             {(config.sections ?? [{ title: "基础信息", fields: config.fields }]).map((section) => (
               <FormSection key={section.title} title={section.title} description={section.description}>

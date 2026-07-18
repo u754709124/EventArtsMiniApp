@@ -42,6 +42,12 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
   }, [open]);
 
   const hasMore = items.length < total;
+  function clearVisibleLogs() {
+    setItems([]);
+    setPage(1);
+    setTotal(0);
+    setError(null);
+  }
 
   return (
     <Drawer
@@ -51,6 +57,15 @@ export function NotificationHistoryDrawer({ open, onClose }: { open: boolean; on
       open={open}
       onClose={onClose}
       destroyOnHidden
+      extra={
+        <Button
+          aria-label="清空界面日志"
+          disabled={loading || items.length === 0}
+          onClick={clearVisibleLogs}
+        >
+          清空
+        </Button>
+      }
     >
       {error && !items.length ? (
         <Alert

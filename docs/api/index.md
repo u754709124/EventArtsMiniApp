@@ -226,7 +226,7 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 默认允许 JPG、PNG、WebP（10MB）和 MP4（100MB），可用 `MAX_IMAGE_UPLOAD_BYTES`、`MAX_VIDEO_UPLOAD_BYTES` 覆盖。服务端重新计算 MD5，并从真实内容提取 MIME、宽高；物理文件使用随机 32 位十六进制名称。
 
-资源引用统计包含站点配置、首页 BANNER、菜单图标、案例封面、文章封面、人员列表封面、旧案例详情媒体和公共详情页 BANNER/富文本媒体。文章封面来源类型为 `article_cover`。
+资源引用统计包含站点配置、首页 BANNER、菜单图标、案例封面、文章封面、人员列表封面、旧案例详情媒体和公共详情页 BANNER/富文本媒体。文章封面来源类型为 `article_cover`。EdgeOne 预热记录不属于业务资源占用；删除零业务引用资源时会一并清理其预热记录。
 
 ## Admin Backups
 

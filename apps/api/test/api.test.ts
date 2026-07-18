@@ -1364,7 +1364,27 @@ describe("media upload and references", () => {
     const unusedUpload = await uploadMedia(token, await pngBuffer(170, 170), { resourceName: "待清理资源" });
     const unusedId = unusedUpload.json().data.asset.id;
     const storedPath = path.join(uploadDir, new URL(unusedUpload.json().data.asset.url).pathname.split("/uploads/")[1]);
+    const prefetchedUpload = await uploadMedia(token, await pngBuffer(171, 171), { resourceName: "仅有预热记录的待清理资源" });
+    const prefetchedId = prefetchedUpload.json().data.asset.id;
+    const admin = await prisma.adminUser.findFirstOrThrow();
+    await prisma.edgeOnePrefetchResource.create({
+      data: {
+        zoneId: "zone-media-cleanup-test",
+        mediaAssetId: prefetchedId,
+        contentVersion: "media-cleanup-version",
+        targetUrl: "https://media.example.com/prefetched.png",
+        targetHash: "a".repeat(64),
+        mode: "default",
+        status: "success",
+        createdBy: admin.id
+      }
+    });
     const usedAsset = await prisma.mediaAsset.findFirstOrThrow({ where: { banners: { some: {} } } });
+    const unusedList = await app.inject({
+      method: "GET",
+      url: "/api/admin/media-assets?referenceStatus=unused&page=1&pageSize=100",
+      headers: { authorization: `Bearer ${token}` }
+    });
     const scan = await app.inject({
       method: "POST",
       url: "/api/admin/media-assets/scan-unused",
@@ -1374,14 +1394,18 @@ describe("media upload and references", () => {
       method: "POST",
       url: "/api/admin/media-assets/batch-delete",
       headers: { authorization: `Bearer ${token}` },
-      payload: { ids: [unusedId, usedAsset.id] }
+      payload: { ids: [unusedId, prefetchedId, usedAsset.id] }
     });
 
+    expect(unusedList.json().data.items.map((item: { id: number }) => item.id)).toContain(prefetchedId);
     expect(scan.json().data.items.map((item: { id: number }) => item.id)).toContain(unusedId);
+    expect(scan.json().data.items.map((item: { id: number }) => item.id)).toContain(prefetchedId);
     expect(scan.json().data.items.map((item: { id: number }) => item.id)).not.toContain(usedAsset.id);
-    expect(deleted.json().data.deletedIds).toEqual([unusedId]);
+    expect(deleted.json().data.deletedIds).toEqual([unusedId, prefetchedId]);
     expect(deleted.json().data.skipped).toEqual([{ id: usedAsset.id, reason: "MEDIA_IN_USE" }]);
     expect(await prisma.mediaAsset.findUnique({ where: { id: unusedId } })).toBeNull();
+    expect(await prisma.mediaAsset.findUnique({ where: { id: prefetchedId } })).toBeNull();
+    expect(await prisma.edgeOnePrefetchResource.findFirst({ where: { mediaAssetId: prefetchedId } })).toBeNull();
     await expect(stat(storedPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

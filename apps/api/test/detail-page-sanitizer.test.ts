@@ -179,13 +179,20 @@ describe("detail page ordered blocks", () => {
     const blocks = buildDetailPageBlocks(html, assets);
 
     expect(blocks.map((block) => block.type)).toEqual(["richText", "video", "richText"]);
-    expect(blocks[0]).toHaveProperty("html", expect.stringMatching(/<h1>甲乙<\/h1>.*甲/s));
+    expect(blocks[0]).toHaveProperty("html", expect.stringContaining("甲"));
+    expect(blocks[0]).not.toHaveProperty("html", expect.stringContaining("<h1>"));
     expect(blocks[0]).not.toHaveProperty("html", expect.stringMatching(/ea-detail-card|ea-section-body/s));
     expect(blocks[2]).toHaveProperty("html", expect.stringContaining("乙"));
   });
 
   it("converts text-only content into one richText block", () => {
     const html = sanitizeAndNormalizeRichText("<p>纯文本详情</p>", assets);
-    expect(buildDetailPageBlocks(html, assets)).toEqual([{ type: "richText", html: "<h1>纯文本详情</h1><p>纯文本详情</p>" }]);
+    expect(buildDetailPageBlocks(html, assets)).toEqual([{ type: "richText", html: "<p>纯文本详情</p>" }]);
+  });
+
+  it("does not generate a title for headingless content and preserves explicit titles", () => {
+    expect(sanitizeAndNormalizeRichText("<p>正文内容</p>", assets)).toBe("<p>正文内容</p>");
+    expect(sanitizeAndNormalizeRichText("<h1>项目介绍</h1><p>正文内容</p>", assets))
+      .toBe("<h1>项目介绍</h1><p>正文内容</p>");
   });
 });

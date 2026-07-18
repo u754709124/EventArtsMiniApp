@@ -293,11 +293,6 @@ function appendCanonicalContent(
   if (directInline.length) appendParagraph(directInline, output);
 }
 
-function readableTitleFrom(nodes: ChildNode[]) {
-  const title = compactText(nodes.map((node) => textContent(node)).join("")).slice(0, 24);
-  return title || "内容";
-}
-
 function legacyCards(parent: { childNodes: ChildNode[] }): Element[] {
   const cards: Element[] = [];
   const visit = (node: ChildNode) => {
@@ -326,10 +321,11 @@ function firstHeading(parent: { childNodes: ChildNode[] }) {
   return found;
 }
 
-function canonicalCard(title: string, nodes: ChildNode[], assets: ReadonlyMap<number, DetailPageMediaAsset>, skipTitle?: Element) {
-  const cardNodes: ChildNode[] = [
-    createElement("h1", skipTitle ? safeTemplateAttributes(skipTitle) : [], [createText(compactText(title) || readableTitleFrom(nodes))])
-  ];
+function canonicalCard(title: string | null, nodes: ChildNode[], assets: ReadonlyMap<number, DetailPageMediaAsset>, skipTitle?: Element) {
+  const normalizedTitle = compactText(title ?? "");
+  const cardNodes: ChildNode[] = normalizedTitle
+    ? [createElement("h1", skipTitle ? safeTemplateAttributes(skipTitle) : [], [createText(normalizedTitle)])]
+    : [];
   for (const node of nodes) {
     appendCanonicalContent(node, cardNodes, assets, skipTitle);
   }
@@ -344,7 +340,7 @@ function normalizeFragmentToCards(
   if (oldCards.length) {
     return oldCards.flatMap((card) => {
       const heading = firstHeading(card);
-      return canonicalCard(heading ? textContent(heading) : readableTitleFrom(card.childNodes), card.childNodes, assets, heading ?? undefined);
+      return canonicalCard(heading ? textContent(heading) : null, card.childNodes, assets, heading ?? undefined);
     });
   }
 
@@ -355,7 +351,7 @@ function normalizeFragmentToCards(
   let hasExplicitCard = false;
   const flush = () => {
     if (!nodes.length && !title) return;
-    output.push(...canonicalCard(title || readableTitleFrom(nodes), nodes, assets, titleElement ?? undefined));
+    output.push(...canonicalCard(title || null, nodes, assets, titleElement ?? undefined));
     nodes = [];
     title = "";
     titleElement = null;

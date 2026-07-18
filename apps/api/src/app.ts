@@ -1217,7 +1217,10 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
 
     const staged = await stageStoredFileForDeletion(options.uploadDir, asset.filename);
     try {
-      await prisma.mediaAsset.delete({ where: { id } });
+      await prisma.$transaction(async (tx) => {
+        await tx.edgeOnePrefetchResource.deleteMany({ where: { mediaAssetId: id } });
+        await tx.mediaAsset.delete({ where: { id } });
+      });
     } catch (error) {
       try {
         await restoreStagedFile(staged);

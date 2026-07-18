@@ -14,6 +14,7 @@ import { request } from "../api";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { notify } from "../notifications/notification";
 import { buildCrudSaveRequest, prepareCrudEditValues, type CrudConfig } from "./config";
+import { createCrudFormDefaults } from "./create-defaults";
 
 type ListResponse = { items: AnyRecord[]; total?: number };
 type SaveMode = "close" | "continue";
@@ -131,7 +132,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
         const data = await request<ListResponse>(config.path);
         setItems(data.items);
         setListTotal(data.total ?? data.items.length);
-        return;
+        return data.items;
       }
       const first = await request<ListResponse>(listPath(config.path, { page: "1", pageSize: String(sortablePageSize) }));
       const total = first.total ?? first.items.length;
@@ -143,8 +144,10 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       }
       setItems(allItems);
       setListTotal(total);
+      return allItems;
     } catch (error) {
       notify.error(error instanceof Error ? error.message : "加载失败");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -180,11 +183,11 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  function resetCreateDrawer() {
+  function resetCreateDrawer(sourceItems: AnyRecord[] = items) {
     hydrating.current = true;
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ status: "enabled", sortOrder: 1, ...config.defaultValues });
+    form.setFieldsValue(createCrudFormDefaults(sourceItems, config.defaultValues, config.sortFields));
     setDrawerOpen(true);
     setDirty(false);
     window.setTimeout(() => {
@@ -242,10 +245,10 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       });
       notify.success("保存成功");
       setDirty(false);
-      await load();
+      const refreshedItems = await load();
       if (mode === "continue") {
         if (wasCreating) {
-          resetCreateDrawer();
+          resetCreateDrawer(refreshedItems);
         } else {
           hydrating.current = true;
           setEditing(saved);
@@ -434,7 +437,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             onValuesChange={() => {
               if (!hydrating.current) setDirty(true);
             }}
-            initialValues={{ status: "enabled", sortOrder: 1 }}
+            initialValues={createCrudFormDefaults([], config.defaultValues, config.sortFields)}
           >
             {config.fields(form, editing)}
           </Form>

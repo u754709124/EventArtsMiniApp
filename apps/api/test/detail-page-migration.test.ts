@@ -159,7 +159,7 @@ describe("standalone detail-page migration", () => {
 
     expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: config.id } })).toMatchObject({
       id: config.id,
-      richTextHtml: `<h1>保留 HTML</h1><p>保留 HTML</p><img src="${content.url}" data-media-asset-id="${content.id}" alt="内容图片" width="1200" height="800">`,
+      richTextHtml: `<p>保留 HTML</p><img src="${content.url}" data-media-asset-id="${content.id}" alt="内容图片" width="1200" height="800">`,
       heroTitle: "已有标题",
       heroSubtitle: "已有宣传语"
     });
@@ -259,13 +259,13 @@ describe("standalone detail-page migration", () => {
     expect(migrated.schemaVersion).toBe(2);
     expect(migrated.richTextHtml).toBe(
       `<h1>项目介绍</h1><p>旧正文</p><img src="${image.url}" data-media-asset-id="${image.id}" alt="内容图片" width="1200" height="800">` +
-      `<h1>视频说明</h1><video src="${video.url}" data-media-asset-id="${video.id}" width="1920" height="1080" controls="" preload="metadata"></video><p>视频说明</p>`
+      `<video src="${video.url}" data-media-asset-id="${video.id}" width="1920" height="1080" controls="" preload="metadata"></video><p>视频说明</p>`
     );
     expect(migrated.contentMedia.map((item) => item.mediaAssetId)).toEqual([image.id, video.id]);
     await prisma.$disconnect();
   });
 
-  it("migrates empty legacy rich text to a valid default H1 card", async () => {
+  it("migrates empty legacy rich text to valid content without a default title", async () => {
     const prisma = await createDatabase("h1-cards-empty");
     const detail = await prisma.detailPageConfig.create({
       data: {
@@ -279,7 +279,7 @@ describe("standalone detail-page migration", () => {
 
     expect(await prisma.detailPageConfig.findUniqueOrThrow({ where: { id: detail.id } })).toMatchObject({
       schemaVersion: 2,
-      richTextHtml: "<h1>内容</h1><p>内容</p>"
+      richTextHtml: "<p>内容</p>"
     });
     await prisma.$disconnect();
   });
