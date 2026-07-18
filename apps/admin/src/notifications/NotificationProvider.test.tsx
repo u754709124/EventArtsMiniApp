@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationProvider } from "./NotificationProvider";
 import { notificationDurationMs, notify } from "./notification";
@@ -69,5 +69,39 @@ describe("NotificationProvider", () => {
       vi.advanceTimersByTime(220);
     });
     expect(screen.queryAllByTestId("notification-toast")).toHaveLength(0);
+  });
+
+  it("allows one card to be dismissed early without affecting the other cards or firing stale timers", () => {
+    render(
+      <NotificationProvider>
+        <div />
+      </NotificationProvider>
+    );
+    act(() => {
+      notify.success("first");
+      notify.info("second");
+    });
+
+    const firstToast = screen.getByText("first").closest("[data-testid='notification-toast']");
+    expect(firstToast).toBeTruthy();
+    const closeButton = firstToast?.querySelector<HTMLButtonElement>("[data-testid='notification-toast-close']");
+    expect(closeButton?.getAttribute("aria-label")).toBe("关闭成功提示");
+
+    fireEvent.click(closeButton!);
+    fireEvent.click(closeButton!);
+    expect(firstToast?.classList.contains("is-exiting")).toBe(true);
+    expect(screen.getByText("second")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(220);
+    });
+    expect(screen.queryByText("first")).toBeNull();
+    expect(screen.getByText("second")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(notificationDurationMs - 220);
+    });
+    expect(screen.queryByText("first")).toBeNull();
+    expect(screen.getByText("second").closest("[data-testid='notification-toast']")?.classList.contains("is-exiting")).toBe(true);
   });
 });

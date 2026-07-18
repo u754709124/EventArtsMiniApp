@@ -42,4 +42,15 @@ describe("AdminLayout CSS contract", () => {
     expect(notificationCss).toMatch(/animation:\s*notification-progress 5000ms linear forwards/);
     expect(notificationCss).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/);
   });
+
+  it("positions an interactive circular close button around the notification top-left corner", () => {
+    expect(notificationCss).toMatch(/\.notification-stack\s*\{[^}]*pointer-events:\s*none/s);
+    expect(notificationCss).toMatch(/\.notification-toast\s*\{[^}]*overflow:\s*visible/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*top:\s*0[^}]*left:\s*0/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*width:\s*28px[^}]*height:\s*28px/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*border-radius:\s*50%/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*pointer-events:\s*auto/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/s);
+    expect(notificationCss).toMatch(/\.notification-toast__close:focus-visible\s*\{/);
+  });
 });

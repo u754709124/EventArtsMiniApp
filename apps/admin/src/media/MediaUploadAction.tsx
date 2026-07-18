@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Form, Input, Modal, Progress, Select } from "antd";
 import { type MediaAssetDto, type MediaFieldKey, type MediaType, type MediaUploadConfigDto } from "@event-arts/shared";
 import { request } from "../api";
@@ -40,10 +40,38 @@ export function MediaUploadAction({
   const [draft, setDraft] = useState<PreparedMediaFile | null>(null);
   const [resourceName, setResourceName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [tagOptions, setTagOptions] = useState<Array<{ label: string; count: number }>>([]);
+  const [tagOptionsLoading, setTagOptionsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
+  const tagRequestSequence = useRef(0);
   const allowedTypes = resolveAllowedMediaTypes(fieldKey, requestedTypes);
   const clickGuard = useRepeatClickGuard();
+
+  useEffect(() => {
+    const sequence = ++tagRequestSequence.current;
+    if (!draft) {
+      setTagOptionsLoading(false);
+      return;
+    }
+    setTagOptionsLoading(true);
+    void request<{ items: Array<{ label: string; count: number }> }>("/api/admin/media-assets/tags")
+      .then((value) => {
+        if (sequence !== tagRequestSequence.current) return;
+        setTagOptions(value.items);
+      })
+      .catch(() => {
+        if (sequence !== tagRequestSequence.current) return;
+        setTagOptions([]);
+        notify.warning("历史标签加载失败，仍可手动输入标签");
+      })
+      .finally(() => {
+        if (sequence === tagRequestSequence.current) setTagOptionsLoading(false);
+      });
+    return () => {
+      tagRequestSequence.current += 1;
+    };
+  }, [draft]);
 
   async function choose(file: File) {
     if (busy) return;
@@ -144,7 +172,19 @@ export function MediaUploadAction({
             <Input data-testid="media-resource-name" value={resourceName} onChange={(event) => setResourceName(event.target.value)} />
           </Form.Item>
           <Form.Item label="标签">
-            <Select data-testid="media-resource-tags" mode="tags" value={tags} onChange={setTags} tokenSeparators={[",", "，"]} />
+            <Select
+              data-testid="media-resource-tags"
+              mode="tags"
+              value={tags}
+              loading={tagOptionsLoading}
+              showSearch
+              optionFilterProp="value"
+              filterOption={(input, option) => String(option?.value ?? "").toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())}
+              options={tagOptions.map((item) => ({ value: item.label, label: `${item.label} (${item.count})` }))}
+              onChange={setTags}
+              tokenSeparators={[",", "，"]}
+              placeholder="输入或选择历史标签"
+            />
           </Form.Item>
           {draft && <p>实际尺寸：{draft.width}×{draft.height}，MD5：{draft.md5}</p>}
         </Form>

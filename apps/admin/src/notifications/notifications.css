@@ -6,7 +6,7 @@
   display: flex;
   width: min(380px, calc(100vw - 48px));
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
   pointer-events: none;
 }
 
@@ -30,13 +30,42 @@
   color: #2b2118;
   background: var(--notification-surface);
   box-shadow: 0 12px 32px rgb(60 38 20 / 16%);
-  overflow: hidden;
+  overflow: visible;
   transform: translateX(0);
   opacity: 1;
   transition:
     transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 180ms ease-out;
   will-change: transform, opacity;
+}
+
+.notification-toast__close {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--notification-surface);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--notification-accent);
+  box-shadow: 0 4px 12px rgb(43 33 24 / 24%);
+  cursor: pointer;
+  pointer-events: auto;
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+
+.notification-toast__close:hover {
+  filter: brightness(0.92);
+}
+
+.notification-toast__close:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--notification-accent) 35%, white);
+  outline-offset: 2px;
 }
 
 .notification-toast.is-entering,
@@ -170,8 +199,8 @@
 @media (max-width: 640px) {
   .notification-stack {
     top: 72px;
-    right: 12px;
-    width: calc(100vw - 24px);
+    right: 16px;
+    width: calc(100vw - 32px);
   }
 }
 

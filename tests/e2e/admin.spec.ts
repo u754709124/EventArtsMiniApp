@@ -436,9 +436,30 @@ test("统一通知支持主题堆叠、进度补位和跨浏览器历史", async
   expect(progressAfter!.width).toBeLessThan(progressBefore!.width);
   expect(Math.abs(progressAfter!.x + progressAfter!.width - progressBefore!.x - progressBefore!.width)).toBeLessThanOrEqual(2);
 
+  const successBox = await successToast.boundingBox();
+  const closeButton = successToast.getByRole("button", { name: "关闭成功提示" });
+  const closeBox = await closeButton.boundingBox();
+  expect(successBox).not.toBeNull();
+  expect(closeBox).not.toBeNull();
+  expect(Math.abs(closeBox!.width - closeBox!.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(closeBox!.x + closeBox!.width / 2 - successBox!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(closeBox!.y + closeBox!.height / 2 - successBox!.y)).toBeLessThanOrEqual(1);
+  expect(closeBox!.x).toBeGreaterThanOrEqual(0);
+  expect(closeBox!.y).toBeGreaterThanOrEqual(0);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const narrowCloseBox = await closeButton.boundingBox();
+  expect(narrowCloseBox).not.toBeNull();
+  expect(narrowCloseBox!.x).toBeGreaterThanOrEqual(0);
+  expect(narrowCloseBox!.x + narrowCloseBox!.width).toBeLessThanOrEqual(375);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   const failureTopBefore = (await failureToast.boundingBox())!.y;
-  await expect(successToast).toBeHidden({ timeout: 6_000 });
+  await closeButton.click();
+  await expect(successToast).toHaveClass(/is-exiting/);
+  await expect(successToast).toBeHidden({ timeout: 1_000 });
   await expect(failureToast).toBeVisible();
+  await page.waitForTimeout(250);
   const failureTopAfter = (await failureToast.boundingBox())!.y;
   expect(failureTopAfter).toBeLessThan(failureTopBefore);
 
@@ -1378,6 +1399,15 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   for (const asset of existingAssets.items.filter((item) => item.resourceName === "E2E 未使用资源")) {
     await adminApi(request, "DELETE", `/api/admin/media-assets/${asset.id}`);
   }
+  await page.route("**/api/admin/media-assets/tags", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      data: { items: [{ label: "历史婚礼标签", count: 4 }, { label: "舞台标签", count: 2 }] },
+      message: "ok"
+    })
+  }));
   await loginAdminUi(page);
   await page.getByTestId("sidebar-media-assets").click();
   await expect(page.getByRole("tab", { name: "图片" })).toBeVisible();
@@ -1395,12 +1425,25 @@ test("资源库上传、MD5复用、筛选和清理未使用资源", async ({ pa
   await (await uploadChooser).setFiles(file);
   await expect(page.getByTestId("media-resource-name")).toBeVisible();
   await page.getByTestId("media-resource-name").fill("E2E 未使用资源");
+  const tagSelect = page.getByTestId("media-resource-tags");
+  await tagSelect.click();
+  await page.keyboard.type("历史婚");
+  await expect(visibleSelectOption(page, "历史婚礼标签 (4)")).toBeVisible();
+  await expect(visibleSelectOption(page, "舞台标签 (2)")).toHaveCount(0);
+  await visibleSelectOption(page, "历史婚礼标签 (4)").click();
+  await tagSelect.click();
+  await page.keyboard.type("E2E新标签");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.getByTestId("media-upload-button-confirm").click();
   await waitForToast(page, "上传成功");
 
   await page.getByTestId("media-search").locator("input").fill("E2E 未使用资源");
   await page.getByTestId("media-search").locator("input").press("Enter");
-  await expect(page.getByRole("row", { name: /E2E 未使用资源/ })).toBeVisible();
+  const uploadedRow = page.getByRole("row", { name: /E2E 未使用资源/ });
+  await expect(uploadedRow).toBeVisible();
+  await expect(uploadedRow).toContainText("历史婚礼标签");
+  await expect(uploadedRow).toContainText("E2E新标签");
 
   await page.getByTestId("media-upload-button-input").setInputFiles(file);
   await waitForToast(page, "已存在相同资源，已直接复用");
