@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "EventArtsMiniApp",
   "description": "EventArts phase-one Taro miniapp",
-  "appid": "wx5ec063dad7963593",
+  "appid": "wx0f3eaae627c91c96",
   "setting": {
     "es6": false,
     "postcss": false,
