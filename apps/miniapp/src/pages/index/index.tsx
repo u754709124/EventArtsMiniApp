@@ -301,11 +301,12 @@ function BannerSection({
   const hasConfiguredBanners = banners.length > 0;
   const list = banners.length
     ? banners
-    : [
+    : site.placeholderBannerUrl
+      ? [
         {
           id: 0,
           title: "Banner 占位图",
-          imageUrl: site.placeholderBannerUrl || generatedAssets.placeholderBanner,
+          imageUrl: site.placeholderBannerUrl,
           linkType: "none",
           linkTarget: null,
           detailPageId: null,
@@ -314,13 +315,16 @@ function BannerSection({
           sortOrder: 0,
           status: "enabled"
         } as BannerDto
-      ];
+      ]
+      : [];
   const multiple = list.length > 1;
   const currentBanner = list[current] ?? list[0];
 
   useEffect(() => {
     setFailedBannerIds(new Set());
   }, [mediaRefreshVersion]);
+
+  if (list.length === 0) return null;
 
   function markBannerFailed(id: number) {
     if (!hasConfiguredBanners) return;
@@ -383,7 +387,7 @@ function BannerSection({
                   className="banner__image"
                   testid="home-banner-image"
                   src={banner.imageUrl}
-                  fallback={site.placeholderBannerUrl || generatedAssets.placeholderBanner}
+                  fallback={site.placeholderBannerUrl}
                   onError={() => markBannerFailed(banner.id)}
                   onLoad={() => clearBannerFailed(banner.id)}
                 />
@@ -415,7 +419,7 @@ function MenuSection({ menus, site }: { menus: MenuItemDto[]; site: ClientHomeRe
             data-testid={`home-menu-${menu.type}`}
             onClick={() => clickGuard(`home:menu:${menu.id}`, () => openMenu(menu))}
           >
-            <AppImage className="menu-item__icon" src={menu.iconUrl} fallback={site.placeholderIconUrl || generatedAssets.placeholderIcon} />
+            <AppImage className="menu-item__icon" src={menu.iconUrl} fallback={site.placeholderIconUrl} />
             <Text>{menu.text}</Text>
           </View>
         ))

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 type Props = {
   src: string;
-  fallback: string;
+  fallback?: string;
   className?: string;
   mode?: "scaleToFill" | "aspectFill" | "aspectFit" | "widthFix";
   testid?: string;
@@ -20,22 +20,25 @@ export function AppImage({
   onError,
   onLoad
 }: Props) {
-  const [current, setCurrent] = useState(src || fallback);
-  useEffect(() => setCurrent(src || fallback), [fallback, src]);
+  const [current, setCurrent] = useState(src || fallback || "");
+  useEffect(() => setCurrent(src || fallback || ""), [fallback, src]);
+
+  if (!current) return null;
+
   return (
     <Image
       className={className}
-      data-current-src={current || fallback}
+      data-current-src={current}
       data-testid={testid}
       mode={mode}
-      src={current || fallback}
+      src={current}
       aria-label="详情图片"
       onLoad={() => {
         if (current === src) onLoad?.(src);
       }}
       onError={() => {
         onError?.(src);
-        setCurrent(fallback);
+        setCurrent(current !== fallback ? fallback || "" : "");
       }}
     />
   );

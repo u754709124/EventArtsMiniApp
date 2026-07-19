@@ -40,7 +40,7 @@ export function CaseCard({
           className="case-card__image"
           testid={`${prefix}-image`}
           src={item.coverUrl}
-          fallback={sitePlaceholderCaseUrl || generatedAssets.placeholderCase}
+          fallback={sitePlaceholderCaseUrl === undefined ? generatedAssets.placeholderCase : sitePlaceholderCaseUrl}
         />
         <Text className="case-card__tag">{item.tag}</Text>
       </View>

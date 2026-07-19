@@ -1822,6 +1822,27 @@ test("无 Banner 时使用占位图", async ({ page, request }) => {
   );
 });
 
+test("后台未配置 Banner 占位图时不显示占位区域", async ({ page, request }) => {
+  const originalSite = await adminApi<Record<string, unknown>>(
+    request,
+    "GET",
+    "/api/admin/site-config"
+  );
+
+  try {
+    await setBannerStatus(request, "disabled");
+    await adminApi(request, "PUT", "/api/admin/site-config", {
+      ...originalSite,
+      placeholderBannerAssetId: null
+    });
+    await openHome(page);
+    await expect(page.getByTestId("home-banner-state")).toHaveCount(0);
+    await expect(page.getByTestId("home-banner-image")).toHaveCount(0);
+  } finally {
+    await adminApi(request, "PUT", "/api/admin/site-config", originalSite);
+  }
+});
+
 test("设计复核截图", async ({ page, request }) => {
   await prepareDesignReviewData(request);
   await setAnnouncementStatus(request, "enabled");
