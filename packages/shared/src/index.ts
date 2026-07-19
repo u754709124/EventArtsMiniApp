@@ -946,6 +946,14 @@ export const backupStatusValues = ["ready", "verifying", "restoring", "failed"] 
 export type BackupStatus = (typeof backupStatusValues)[number];
 export const BackupStatusSchema = z.enum(backupStatusValues);
 
+export const backupDataScopeValues = ["full", "non_identity"] as const;
+export type BackupDataScope = (typeof backupDataScopeValues)[number];
+export const BackupDataScopeSchema = z.enum(backupDataScopeValues);
+
+export const backupKindValues = ["manual", "automatic", "restore_snapshot", "imported"] as const;
+export type BackupKind = (typeof backupKindValues)[number];
+export const BackupKindSchema = z.enum(backupKindValues);
+
 export const backupIdSchema = z
   .string()
   .trim()
@@ -985,11 +993,20 @@ export const backupManifestFileSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/i)
 }).strict();
 
-export const backupManifestCreatorSchema = z.object({
+export const backupManifestIdentifiedCreatorSchema = z.object({
   adminId: z.number().int().positive(),
   publicId: z.string().uuid().optional(),
   username: z.string().min(1).max(64)
 }).strict();
+
+export const backupManifestAnonymousCreatorSchema = z.object({
+  username: z.enum(["后台管理员", "系统任务", "恢复前安全快照"])
+}).strict();
+
+export const backupManifestCreatorSchema = z.union([
+  backupManifestIdentifiedCreatorSchema,
+  backupManifestAnonymousCreatorSchema
+]);
 
 export const backupManifestAppSchema = z.object({
   name: z.string().min(1).max(120),
@@ -1021,7 +1038,6 @@ const backupManifestBaseSchema = z.object({
   status: BackupStatusSchema,
   app: backupManifestAppSchema,
   schema: backupManifestSchemaMetadataSchema,
-  createdBy: backupManifestCreatorSchema,
   createdAt: apiIsoDateTimeStringSchema,
   note: z.string().max(200).nullable(),
   database: backupManifestDatabaseSchema,
@@ -1032,21 +1048,33 @@ const backupManifestBaseSchema = z.object({
 }).strict();
 
 export const backupManifestV1Schema = backupManifestBaseSchema.extend({
-  formatVersion: z.literal(1)
+  formatVersion: z.literal(1),
+  createdBy: backupManifestIdentifiedCreatorSchema
 }).strict();
 
 export const backupManifestV2Schema = backupManifestBaseSchema.extend({
   formatVersion: z.literal(2),
+  createdBy: backupManifestIdentifiedCreatorSchema,
   identityRestorePolicy: backupIdentityRestorePolicySchema
 }).strict();
 
-export const backupManifestSchema = z.union([backupManifestV2Schema, backupManifestV1Schema]);
-const backupFormatVersionSchema = z.union([z.literal(1), z.literal(2)]);
+export const backupManifestV3Schema = backupManifestBaseSchema.extend({
+  formatVersion: z.literal(3),
+  createdBy: backupManifestAnonymousCreatorSchema,
+  identityRestorePolicy: backupIdentityRestorePolicySchema,
+  dataScope: z.literal("non_identity"),
+  backupKind: BackupKindSchema
+}).strict();
+
+export const backupManifestSchema = z.union([backupManifestV3Schema, backupManifestV2Schema, backupManifestV1Schema]);
+const backupFormatVersionSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 
 export const backupDtoSchema = z.object({
   id: backupIdSchema,
   formatVersion: backupFormatVersionSchema,
   identityRestorePolicy: backupIdentityRestorePolicySchema.optional(),
+  dataScope: BackupDataScopeSchema.optional(),
+  backupKind: BackupKindSchema.optional(),
   status: BackupStatusSchema,
   createdBy: backupManifestCreatorSchema,
   createdAt: apiIsoDateTimeStringSchema,
@@ -1080,6 +1108,8 @@ export const backupPreflightTableImpactSchema = z.object({
 export const backupPreflightSummarySchema = z.object({
   formatVersion: backupFormatVersionSchema,
   identityRestorePolicy: backupIdentityRestorePolicySchema.optional(),
+  dataScope: BackupDataScopeSchema.optional(),
+  backupKind: BackupKindSchema.optional(),
   createdAt: apiIsoDateTimeStringSchema,
   createdBy: backupManifestCreatorSchema,
   note: z.string().max(200).nullable(),

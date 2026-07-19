@@ -5,6 +5,7 @@ import {
   AdminPasswordResetPurposeSchema,
   AdminRoleSchema,
   adminAccountStatusValues,
+  adminDelegableMenuKeyValues,
   adminGrantableMenuKeyValues,
   adminMenuCatalog,
   adminMenuKeyValues,
@@ -35,7 +36,7 @@ describe("admin RBAC shared contracts", () => {
     });
   });
 
-  it("keeps fixed security menus outside delegated leaf grants", () => {
+  it("keeps intrinsic capabilities out of grants and sensitive menus out of ADMIN delegation", () => {
     const byKey = new Map(adminMenuCatalog.map((item) => [item.key, item]));
     expect(adminMenuKeyValues).toEqual(adminMenuCatalog.map((item) => item.key));
     expect(adminGrantableMenuKeyValues).toEqual(
@@ -43,10 +44,13 @@ describe("admin RBAC shared contracts", () => {
     );
     expect(byKey.get("change-password")).toMatchObject({ access: "authenticated", delegable: false });
     expect(byKey.get("user-management")).toMatchObject({ access: "role_capability", delegable: false });
-    expect(byKey.get("backups")).toMatchObject({ access: "super_admin", delegable: false });
-    expect(byKey.get("system-config")).toMatchObject({ access: "super_admin", delegable: false });
-    expect(byKey.get("scheduled-tasks")).toMatchObject({ access: "super_admin", delegable: false });
-    expect(() => AdminGrantableMenuKeySchema.parse("backups")).toThrow();
+    expect(byKey.get("backups")).toMatchObject({ access: "grantable", delegable: false });
+    expect(byKey.get("system-config")).toMatchObject({ access: "grantable", delegable: false });
+    expect(byKey.get("scheduled-tasks")).toMatchObject({ access: "grantable", delegable: false });
+    expect(AdminGrantableMenuKeySchema.parse("backups")).toBe("backups");
+    expect(adminDelegableMenuKeyValues).not.toContain("backups");
+    expect(adminDelegableMenuKeyValues).not.toContain("scheduled-tasks");
+    expect(adminDelegableMenuKeyValues).not.toContain("system-config");
   });
 
   it("expands group selections only to current grantable leaf keys", () => {
@@ -54,8 +58,9 @@ describe("admin RBAC shared contracts", () => {
       "artists",
       "cases",
       "articles",
-      "detail-pages"
+      "detail-pages",
+      "backups"
     ]);
-    expect(expandAdminMenuSelection(["account"])).toEqual([]);
+    expect(expandAdminMenuSelection(["account"])).toEqual(["backups"]);
   });
 });

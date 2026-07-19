@@ -32,15 +32,15 @@ CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 或 IP 白名单�
 - `GET /api/admin/auth/me`：需要管理员 token，返回当前管理员。
 - `POST /api/admin/auth/change-password`：需要管理员 token，body `{ "currentPassword": string, "newPassword": string, "confirmPassword": string }`。新密码必须满足强密码策略；修改成功后撤销该管理员的所有服务器端 session，并返回 `{ "revokedSessionCount": number }`。
 
-管理员 token 有效期为 2 小时，JWT 内含 `jti`，每次受保护请求都会校验服务器端 session 状态。登出、修改密码和全量恢复会写撤销状态；被撤销、过期或不存在的 session 即使 JWT 未过期也不能继续访问后台接口。
+管理员 token 有效期为 2 小时，JWT 内含 `jti`，每次受保护请求都会校验服务器端 session 状态。登出、修改密码和备份恢复会写撤销状态；被撤销、过期或不存在的 session 即使 JWT 未过期也不能继续访问后台接口。
 
 ### Admin RBAC and password recovery
 
-后台角色固定为 `SUPER_ADMIN | ADMIN | USER`。`SUPER_ADMIN` 使用隐式全部菜单权限；`ADMIN` 和 `USER` 保存叶子菜单授权，菜单组只在提交时展开，不是未来子菜单的通配符。`change-password` 是所有账户固有能力，`user-management` 属于 `SUPER_ADMIN`/`ADMIN`，`backups`、`system-config`、`scheduled-tasks` 仅允许 `SUPER_ADMIN`。服务端按实时数据库角色、状态、session 和授权执行每个 HTTP 方法的策略；JWT 中伪造的角色或权限字段无效。
+后台角色固定为 `SUPER_ADMIN | ADMIN | USER`。`SUPER_ADMIN` 使用隐式全部菜单权限；`ADMIN` 和 `USER` 保存叶子菜单授权，菜单组只在提交时展开，不是未来子菜单的通配符。`change-password` 是所有账户固有能力，`user-management` 属于 `SUPER_ADMIN`/`ADMIN`；`backups`、`system-config`、`scheduled-tasks` 是可授予的敏感菜单，只能由 `SUPER_ADMIN` 显式授予，`ADMIN` 即使拥有这些菜单也不能继续下放。服务端按实时数据库角色、状态、session 和授权执行每个 HTTP 方法的策略；JWT 中伪造的角色或权限字段无效。
 
-- `GET /api/admin/users`：`SUPER_ADMIN` 查看可管理账户；`ADMIN` 只查看 `USER`。
+- `GET /api/admin/users`：`SUPER_ADMIN` 查看全部后台账户；`ADMIN` 只查看 `USER`。
 - `POST /api/admin/users`：创建待激活 `ADMIN`/`USER` 并返回一次性 `activationLink`。`SUPER_ADMIN` 可创建二者；`ADMIN` 只能创建 `USER` 并下放自身可委派权限。
-- `GET /api/admin/users/:publicId`、`PATCH /api/admin/users/:publicId`：读取或修改允许管理的账户。角色/状态变化会撤销目标 session 与未使用链接；系统始终保留至少一个启用的 `SUPER_ADMIN`。
+- `GET /api/admin/users/:publicId`、`PATCH /api/admin/users/:publicId`：读取或修改允许管理的账户。`SUPER_ADMIN` 可管理其他 `SUPER_ADMIN`/`ADMIN`/`USER`，但不能 Web 自助管理自身；涉及 `SUPER_ADMIN` 的角色/状态变更要求当前密码和显式确认。角色/状态变化会撤销目标 session 与未使用链接；系统始终保留至少一个启用的 `SUPER_ADMIN`。
 - `PUT /api/admin/users/:publicId/permissions`：保存叶子菜单权限并撤销目标 session 与未使用链接。
 - `POST /api/admin/users/:publicId/reset-links`：body `{ "purpose": "activation" | "recovery", "currentPassword": string, "confirmation": true }`。`SUPER_ADMIN` 可为 `ADMIN`/`USER` 生成链接；`ADMIN` 仅可为 `USER` 生成；同级、向上、向下越权、自助签发以及任何 `SUPER_ADMIN` Web 链接均拒绝。
 - `POST /api/admin/users/:publicId/reset-links/revoke`：撤销目标尚未使用的激活/恢复链接。
@@ -65,7 +65,7 @@ CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 或 IP 白名单�
 
 `level` 为 `success | error | warning | info`，消息最长 500 字符。服务端只使用鉴权会话中的管理员 ID，不接受客户端指定 `adminId`；`(adminId, clientEventId)` 唯一，因此断网重试不会生成重复历史。超过服务器时间 5 分钟的事件会被拒绝，早于滚动 7×24 小时的补传返回 `persisted: false, reason: "expired"`，客户端应丢弃。
 
-GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt DESC, id DESC` 排序；`pageSize` 最大 100。可选查询参数 `level` 只接受 `success | error | warning | info`，过滤在数据库计数和分页前完成；不传时保持全量通知列表行为。后台右上角“日志查看”使用 `level=error`，因此分页总数只统计失败日志。读写路径会清理过期记录，也可运行 `pnpm --filter api admin:notifications:cleanup -- --dry-run` 查看待清理数量，移除 `--dry-run` 后执行清理。通知表包含在全量备份、导入影响预检、恢复和 reset seed 中。
+GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt DESC, id DESC` 排序；`pageSize` 最大 100。可选查询参数 `level` 只接受 `success | error | warning | info`，过滤在数据库计数和分页前完成；不传时保持全量通知列表行为。后台右上角“日志查看”使用 `level=error`，因此分页总数只统计失败日志。读写路径会清理过期记录，也可运行 `pnpm --filter api admin:notifications:cleanup -- --dry-run` 查看待清理数量，移除 `--dry-run` 后执行清理。通知表属于当前身份平面：新 v3 备份不包含该表，导入影响预检会显示保留当前系统，恢复和 reset seed 保留/重建目标环境通知。
 
 应用层限流使用固定窗口策略。登录限流默认由 `LOGIN_RATE_LIMIT_WINDOW_MS=900000` 和 `LOGIN_RATE_LIMIT_MAX_FAILURES=5` 控制；客户端用户统计限流默认由 `ANALYTICS_RATE_LIMIT_WINDOW_MS=60000` 和 `ANALYTICS_RATE_LIMIT_MAX_REQUESTS=60` 控制。
 
@@ -250,29 +250,31 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 - `GET /api/admin/backups`：返回 `{ "backups": BackupDto[] }`，不返回备份目录、本地路径或公共下载 URL。
 - `GET /api/admin/backups/:id/download`：仅允许下载状态为 `ready` 且重新通过 manifest、普通文件、大小和 SHA-256 校验的备份。成功响应为流式 `.tar.gz` 附件，不套用 JSON success 信封，并设置 `Content-Disposition`、`Cache-Control: no-store` 和 `X-Content-Type-Options: nosniff`；失败仍返回统一 JSON failure 信封。下载期间同一备份不可删除。
-- `POST /api/admin/backups`：body `{ "note"?: string }`，创建一致性备份并返回 `{ "backup": BackupDto }`。
+- `POST /api/admin/backups`：body `{ "note"?: string }`，创建 v3 `backupKind: "manual"`、`dataScope: "non_identity"` 一致性备份并返回 `{ "backup": BackupDto }`。
 - `POST /api/admin/backups/import`：multipart 字段 `file` 或 `archive` 上传 `.tar`/`.tar.gz` 外部备份。服务端先解包到 `BACKUP_DIR/.imports` 隔离暂存区，完整预检通过后发布为普通 `import-*` 备份条目，并返回 `{ "backup": BackupDto, "preflight": BackupPreflightSummary }`。
 - `POST /api/admin/backups/:id/restore`：body `{ "backupId": "<same-id>", "confirmation": "RESTORE_FULL_BACKUP" }`。确认字符串和路径 ID 必须完全匹配；缺失或错误确认会在创建恢复点、进入维护模式或修改 DB/uploads 前失败。
 - `DELETE /api/admin/backups/:id`：body `{ "backupId": "<same-id>", "confirmation": "DELETE_BACKUP" }`，只删除 `ready`/`failed` 等可删除状态；`verifying`、`restoring` 等状态返回 `409/BACKUP_CONFLICT`。
 
-新备份格式版本为 `formatVersion: 2`，并声明 `identityRestorePolicy: "preserve_target"`。每个备份发布为后台专用备份目录中的私有目录，包含 `database.sqlite`、`uploads/...` 文件副本和 `manifest.json`。数据库快照使用 SQLite `VACUUM INTO` 一致性机制生成，禁止直接复制活动数据库文件。仅仓库已知的 RBAC 前旧版 `formatVersion: 1` schema hash 可通过兼容适配器导入，未知 v1 一律拒绝。
+新备份格式版本为 `formatVersion: 3`，并声明 `identityRestorePolicy: "preserve_target"`、`dataScope: "non_identity"` 和 `backupKind: "manual" | "automatic" | "restore_snapshot" | "imported"`。每个备份发布为后台专用备份目录中的私有目录，包含 `database.sqlite`、`uploads/...` 文件副本和 `manifest.json`。数据库快照使用 SQLite `VACUUM INTO` 一致性机制生成，禁止直接复制活动数据库文件。仓库已知的旧版 `formatVersion: 1` 和 `formatVersion: 2` 可通过兼容适配器导入、预检和恢复，未知旧 schema 一律拒绝。
+
+v3 本地备份不包含身份和运行态数据：`admin_users`、`admin_menu_permissions`、`admin_sessions`、`admin_password_reset_tokens`、`admin_notifications`、`client_sessions`、`daily_user_visits`、`page_view_events`、`operation_logs`、`edgeone_prefetch_attempts`、`edgeone_prefetch_resources` 和 `scheduled_task_states` 不进入快照；`media_assets.createdBy` 在快照中置空。旧 v1/v2 归档可能包含上述历史身份表，但恢复仍按 `preserve_target` 处理，候选身份永远不会上线。
 
 `manifest.json` 包含：
 
 - `app`：应用名称和版本。
 - `schema`：SQLite provider、SQLite 版本、`userVersion`、schema hash 和 migration id。
-- `createdBy`、`createdAt`、`note`。
+- `createdBy`、`createdAt`、`note`；v3 使用匿名创建者（`后台管理员`、`系统任务` 或 `恢复前安全快照`），旧 v1/v2 保留历史识别型创建者以便兼容读取。
 - `database`：快照路径、大小、SHA-256、`snapshotMethod: "sqlite-vacuum-into"`、page size 和 page count。
 - `uploads`：每个收集文件的安全相对路径、大小、SHA-256 和修改时间。
 - `totalBytes`、`totalFiles` 和整备份内容 SHA-256。
 
 uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、隐藏文件/目录、临时扩展名、符号链接、目录和任何越过 uploads root 的路径。创建过程先写入备份目录下的 staging 目录，完成文件校验和 manifest 校验后再原子发布；失败会清理 staging，不会留下 partial published backup。并发创建会安全拒绝为 `409/BACKUP_CONFLICT`。
 
-导入预检会拒绝绝对路径、`..`、反斜杠路径、符号链接、硬链接、PAX/长名扩展、设备文件、不支持 tar 类型、过多文件、过大展开体积、过高展开比、版本不兼容、manifest schema 错误、文件大小或 SHA-256 不匹配、SQLite `integrity_check`/`foreign_key_check` 失败、schema metadata 不兼容，以及媒体库 `media_assets.filename` 与归档 `uploads/...` 清单不一致。预检摘要只包含版本、创建者、数据库大小、uploads 数量、表级影响行数和检查状态。
+导入预检会拒绝绝对路径、`..`、反斜杠路径、符号链接、硬链接、PAX/长名扩展、设备文件、不支持 tar 类型、过多文件、过大展开体积、过高展开比、版本不兼容、manifest schema 错误、文件大小或 SHA-256 不匹配、SQLite `integrity_check`/`foreign_key_check` 失败、schema metadata 不兼容，以及媒体库 `media_assets.filename` 与归档 `uploads/...` 清单不一致。预检摘要只包含版本、备份类型、数据范围、创建者、数据库大小、uploads 数量、表级影响行数和检查状态；v3 显示“不含身份数据”，旧 v1/v2 显示完整数据兼容恢复说明。
 
-恢复执行顺序为：确认请求体和路径 ID、进入维护模式并阻止业务写入、重新预检候选备份、自动创建恢复点、把候选 DB/uploads 物化到生产目录旁的 `.new` 路径、将当前 `admin_users`、`admin_menu_permissions` 和管理员个人通知复制到候选库、清空全部管理员 session/reset token、切换 SQLite 与 uploads、切换后再次校验。候选备份中的账户、密码 hash、角色、权限、通知、session 和 reset token 永远不会成为线上身份；业务数据与 uploads 正常恢复。历史操作者只按稳定 `publicId` 映射，无法映射的可空引用置空。切换失败会尽力将 `.old` 状态回滚到生产路径；成功响应包含 `restoreId`、原始 `backupId`、`snapshotBackupId`、`revokedSessionCount` 和 `revokedResetTokenCount`。
+恢复执行顺序为：确认请求体和路径 ID、进入维护模式并阻止业务写入、重新预检候选备份、自动创建 `backupKind: "restore_snapshot"` 恢复点、把候选 DB/uploads 物化到生产目录旁的 `.new` 路径、将目标环境当前 `admin_users`、`admin_menu_permissions`、管理员个人通知和身份运行态注入候选库、清空全部管理员 session/reset token、切换 SQLite 与 uploads、切换后再次校验。候选备份中的账户、密码 hash、角色、权限、通知、session、reset token、客户端会话、访问事件、操作日志和任务状态永远不会成为线上身份或运行态；业务数据与 uploads 正常恢复。历史操作者只按稳定 `publicId` 映射，无法映射的可空引用置空。切换失败会尽力将 `.old` 状态回滚到生产路径；成功响应包含 `restoreId`、原始 `backupId`、`snapshotBackupId`、`revokedSessionCount` 和 `revokedResetTokenCount`。
 
-创建、下载、删除、导入和恢复成功/失败均写 `operation_logs`，并通过结构化安全日志记录 `backup_create_*`、`backup_download_*`、`backup_delete_*`、`backup_import_*`、`backup_restore_*` 事件；日志包含来源、操作者、结果和 requestId，但不记录归档内容、敏感请求体、Authorization、Cookie、JWT、本地路径或部署 secret。
+创建、下载、删除、导入、自动备份和恢复成功/失败均写当前数据库的 `operation_logs`，并通过结构化安全日志记录 `backup_create_*`、`backup_download_*`、`backup_delete_*`、`backup_import_*`、`backup_restore_*` 事件；日志包含来源、操作者、结果和 requestId，但不记录归档内容、敏感请求体、Authorization、Cookie、JWT、本地路径或部署 secret。`operation_logs` 不进入 v3 备份快照。
 
 `system_config` 随 SQLite 快照一起备份，但其中只有 AES-256-GCM 密文；备份归档不包含 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`。恢复带有 EdgeOne 配置的数据库时必须向 API 提供创建密文时的同一主密钥，否则旧凭证不可解密。主密钥应通过数据库备份之外的 secret 管理系统独立恢复。
 
@@ -404,8 +406,9 @@ pnpm --filter api edgeone:prefetch:reconcile
 | `admin-notification-cleanup` | 管理员消息清理 | `10 3 * * *` | `pnpm --filter api admin:notifications:cleanup` |
 | `analytics-cleanup` | 访问统计清理 | `20 3 * * *` | `pnpm --filter api analytics:cleanup` |
 | `edgeone-prefetch-reconcile` | EdgeOne 预热对账 | `*/5 * * * *` | `pnpm --filter api edgeone:prefetch:reconcile` |
+| `automatic-backup` | 自动备份 | `0 0 * * *` | 无；由内置调度器或后台立即执行触发 |
 
-cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时启动内置调度器，在关闭时停止调度器。`nextExecutionAt` 是严格晚于服务器当前时间的计划值，`lastExecutionAt` 和 `lastFinishedAt` 来自统一 runner 的真实持久化记录，上线前历史不可追溯时为 `null`。自动调度、管理端立即执行与四条恢复 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。直接调用 `buildApp` 默认不启动后台计时器，测试只有显式启用时才运行调度器；一期单 API 进程部署不得再为相同目录配置重复的外部 cron。
+cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时启动内置调度器，在关闭时停止调度器。`nextExecutionAt` 是严格晚于服务器当前时间的计划值，`lastExecutionAt` 和 `lastFinishedAt` 来自统一 runner 的真实持久化记录，上线前历史不可追溯时为 `null`。自动调度、管理端立即执行与四条清理/对账 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。`automatic-backup` 每天午夜创建 v3 非身份备份并只保留最新 3 个自动备份，手动、导入和恢复前快照不参与自动清理。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。直接调用 `buildApp` 默认不启动后台计时器，测试只有显式启用时才运行调度器；一期单 API 进程部署不得再为相同目录配置重复的外部 cron。
 
 ## Media Field Rules
 

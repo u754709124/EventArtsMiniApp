@@ -28,13 +28,15 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function backup(id = "backup-20260712"): BackupDto {
+function backup(id = "backup-20260712", overrides: Partial<BackupDto> = {}): BackupDto {
   return {
     id,
-    formatVersion: 2,
+    formatVersion: 3,
     identityRestorePolicy: "preserve_target",
+    dataScope: "non_identity",
+    backupKind: "manual",
     status: "ready",
-    createdBy: { adminId: 1, username: "admin" },
+    createdBy: { username: "后台管理员" },
     createdAt: "2026-07-12T08:30:00.000Z",
     size: 2048,
     sha256: "a".repeat(64),
@@ -44,16 +46,20 @@ function backup(id = "backup-20260712"): BackupDto {
       snapshotMethod: "sqlite-vacuum-into"
     },
     uploadFileCount: 3,
-    note: "上线前备份"
+    note: "上线前备份",
+    ...overrides
   };
 }
 
 function importResult(): BackupImportPreflightResponse {
-  const item = backup("import-20260712");
+  const item = backup("import-20260712", { backupKind: "imported" });
   return {
     backup: item,
     preflight: {
-      formatVersion: 1,
+      formatVersion: 3,
+      identityRestorePolicy: "preserve_target",
+      dataScope: "non_identity",
+      backupKind: "imported",
       createdAt: item.createdAt,
       createdBy: item.createdBy,
       note: item.note,
@@ -80,6 +86,28 @@ function importResult(): BackupImportPreflightResponse {
           { table: "admin_sessions", currentRows: 2, candidateRows: 1, deltaRows: -1, restoreBehavior: "ignored" }
         ]
       }
+    }
+  };
+}
+
+function legacyImportResult(): BackupImportPreflightResponse {
+  const item = backup("legacy-import-20260712", {
+    formatVersion: 1,
+    dataScope: "full",
+    backupKind: "imported",
+    createdBy: { adminId: 1, username: "legacy-admin" }
+  });
+  return {
+    ...importResult(),
+    backup: item,
+    preflight: {
+      ...importResult().preflight,
+      formatVersion: 1,
+      dataScope: "full",
+      backupKind: "imported",
+      createdAt: item.createdAt,
+      createdBy: item.createdBy,
+      note: item.note
     }
   };
 }
@@ -169,6 +197,11 @@ describe("BackupPage", () => {
 
     renderPage();
     await screen.findByText("上线前备份");
+    expect(screen.queryByText("身份恢复")).toBeNull();
+    expect(screen.getAllByText("类型").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("数据范围").length).toBeGreaterThan(0);
+    expect(screen.getByText("手动备份")).toBeTruthy();
+    expect(screen.getByText("不含身份数据")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("backup-create-open"));
     const createDialog = await screen.findByRole("dialog", { name: "创建备份" });
@@ -238,12 +271,33 @@ describe("BackupPage", () => {
     await waitFor(() => expect(apiMocks.importBackupArchive).toHaveBeenCalledWith(file));
     const preflight = await screen.findByTestId("backup-import-preflight");
     expect(preflight.textContent).toContain("import-20260712");
+    expect(preflight.textContent).toContain("导入归档");
+    expect(preflight.textContent).toContain("不含身份数据");
+    expect(preflight.textContent).toContain("v3 非身份备份只包含业务数据与 uploads");
     expect(preflight.textContent).toContain("清单：通过");
     expect(preflight.textContent).toContain("media_assets");
     expect(preflight.textContent).toContain("保留当前系统");
     expect(preflight.textContent).toContain("忽略并清空");
+    expect(preflight.textContent).not.toContain("身份恢复");
     expect(preflight.textContent).not.toContain("manifest.json");
     expect(preflight.textContent).not.toContain("database.sqlite");
+  });
+
+  it("marks legacy archives as full-scope compatibility imports", async () => {
+    apiMocks.listBackups.mockResolvedValue({ backups: [] });
+    apiMocks.importBackupArchive.mockResolvedValue(legacyImportResult());
+
+    renderPage();
+    await waitFor(() => expect(apiMocks.listBackups).toHaveBeenCalledTimes(1));
+
+    const file = new File(["archive"], "legacy.tar.gz", { type: "application/gzip" });
+    fireEvent.change(screen.getByTestId("backup-import-input"), { target: { files: [file] } });
+
+    const preflight = await screen.findByTestId("backup-import-preflight");
+    expect(preflight.textContent).toContain("legacy-import-20260712");
+    expect(preflight.textContent).toContain("旧格式完整数据");
+    expect(preflight.textContent).toContain("旧格式归档可能包含历史身份表");
+    expect(preflight.textContent).not.toContain("身份恢复");
   });
 
   it("requires exact restore confirmation and clears the session after success", async () => {
@@ -261,8 +315,11 @@ describe("BackupPage", () => {
 
     fireEvent.click(screen.getByTestId("backup-restore-backup-20260712"));
     const restoreDialog = await screen.findByTestId("backup-restore-modal");
-    expect(restoreDialog.textContent).toContain("保留当前后台账户、角色、菜单权限和个人通知");
+    expect(restoreDialog.textContent).toContain("v3 非身份备份只包含业务数据与 uploads");
+    expect(restoreDialog.textContent).toContain("保留当前身份平面");
     expect(restoreDialog.textContent).toContain("未使用重置链接都会失效");
+    expect(restoreDialog.textContent).toContain("不含身份数据");
+    expect(restoreDialog.textContent).not.toContain("身份恢复");
     expect((within(restoreDialog).getByTestId("backup-restore-confirmation") as HTMLInputElement).value).toBe("");
 
     fireEvent.change(within(restoreDialog).getByTestId("backup-restore-confirmation"), {

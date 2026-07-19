@@ -226,7 +226,7 @@ describe("admin user management", () => {
   });
 
   it("limits ADMIN management to USER targets and delegable permission subsets without side effects", async () => {
-    const admin = await createAccount({ role: "ADMIN", permissions: ["media-assets"] });
+    const admin = await createAccount({ role: "ADMIN", permissions: ["media-assets", "backups"] });
     const user = await createAccount({ role: "USER" });
     const peerAdmin = await createAccount({ role: "ADMIN" });
     await login(user.account.username, user.password);
@@ -260,6 +260,18 @@ describe("admin user management", () => {
     });
     expect(me.statusCode).toBe(200);
 
+    const deniedSensitivePermission = await app.inject({
+      method: "PUT",
+      url: `/api/admin/users/${user.account.publicId}/permissions`,
+      headers: auth(adminToken),
+      payload: { permissions: ["backups"], confirmation: true }
+    });
+    expect(deniedSensitivePermission.statusCode).toBe(403);
+    expect(await prisma.adminMenuPermission.findMany({
+      where: { adminId: user.account.id },
+      orderBy: { menuKey: "asc" }
+    })).toMatchObject([{ menuKey: "media-assets" }]);
+
     const deniedPeer = await app.inject({
       method: "PATCH",
       url: `/api/admin/users/${peerAdmin.account.publicId}`,
@@ -271,15 +283,15 @@ describe("admin user management", () => {
       .resolves.toMatchObject({ status: "enabled" });
   });
 
-  it("protects the last enabled SUPER_ADMIN and revokes credentials on role/status changes", async () => {
+  it("rejects self-management and lets a SUPER_ADMIN disable and re-enable another SUPER_ADMIN", async () => {
     const token = await login();
-    const onlySuper = await prisma.adminUser.findFirstOrThrow({
+    const currentSuper = await prisma.adminUser.findFirstOrThrow({
       where: { username: testAdminCredentials.username }
     });
 
-    const rejected = await app.inject({
+    const rejectedSelfEdit = await app.inject({
       method: "PATCH",
-      url: `/api/admin/users/${onlySuper.publicId}`,
+      url: `/api/admin/users/${currentSuper.publicId}`,
       headers: auth(token),
       payload: {
         status: "disabled",
@@ -287,26 +299,81 @@ describe("admin user management", () => {
         confirmation: true
       }
     });
-    expect(rejected.statusCode).toBe(409);
-    await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: onlySuper.id } }))
+    expect(rejectedSelfEdit.statusCode).toBe(403);
+    await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: currentSuper.id } }))
       .resolves.toMatchObject({ role: "SUPER_ADMIN", status: "enabled" });
 
     const otherSuper = await createAccount({ role: "SUPER_ADMIN" });
-    const accepted = await app.inject({
+    await login(otherSuper.account.username, otherSuper.password);
+    const acceptedDisablePeer = await app.inject({
       method: "PATCH",
-      url: `/api/admin/users/${onlySuper.publicId}`,
+      url: `/api/admin/users/${otherSuper.account.publicId}`,
       headers: auth(token),
       payload: {
-        role: "ADMIN",
+        status: "disabled",
         currentPassword: testAdminCredentials.password,
         confirmation: true
       }
     });
-    expect(accepted.statusCode).toBe(200);
-    expect(accepted.json().data).toMatchObject({ revokedSessionCount: 1 });
-    await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: onlySuper.id } }))
-      .resolves.toMatchObject({ role: "ADMIN", status: "enabled" });
+    expect(acceptedDisablePeer.statusCode).toBe(200);
+    expect(acceptedDisablePeer.json().data).toMatchObject({ revokedSessionCount: 1 });
+    await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: currentSuper.id } }))
+      .resolves.toMatchObject({ role: "SUPER_ADMIN", status: "enabled" });
+    await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: otherSuper.account.id } }))
+      .resolves.toMatchObject({ role: "SUPER_ADMIN", status: "disabled" });
+
+    const acceptedEnablePeer = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/users/${otherSuper.account.publicId}`,
+      headers: auth(token),
+      payload: {
+        role: "SUPER_ADMIN",
+        status: "enabled",
+        currentPassword: testAdminCredentials.password,
+        confirmation: true
+      }
+    });
+    expect(acceptedEnablePeer.statusCode).toBe(200);
     await expect(prisma.adminUser.findUniqueOrThrow({ where: { id: otherSuper.account.id } }))
       .resolves.toMatchObject({ role: "SUPER_ADMIN", status: "enabled" });
+  });
+
+  it("keeps at least one enabled SUPER_ADMIN after concurrent cross-disable attempts", async () => {
+    const currentSuper = await prisma.adminUser.findFirstOrThrow({
+      where: { username: testAdminCredentials.username }
+    });
+    const otherSuper = await createAccount({ role: "SUPER_ADMIN" });
+    const currentToken = await login();
+    const otherToken = await login(otherSuper.account.username, otherSuper.password);
+
+    const responses = await Promise.all([
+      app.inject({
+        method: "PATCH",
+        url: `/api/admin/users/${otherSuper.account.publicId}`,
+        headers: auth(currentToken),
+        payload: {
+          status: "disabled",
+          currentPassword: testAdminCredentials.password,
+          confirmation: true
+        }
+      }),
+      app.inject({
+        method: "PATCH",
+        url: `/api/admin/users/${currentSuper.publicId}`,
+        headers: auth(otherToken),
+        payload: {
+          role: "ADMIN",
+          currentPassword: otherSuper.password,
+          confirmation: true
+        }
+      })
+    ]);
+
+    const statusCodes = responses.map((response) => response.statusCode);
+    expect(statusCodes).toContain(200);
+    expect(statusCodes.some((statusCode) => statusCode !== 200)).toBe(true);
+    expect(await prisma.adminUser.count({
+      where: { role: "SUPER_ADMIN", status: "enabled" }
+    })).toBeGreaterThanOrEqual(1);
   });
 });

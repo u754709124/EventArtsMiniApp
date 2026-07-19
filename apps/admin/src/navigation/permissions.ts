@@ -76,7 +76,9 @@ export function creatableRoles(identity: AdminIdentity): AdminRole[] {
 
 export function editableRoles(identity: AdminIdentity, target: AdminUserDto): AdminRole[] {
   if (identity.role === "SUPER_ADMIN") {
-    return target.status === "enabled" ? ["SUPER_ADMIN", "ADMIN", "USER"] : ["ADMIN", "USER"];
+    return target.role === "SUPER_ADMIN" || target.status === "enabled"
+      ? ["SUPER_ADMIN", "ADMIN", "USER"]
+      : ["ADMIN", "USER"];
   }
   if (identity.role === "ADMIN" && target.role === "USER") return ["USER"];
   return [target.role];

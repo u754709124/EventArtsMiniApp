@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { DashboardOverviewResponse, EdgeOneConfigResponse, ScheduledTaskDto } from "@event-arts/shared";
+import { adminMenuCatalog, type AdminUserDto, type DashboardOverviewResponse, type EdgeOneConfigResponse, type ScheduledTaskDto } from "@event-arts/shared";
 import sharp from "sharp";
 import { adminApi, adminPath, adminToken, apiBase, chooseDetailMediaFromLibrary, chooseMediaFromLibrary, fillControl, fillNumber, loginAdminUi, selectOption, visibleSelectOption, waitForToast } from "./helpers";
 
@@ -12,6 +12,9 @@ type DetailPageSummary = { id: number; name: string; type: string; typeLabel: st
 type MediaAssetSummary = { id: number; resourceName: string; url: string; width: number | null; height: number | null };
 type BackupSummary = {
   id: string;
+  formatVersion: number;
+  backupKind?: "manual" | "automatic" | "restore_snapshot" | "imported";
+  dataScope?: "full" | "non_identity";
   note: string | null;
   database: { size: number };
   uploadFileCount: number;
@@ -364,6 +367,79 @@ test("三级用户激活、菜单裁剪、直达拒绝和恢复链接均走真�
     session: JSON.stringify(sessionStorage)
   }));
   expect(JSON.stringify(browserState)).not.toContain(new URL(generatedLink).hash.slice(1));
+  const resultDialog = page.getByRole("dialog").filter({ hasText: "链接只显示一次" });
+  await resultDialog.getByRole("button", { name: /关\s*闭/ }).click();
+  await expect(resultDialog).toHaveCount(0);
+
+  await page.getByTestId("admin-user-create-open").click();
+  const createDialog = page.locator(".ant-modal-wrap").filter({ hasText: "新增后台账户" }).last();
+  await expect(createDialog).toBeVisible();
+  for (const item of adminMenuCatalog) {
+    await expect(createDialog.getByRole("treeitem", { name: new RegExp(item.label) })).toBeVisible();
+  }
+  await createDialog.getByRole("button", { name: /取\s*消/ }).click();
+
+  const peerSuperUsername = `e2e-peer-super-${runId}`;
+  const peerSuperPassword = `E2e-Peer-Super-${runId}-Aa1!`;
+  const createPeerResponse = await request.post(`${apiBase}/api/admin/users`, {
+    headers: { authorization: `Bearer ${rootToken}` },
+    data: {
+      username: peerSuperUsername,
+      role: "USER",
+      permissions: [],
+      currentPassword: rootPassword,
+      confirmation: true
+    }
+  });
+  const createPeerBody = await createPeerResponse.json();
+  expect(createPeerBody.success, JSON.stringify(createPeerBody)).toBe(true);
+  const peerSuperPublicId = String(createPeerBody.data.user.publicId);
+  const peerActivationToken = decodeURIComponent(new URL(String(createPeerBody.data.activationLink)).hash.replace(/^#token=/, ""));
+  const activatePeerResponse = await request.post(`${apiBase}/api/admin/auth/reset-password`, {
+    data: {
+      token: peerActivationToken,
+      newPassword: peerSuperPassword,
+      confirmPassword: peerSuperPassword
+    }
+  });
+  const activatePeerBody = await activatePeerResponse.json();
+  expect(activatePeerBody.success, JSON.stringify(activatePeerBody)).toBe(true);
+  const promotePeerResponse = await request.patch(`${apiBase}/api/admin/users/${peerSuperPublicId}`, {
+    headers: { authorization: `Bearer ${rootToken}` },
+    data: {
+      role: "SUPER_ADMIN",
+      status: "enabled",
+      currentPassword: rootPassword,
+      confirmation: true
+    }
+  });
+  const promotePeerBody = await promotePeerResponse.json();
+  expect(promotePeerBody.success, JSON.stringify(promotePeerBody)).toBe(true);
+
+  await page.getByTestId("admin-users-refresh").click();
+  await expect(page.getByRole("row", { name: new RegExp(peerSuperUsername) })).toBeVisible();
+  await expect(page.getByTestId(`admin-user-edit-${peerSuperPublicId}`)).toBeVisible();
+  await expect(page.getByTestId(`admin-user-reset-link-${peerSuperPublicId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`admin-user-permissions-${peerSuperPublicId}`)).toHaveCount(0);
+  await page.getByTestId(`admin-user-edit-${peerSuperPublicId}`).click();
+  const editDialog = page.locator(".ant-modal-wrap").filter({ hasText: "编辑后台账户" }).last();
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog).toContainText("超级管理员相关变更需要重新认证");
+  await selectOption(page, "admin-user-edit-status", "禁用");
+  await editDialog.getByTestId("admin-user-edit-password").fill(rootPassword!);
+  await editDialog.getByRole("checkbox").check();
+  await editDialog.getByRole("button", { name: /保\s*存/ }).click();
+  await waitForToast(page, "后台账户已更新");
+
+  const disabledPeer = await adminApi<{ items: AdminUserDto[]; total: number }>(
+    request,
+    "GET",
+    "/api/admin/users"
+  );
+  expect(disabledPeer.items.find((item) => item.publicId === peerSuperPublicId)).toMatchObject({
+    role: "SUPER_ADMIN",
+    status: "disabled"
+  });
 });
 
 test("统一通知支持主题堆叠、进度补位和跨浏览器失败日志", async ({ page, browser }) => {
@@ -701,6 +777,25 @@ test("定时任务展示规划并确认后只立即执行一次", async ({ page 
       lastStatus: null,
       isRunning: false,
       resultSummary: null
+    },
+    {
+      taskKey: "automatic-backup",
+      name: "自动备份",
+      description: "每天午夜创建非身份数据备份并保留最新 3 个自动备份。",
+      cron: "0 0 * * *",
+      timezone: "Asia/Shanghai",
+      nextExecutionAt: "2026-07-18T16:00:00.000Z",
+      lastExecutionAt: "2026-07-17T16:00:00.000Z",
+      lastFinishedAt: "2026-07-17T16:00:03.000Z",
+      lastStatus: "success",
+      isRunning: false,
+      resultSummary: {
+        createdBackupId: "auto-20260718",
+        backupKind: "automatic",
+        dataScope: "non_identity",
+        keepCount: 3,
+        deletedCount: 1
+      }
     }
   ];
 
@@ -751,6 +846,9 @@ test("定时任务展示规划并确认后只立即执行一次", async ({ page 
   await expect(page.getByText("2026-07-18 09:02:00")).toBeVisible();
   await expect(page.getByText("从未执行").first()).toBeVisible();
   await expect(page.getByText("2026-07-18 03:10:00")).toBeVisible();
+  const automaticBackupRow = page.getByRole("row", { name: /自动备份/ });
+  await expect(automaticBackupRow).toContainText("每天午夜创建非身份数据备份并保留最新 3 个自动备份。");
+  await expect(automaticBackupRow).toContainText("0 0 * * *");
 
   const runButton = page.getByTestId("scheduled-task-run-admin-session-cleanup");
   await runButton.click();
@@ -1610,6 +1708,13 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   await expect(page.getByRole("heading", { level: 2, name: "备份与恢复" })).toBeVisible();
   await expect(page.getByTestId("sidebar-backups")).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(source.backup.id) })).toBeVisible();
+  expect(source.backup).toMatchObject({ formatVersion: 3, backupKind: "manual", dataScope: "non_identity" });
+  await expect(page.getByText("身份恢复")).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "类型" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "数据范围" })).toBeVisible();
+  const sourceRow = page.getByRole("row", { name: new RegExp(source.backup.id) });
+  await expect(sourceRow).toContainText("手动备份");
+  await expect(sourceRow).toContainText("不含身份数据");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByTestId(`backup-download-${source.backup.id}`).click();
@@ -1651,7 +1756,11 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   const preflight = page.getByTestId("backup-import-preflight");
   await expect(preflight).toBeVisible();
   await expect(preflight).toContainText("外部归档");
+  await expect(preflight).toContainText("导入归档");
+  await expect(preflight).toContainText("不含身份数据");
+  await expect(preflight).toContainText("v3 非身份备份只包含业务数据与 uploads");
   await expect(preflight).toContainText("清单：通过");
+  await expect(preflight).not.toContainText("身份恢复");
   await expect(preflight).not.toContainText("manifest.json");
   await expect(preflight).not.toContainText("database.sqlite");
 
@@ -1659,7 +1768,10 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   await page.getByRole("button", { name: /恢\s*复\s*此\s*备\s*份/ }).click();
   const restoreDialog = page.getByTestId("backup-restore-modal");
   await expect(restoreDialog).toBeVisible();
+  await expect(restoreDialog).toContainText("v3 非身份备份只包含业务数据与 uploads");
+  await expect(restoreDialog).toContainText("不含身份数据");
   await expect(restoreDialog).toContainText("当前后台会话和未使用重置链接都会失效");
+  await expect(restoreDialog).not.toContainText("身份恢复");
   await page.getByTestId("backup-restore-confirmation").fill("RESTORE_FULL_BACKUP");
   const restoreResponsePromise = page.waitForResponse((response) =>
     response.url().includes(`/api/admin/backups/${importedBackupId}/restore`)

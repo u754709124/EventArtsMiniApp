@@ -80,13 +80,17 @@ function stableJson(value: unknown): string {
 function backupDigest(
   database: BackupManifest["database"],
   uploads: BackupManifest["uploads"],
-  formatVersion: 1 | 2
+  formatVersion: 1 | 2 | 3
 ) {
   const hash = createHash("sha256");
   hash.update(`format:${formatVersion}\n`);
   hash.update(`database:${database.path}:${database.size}:${database.sha256}\n`);
   for (const file of uploads) hash.update(`upload:${file.path}:${file.size}:${file.sha256}\n`);
   return hash.digest("hex");
+}
+
+function sqliteStringLiteral(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function legacyPreRbacV1Statements() {
@@ -209,6 +213,73 @@ async function writeKnownPreRbacV1Backup() {
     totalBytes,
     totalFiles: 1 + uploads.length,
     sha256: backupDigest(database, uploads, 1)
+  };
+  await writeManifest(backupId, manifest);
+  return { backupId, manifest };
+}
+
+async function writeLegacyV2BackupFromCurrentState(note: string) {
+  const backupId = `backup-legacy-v2-${randomUUID()}`;
+  const backupPath = path.join(backupDir, backupId);
+  const databaseSnapshotPath = path.join(backupPath, "database.sqlite");
+  await mkdir(backupPath, { recursive: true });
+  await prisma.$executeRawUnsafe(`VACUUM INTO ${sqliteStringLiteral(databaseSnapshotPath)}`);
+
+  const snapshotPrisma = createPrismaClient(`file:${databaseSnapshotPath}`);
+  let database: BackupManifest["database"];
+  try {
+    const [pageSizeRows, pageCountRows] = await Promise.all([
+      snapshotPrisma.$queryRawUnsafe<Array<{ page_size: number | bigint }>>("PRAGMA page_size"),
+      snapshotPrisma.$queryRawUnsafe<Array<{ page_count: number | bigint }>>("PRAGMA page_count")
+    ]);
+    const databaseStat = await stat(databaseSnapshotPath);
+    database = {
+      path: "database.sqlite",
+      size: databaseStat.size,
+      sha256: await sha256File(databaseSnapshotPath),
+      snapshotMethod: "sqlite-vacuum-into",
+      pageSize: Number(pageSizeRows[0]?.page_size ?? 0),
+      pageCount: Number(pageCountRows[0]?.page_count ?? 0)
+    };
+  } finally {
+    await snapshotPrisma.$disconnect().catch(() => undefined);
+  }
+
+  const mediaRows = await prisma.mediaAsset.findMany({
+    select: { filename: true },
+    orderBy: { filename: "asc" }
+  });
+  const uploads: BackupManifest["uploads"] = [];
+  for (const row of mediaRows) {
+    const sourcePath = path.join(uploadDir, row.filename);
+    const targetPath = path.join(backupPath, "uploads", row.filename);
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, await readFile(sourcePath));
+    const uploadStat = await stat(targetPath);
+    uploads.push({
+      path: `uploads/${row.filename}`,
+      size: uploadStat.size,
+      sha256: await sha256File(targetPath),
+      modifiedAt: "2026-07-19T00:00:00.000Z"
+    });
+  }
+  const schema = await collectSchemaMetadataForTest(prisma);
+  const rootAdmin = await prisma.adminUser.findFirstOrThrow({ orderBy: { id: "asc" } });
+  const totalBytes = database.size + uploads.reduce((sum, file) => sum + file.size, 0);
+  const manifest: BackupManifest = {
+    formatVersion: 2,
+    identityRestorePolicy: "preserve_target",
+    status: "ready",
+    app: { name: "event-arts-api", version: "legacy-v2-test" },
+    schema,
+    createdBy: { adminId: rootAdmin.id, publicId: rootAdmin.publicId, username: rootAdmin.username },
+    createdAt: "2026-07-19T00:00:00.000Z",
+    note,
+    database,
+    uploads,
+    totalBytes,
+    totalFiles: 1 + uploads.length,
+    sha256: backupDigest(database, uploads, 2)
   };
   await writeManifest(backupId, manifest);
   return { backupId, manifest };
@@ -390,9 +461,11 @@ describe("identity-safe backup restore", () => {
       targetHash: "2".repeat(64)
     });
 
-    const targetBackup = await createBackup(firstToken, "identity-safe-target");
+    const { backupId: targetBackupId } = await writeLegacyV2BackupFromCurrentState("identity-safe-target");
+    const targetBackup = { id: targetBackupId };
     const service = createBackupService({ prisma, uploadDir, backupDir, databaseUrl });
     const preflight = await service.preflightBackup(targetBackup.id);
+    expect(preflight.manifest.formatVersion).toBe(2);
     expect(preflight.summary.impact.tables).toEqual(expect.arrayContaining([
       expect.objectContaining({ table: "admin_users", restoreBehavior: "preserved-current", deltaRows: 0 }),
       expect.objectContaining({ table: "admin_menu_permissions", restoreBehavior: "preserved-current", deltaRows: 0 }),
@@ -634,12 +707,20 @@ describe("identity-safe backup restore", () => {
     const token = await login();
     const backup = await createBackup(token, "unknown-v1");
     const manifest = await readManifest(backup.id);
-    const manifestRecord = manifest as BackupManifest & { identityRestorePolicy?: "preserve_target" };
+    const rootAdmin = await prisma.adminUser.findFirstOrThrow({ orderBy: { id: "asc" } });
+    const manifestRecord = manifest as BackupManifest & {
+      identityRestorePolicy?: "preserve_target";
+      dataScope?: "non_identity";
+      backupKind?: string;
+    };
     const withoutIdentityPolicy = { ...manifestRecord };
     delete withoutIdentityPolicy.identityRestorePolicy;
+    delete withoutIdentityPolicy.dataScope;
+    delete withoutIdentityPolicy.backupKind;
     const unknownV1 = {
       ...withoutIdentityPolicy,
       formatVersion: 1 as const,
+      createdBy: { adminId: rootAdmin.id, publicId: rootAdmin.publicId, username: rootAdmin.username },
       sha256: backupDigest(manifest.database, manifest.uploads, 1)
     };
     await writeManifest(backup.id, unknownV1);

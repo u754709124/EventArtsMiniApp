@@ -29,7 +29,7 @@ export type ScheduledTaskHandler = (
 
 export type ScheduledTaskRunnerOptions = {
   prisma: AppPrismaClient;
-  handlers: Record<ScheduledTaskKey, ScheduledTaskHandler>;
+  handlers: Partial<Record<ScheduledTaskKey, ScheduledTaskHandler>>;
   now?: () => Date;
   leaseMs?: number;
 };
@@ -103,6 +103,13 @@ export const scheduledTaskCatalog = [
     name: "EdgeOne 预热对账",
     description: "对账 EdgeOne 资源预热任务状态并推进重试。",
     cron: "*/5 * * * *",
+    timezone: scheduledTaskTimeZone
+  },
+  {
+    taskKey: "automatic-backup",
+    name: "自动备份",
+    description: "每天午夜创建非身份数据备份并保留最新 3 个自动备份。",
+    cron: "0 0 * * *",
     timezone: scheduledTaskTimeZone
   }
 ] as const satisfies readonly ScheduledTaskCatalogItem[];

@@ -46,10 +46,28 @@ export const adminGrantableMenuKeyValues = [
   "cases",
   "articles",
   "detail-pages",
-  "media-assets"
+  "media-assets",
+  "backups",
+  "scheduled-tasks",
+  "system-config"
 ] as const;
 export type AdminGrantableMenuKey = (typeof adminGrantableMenuKeyValues)[number];
 export const AdminGrantableMenuKeySchema = z.enum(adminGrantableMenuKeyValues);
+
+export const adminDelegableMenuKeyValues = [
+  "dashboard",
+  "site-config",
+  "announcements",
+  "banners",
+  "menu-items",
+  "artists",
+  "cases",
+  "articles",
+  "detail-pages",
+  "media-assets"
+] as const satisfies readonly AdminGrantableMenuKey[];
+export type AdminDelegableMenuKey = (typeof adminDelegableMenuKeyValues)[number];
+export const AdminDelegableMenuKeySchema = z.enum(adminDelegableMenuKeyValues);
 
 export const adminMenuSensitivityValues = ["standard", "sensitive", "critical"] as const;
 export type AdminMenuSensitivity = (typeof adminMenuSensitivityValues)[number];
@@ -58,8 +76,7 @@ export const AdminMenuSensitivitySchema = z.enum(adminMenuSensitivityValues);
 export const adminMenuAccessKindValues = [
   "grantable",
   "authenticated",
-  "role_capability",
-  "super_admin"
+  "role_capability"
 ] as const;
 export type AdminMenuAccessKind = (typeof adminMenuAccessKindValues)[number];
 export const AdminMenuAccessKindSchema = z.enum(adminMenuAccessKindValues);
@@ -179,7 +196,7 @@ export const adminMenuCatalog = [
     label: "备份与恢复",
     parentKey: "account",
     order: 120,
-    access: "super_admin",
+    access: "grantable",
     sensitivity: "critical",
     delegable: false
   },
@@ -197,7 +214,7 @@ export const adminMenuCatalog = [
     label: "定时任务",
     parentKey: null,
     order: 140,
-    access: "super_admin",
+    access: "grantable",
     sensitivity: "critical",
     delegable: false
   },
@@ -206,7 +223,7 @@ export const adminMenuCatalog = [
     label: "系统配置",
     parentKey: null,
     order: 150,
-    access: "super_admin",
+    access: "grantable",
     sensitivity: "critical",
     delegable: false
   }
@@ -299,7 +316,7 @@ export function adminDelegableMenuKeys(
   if (role === "SUPER_ADMIN") return [...adminGrantableMenuKeyValues];
 
   const effective = new Set<AdminMenuKey>(effectiveMenuKeys);
-  return adminGrantableMenuKeyValues.filter((key) => {
+  return adminDelegableMenuKeyValues.filter((key) => {
     const item = adminMenuCatalogByKey.get(key);
     return effective.has(key) && item?.delegable === true;
   });

@@ -74,9 +74,29 @@ function statusTag(status: BackupStatus) {
   return <Badge status={item.status} text={<Tag color={item.color}>{item.text}</Tag>} />;
 }
 
-function identityPolicyTag(policy: BackupDto["identityRestorePolicy"] | BackupPreflightSummary["identityRestorePolicy"]) {
-  if (policy === "preserve_target") return <Tag color="purple">保留当前身份</Tag>;
-  return <Tag>旧版清单</Tag>;
+function backupKindTag(kind: BackupDto["backupKind"] | BackupPreflightSummary["backupKind"]) {
+  const labels: Record<NonNullable<typeof kind>, { text: string; color: string }> = {
+    manual: { text: "手动备份", color: "blue" },
+    automatic: { text: "自动备份", color: "green" },
+    restore_snapshot: { text: "恢复前快照", color: "orange" },
+    imported: { text: "导入归档", color: "purple" }
+  };
+  if (!kind) return <Tag>旧版归档</Tag>;
+  const item = labels[kind];
+  return <Tag color={item.color}>{item.text}</Tag>;
+}
+
+function dataScopeTag(scope: BackupDto["dataScope"] | BackupPreflightSummary["dataScope"]) {
+  if (scope === "non_identity") return <Tag color="cyan">不含身份数据</Tag>;
+  if (scope === "full") return <Tag color="gold">旧格式完整数据</Tag>;
+  return <Tag>数据范围未知</Tag>;
+}
+
+function dataScopeDescription(scope: BackupDto["dataScope"] | BackupPreflightSummary["dataScope"]) {
+  if (scope === "non_identity") {
+    return "v3 非身份备份只包含业务数据与 uploads，不包含后台账户、角色、菜单权限、会话、重置链接、个人通知、客户端会话、访问事件、任务状态和操作日志；恢复时保留当前身份平面。";
+  }
+  return "旧格式归档可能包含历史身份表；恢复会按兼容策略保留当前后台账户、角色、菜单权限和个人通知，候选身份数据不会成为线上身份。";
 }
 
 function restoreBehaviorTag(value: BackupPreflightSummary["impact"]["tables"][number]["restoreBehavior"]) {
@@ -280,7 +300,8 @@ export function BackupPage() {
       render: (value) => <Typography.Text code copyable>{String(value)}</Typography.Text>
     },
     { title: "版本", dataIndex: "formatVersion", width: 80, render: (value) => `v${value}` },
-    { title: "身份恢复", width: 130, render: (_, backup) => identityPolicyTag(backup.identityRestorePolicy) },
+    { title: "类型", width: 130, render: (_, backup) => backupKindTag(backup.backupKind) },
+    { title: "数据范围", width: 150, render: (_, backup) => dataScopeTag(backup.dataScope) },
     { title: "状态", dataIndex: "status", width: 110, render: (value: BackupStatus) => statusTag(value) },
     { title: "创建者", width: 140, render: (_, backup) => backup.createdBy.username },
     { title: "总大小", dataIndex: "size", width: 120, render: (value) => formatBytes(Number(value)) },
@@ -346,7 +367,7 @@ export function BackupPage() {
       <PageHeader
         title="备份与恢复"
         breadcrumbs={["账号安全", "备份与恢复"]}
-        description="全量备份包含数据库与 uploads 文件；恢复业务数据时保留当前后台账户、角色、菜单权限和个人通知，并使现有登录与重置链接失效。"
+        description="新备份为 v3 非身份数据备份，包含业务数据与 uploads；恢复会保留当前后台身份平面，并使现有登录与重置链接失效。"
         extra={
           <Space wrap>
             <Button
@@ -378,7 +399,7 @@ export function BackupPage() {
           type="warning"
           showIcon
           title="恢复执行中"
-          description="服务正在进入维护窗口并执行全量恢复，请勿刷新或重复提交。完成后当前登录会失效。"
+          description="服务正在进入维护窗口并执行业务数据恢复，请勿刷新或重复提交。完成后当前登录会失效。"
         />
       )}
 
@@ -488,14 +509,21 @@ export function BackupPage() {
             <Descriptions size="small" bordered column={2}>
               <Descriptions.Item label="备份 ID">{importResult.backup.id}</Descriptions.Item>
               <Descriptions.Item label="来源">外部归档</Descriptions.Item>
+              <Descriptions.Item label="类型">{backupKindTag(importResult.preflight.backupKind)}</Descriptions.Item>
+              <Descriptions.Item label="数据范围">{dataScopeTag(importResult.preflight.dataScope)}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDateTime(importResult.preflight.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="创建者">{importResult.preflight.createdBy.username}</Descriptions.Item>
-              <Descriptions.Item label="身份恢复">{identityPolicyTag(importResult.preflight.identityRestorePolicy)}</Descriptions.Item>
               <Descriptions.Item label="数据库">{formatBytes(importResult.preflight.database.size)}</Descriptions.Item>
               <Descriptions.Item label="上传文件">{importResult.preflight.uploads.fileCount} 个 / {formatBytes(importResult.preflight.uploads.totalBytes)}</Descriptions.Item>
               <Descriptions.Item label="总大小">{formatBytes(importResult.preflight.totals.totalBytes)}</Descriptions.Item>
               <Descriptions.Item label="备注">{importResult.preflight.note || "-"}</Descriptions.Item>
             </Descriptions>
+            <Alert
+              type={importResult.preflight.dataScope === "non_identity" ? "info" : "warning"}
+              showIcon
+              className="backup-restore-summary"
+              message={dataScopeDescription(importResult.preflight.dataScope)}
+            />
             <Space className="backup-checks" wrap>
               {checkTags(importResult.preflight).map(([key, label, ok]) => (
                 <Tag key={key} color={ok ? "green" : "red"}>{label}：{ok ? "通过" : "失败"}</Tag>
@@ -520,7 +548,7 @@ export function BackupPage() {
       </Modal>
 
       <Modal
-        title="确认全量恢复"
+        title="确认恢复"
         open={Boolean(restoreTarget)}
         width={720}
         okText="确认恢复"
@@ -539,13 +567,14 @@ export function BackupPage() {
             <Alert
               type="warning"
               showIcon
-              title="这是破坏性全量恢复"
-              description="恢复会覆盖业务数据与 uploads 文件，但会保留当前后台账户、角色、菜单权限和个人通知；服务端会先创建恢复前安全快照，成功后当前后台会话和未使用重置链接都会失效。"
+              title="这是破坏性恢复"
+              description={`${dataScopeDescription(restoreTarget.dataScope)} 服务端会先创建恢复前安全快照，成功后当前后台会话和未使用重置链接都会失效。`}
             />
             <Descriptions size="small" bordered column={1} className="backup-restore-summary">
               <Descriptions.Item label="备份 ID">{restoreTarget.id}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDateTime(restoreTarget.createdAt)}</Descriptions.Item>
-              <Descriptions.Item label="身份恢复">{identityPolicyTag(restoreTarget.identityRestorePolicy)}</Descriptions.Item>
+              <Descriptions.Item label="类型">{backupKindTag(restoreTarget.backupKind)}</Descriptions.Item>
+              <Descriptions.Item label="数据范围">{dataScopeTag(restoreTarget.dataScope)}</Descriptions.Item>
               <Descriptions.Item label="总大小">{formatBytes(restoreTarget.size)}</Descriptions.Item>
             </Descriptions>
             <Form layout="vertical">

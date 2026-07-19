@@ -1051,6 +1051,9 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       prisma,
       publicBaseUrl: options.publicBaseUrl,
       analytics: options.analytics ?? defaultPageViewAnalyticsConfig,
+      automaticBackup: {
+        run: runAutomaticBackupTask
+      },
       edgeOne: {
         credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey ?? null,
         prefetch: options.edgeOne?.prefetch ?? defaultEdgeOnePrefetchConfig,
@@ -1130,8 +1133,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   }
 
   async function runBackupCreateExclusive<T>(handler: () => Promise<T>) {
-    if (backupCreateInProgress) {
-      throw new BackupServiceError("BACKUP_CONFLICT", "已有备份创建任务正在进行，请稍后重试", 409);
+    if (backupCreateInProgress || restoreInProgress) {
+      throw new BackupServiceError("BACKUP_CONFLICT", "已有备份或恢复任务正在进行，请稍后重试", 409);
     }
     backupCreateInProgress = true;
     backupDonePromise = new Promise<void>((resolve) => {
@@ -1147,6 +1150,16 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       backupDonePromise = null;
       resolve?.();
     }
+  }
+
+  async function runAutomaticBackupTask() {
+    const backup = await runBackupCreateExclusive(() =>
+      backupService.createBackup({
+        backupKind: "automatic"
+      })
+    );
+    const retention = await backupService.pruneAutomaticBackups();
+    return { backup, retention };
   }
 
   async function runRestoreExclusive<T>(handler: () => Promise<T>) {

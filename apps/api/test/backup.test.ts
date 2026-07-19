@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { backupManifestSchema, type BackupManifest } from "@event-arts/shared";
@@ -285,6 +285,68 @@ describe("admin backup API", () => {
     }
   });
 
+  it("prunes only local automatic backups and safely skips download conflicts", async () => {
+    let current = new Date("2026-07-18T00:00:00.000Z");
+    const service = createBackupService({
+      prisma,
+      uploadDir,
+      backupDir,
+      databaseUrl,
+      now: () => current
+    });
+    const manual = await service.createBackup({ note: "manual-retention-keep" });
+    current = new Date("2026-07-18T00:01:00.000Z");
+    const restoreSnapshot = await service.createBackup({ backupKind: "restore_snapshot", note: "restore-retention-keep" });
+
+    const automaticIds: string[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      current = new Date(Date.UTC(2026, 6, 18, 1, index, 0));
+      automaticIds.push((await service.createBackup({ backupKind: "automatic" })).id);
+    }
+    const importId = `import-20260718T010500000Z-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    await cp(path.join(backupDir, automaticIds[0]!), path.join(backupDir, importId), { recursive: true });
+
+    const oldestAutomatic = automaticIds[0]!;
+    const activeDownload = await service.createDownloadArchive(oldestAutomatic);
+    try {
+      const firstPrune = await service.pruneAutomaticBackups({ keep: 3 });
+      expect(firstPrune).toMatchObject({
+        keepCount: 3,
+        automaticBackupCount: 5,
+        deletedBackupIds: [automaticIds[1]],
+        skippedConflictBackupIds: [oldestAutomatic]
+      });
+      expect(await publishedBackupIds()).toEqual(expect.arrayContaining([
+        manual.id,
+        restoreSnapshot.id,
+        importId,
+        oldestAutomatic,
+        ...automaticIds.slice(2)
+      ]));
+    } finally {
+      activeDownload.stream.destroy();
+      activeDownload.release();
+    }
+
+    const secondPrune = await service.pruneAutomaticBackups({ keep: 3 });
+    expect(secondPrune).toMatchObject({
+      automaticBackupCount: 4,
+      deletedBackupIds: [oldestAutomatic],
+      skippedConflictBackupIds: []
+    });
+    const finalIds = await publishedBackupIds();
+    expect(finalIds).toEqual(expect.arrayContaining([
+      manual.id,
+      restoreSnapshot.id,
+      importId,
+      ...automaticIds.slice(-3)
+    ]));
+    expect(finalIds).not.toEqual(expect.arrayContaining(automaticIds.slice(0, 2)));
+    await expect(readManifest(manual.id)).resolves.toMatchObject({ backupKind: "manual" });
+    await expect(readManifest(restoreSnapshot.id)).resolves.toMatchObject({ backupKind: "restore_snapshot" });
+    await expect(readManifest(importId)).resolves.toMatchObject({ backupKind: "automatic" });
+  });
+
   it("creates a versioned manifest with a VACUUM INTO database snapshot and safe upload file checksums", async () => {
     const edgeOneEncryptionKey = Buffer.alloc(32, 7);
     const edgeOneSecretId = ["BACKUP", "ONLY", "SECRET", "ID"].join("_");
@@ -308,6 +370,30 @@ describe("admin backup API", () => {
         visitDate: "2026-07-12"
       }
     });
+    await prisma.pageViewEvent.create({
+      data: {
+        pagePath: "/pages/home/index",
+        scene: "backup-test",
+        userAgent: "identity-test-agent",
+        anonymousFingerprint: "fingerprint-backup-test",
+        sampleWeight: 1
+      }
+    });
+    await prisma.clientSession.create({
+      data: {
+        tokenHash: "c".repeat(64),
+        appId: "wx-backup-test",
+        openidHash: "client-openid-hash",
+        expiresAt: new Date(Date.now() + 60_000)
+      }
+    });
+    await prisma.scheduledTaskState.create({
+      data: {
+        taskKey: "backup-test-task",
+        lastStatus: "success",
+        resultSummaryJson: JSON.stringify({ operator: testAdminCredentials.username })
+      }
+    });
     await writeEdgeOneSystemConfig(prisma, edgeOneEncryptionKey, {
       zoneId: "zone-backup-test",
       secretId: edgeOneSecretId,
@@ -328,19 +414,71 @@ describe("admin backup API", () => {
         occurredAt: new Date()
       }
     });
+    const nestedAsset = await prisma.mediaAsset.create({
+      data: {
+        resourceName: "Nested backup photo",
+        resourceNameKey: "nested-backup-photo",
+        originalName: "photo.txt",
+        filename: "nested/photo.txt",
+        md5: createHash("md5").update("nested upload").digest("hex"),
+        mimeType: "text/plain",
+        mediaType: "file",
+        url: "/uploads/nested/photo.txt",
+        size: Buffer.byteLength("nested upload"),
+        createdBy: backupAdmin.id
+      }
+    });
+    await prisma.mediaAsset.create({
+      data: {
+        resourceName: "Visible backup file",
+        resourceNameKey: "visible-backup-file",
+        originalName: "visible.txt",
+        filename: "visible.txt",
+        md5: createHash("md5").update("visible upload").digest("hex"),
+        mimeType: "text/plain",
+        mediaType: "file",
+        url: "/uploads/visible.txt",
+        size: Buffer.byteLength("visible upload"),
+        createdBy: backupAdmin.id
+      }
+    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO edgeone_prefetch_resources
+        (zoneId, mediaAssetId, contentVersion, targetUrl, targetHash, status, createdBy)
+        VALUES ('zone-backup-test', ?, 'v1', 'https://cdn.example.test/nested-photo', ?, 'reserved', ?)`,
+      nestedAsset.id,
+      "d".repeat(64),
+      backupAdmin.id
+    );
+    const edgeOneRows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
+      "SELECT id FROM edgeone_prefetch_resources WHERE targetHash = ?",
+      "d".repeat(64)
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO edgeone_prefetch_attempts
+        (prefetchResourceId, attemptNumber, status)
+        VALUES (?, 1, 'reserved')`,
+      edgeOneRows[0]!.id
+    );
 
     const backup = await createBackup(token, "手动备份");
     const manifest = await readManifest(backup.id);
 
     expect(manifest).toMatchObject({
-      formatVersion: 2,
+      formatVersion: 3,
       identityRestorePolicy: "preserve_target",
+      dataScope: "non_identity",
+      backupKind: "manual",
       status: "ready",
       app: { name: "api", version: "0.1.0" },
-      createdBy: { username: testAdminCredentials.username, publicId: backupAdmin.publicId },
+      createdBy: { username: "后台管理员" },
       note: "手动备份",
       database: { path: "database.sqlite", snapshotMethod: "sqlite-vacuum-into" }
     });
+    expect(manifest.createdBy).not.toHaveProperty("adminId");
+    expect(manifest.createdBy).not.toHaveProperty("publicId");
+    expect(JSON.stringify(manifest)).not.toContain(testAdminCredentials.username);
+    expect(JSON.stringify(manifest)).not.toContain(backupAdmin.publicId);
     expect(manifest.schema).toMatchObject({
       provider: "sqlite",
       userVersion: expect.any(Number),
@@ -363,19 +501,25 @@ describe("admin backup API", () => {
 
     const snapshotPrisma = createPrismaClient(`file:${databaseSnapshotPath}`);
     try {
-      await expect(snapshotPrisma.operationLog.findFirstOrThrow({
-        where: { action: "PRE_BACKUP_SENTINEL" }
-      })).resolves.toMatchObject({ detail: "before snapshot" });
-      await expect(snapshotPrisma.dailyUserVisit.findFirstOrThrow({
-        where: { appId: "wx-backup-test" }
-      })).resolves.toMatchObject({ openidHash: "backup-openid-hash", visitDate: "2026-07-12" });
-      await expect(snapshotPrisma.adminNotification.findFirstOrThrow({
-        where: { clientEventId: notificationEventId }
-      })).resolves.toMatchObject({
-        adminId: backupAdmin.id,
-        level: "success",
-        message: "备份前通知"
-      });
+      await expect(snapshotPrisma.adminUser.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.adminMenuPermission.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.adminSession.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.adminPasswordResetToken.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.adminNotification.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.clientSession.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.dailyUserVisit.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.pageViewEvent.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.operationLog.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.scheduledTaskState.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.edgeOnePrefetchResource.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.edgeOnePrefetchAttempt.count()).resolves.toBe(0);
+      await expect(snapshotPrisma.mediaAsset.findMany({
+        orderBy: { resourceNameKey: "asc" },
+        select: { resourceNameKey: true, filename: true, createdBy: true }
+      })).resolves.toEqual([
+        { resourceNameKey: "nested-backup-photo", filename: "nested/photo.txt", createdBy: null },
+        { resourceNameKey: "visible-backup-file", filename: "visible.txt", createdBy: null }
+      ]);
       const snapshotConfig = await snapshotPrisma.systemConfig.findUniqueOrThrow({ where: { id: 1 } });
       expect(snapshotConfig).toMatchObject({ zoneId: "zone-backup-test" });
       expect(snapshotConfig.secretIdCiphertext).not.toContain(edgeOneSecretId);

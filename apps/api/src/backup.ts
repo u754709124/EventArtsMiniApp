@@ -10,6 +10,7 @@ import {
   backupIdSchema,
   backupManifestSchema,
   backupPreflightSummarySchema,
+  type BackupKind,
   type BackupDto,
   type BackupManifest,
   type BackupPreflightSummary
@@ -17,12 +18,13 @@ import {
 import { createPrismaClient, type AppPrismaClient } from "./db";
 import { ensureDatabaseSchema } from "./sqlite-schema";
 
-export const backupFormatVersion = 2;
+export const backupFormatVersion = 3;
 export const backupArchiveMaxBytes = 256 * 1024 * 1024;
 export const backupMaxExpandedBytes = 512 * 1024 * 1024;
 export const backupMaxFileCount = 10_000;
 export const backupMaxExpansionRatio = 200;
 export const backupIdentityRestorePolicy = "preserve_target" as const;
+export const automaticBackupRetentionKeepCount = 3;
 const manualSchemaMigrationId = "manual-sqlite-schema";
 const adminRbacMigrationId = "20260719_admin_rbac_identity_v1";
 const knownPreRbacV1SchemaHashes = new Set([
@@ -35,12 +37,45 @@ const apiAppMetadata = { name: "api", version: "0.1.0" };
 const nonDeletableStatuses = new Set(["verifying", "restoring"]);
 const backupDownloadContentType = "application/gzip";
 const paxHeaderMaxBytes = 2048;
+const supportedBackupFormatVersions = [1, 2, 3] as const;
+const v3IdentityExcludedTables = [
+  "edgeone_prefetch_attempts",
+  "edgeone_prefetch_resources",
+  "admin_menu_permissions",
+  "admin_sessions",
+  "admin_password_reset_tokens",
+  "admin_notifications",
+  "admin_users",
+  "client_sessions",
+  "daily_user_visits",
+  "page_view_events",
+  "operation_logs",
+  "scheduled_task_states"
+] as const;
+const v3IdentityExcludedSequences = [
+  "edgeone_prefetch_attempts",
+  "edgeone_prefetch_resources",
+  "admin_menu_permissions",
+  "admin_password_reset_tokens",
+  "admin_notifications",
+  "admin_users",
+  "client_sessions",
+  "daily_user_visits",
+  "page_view_events",
+  "operation_logs"
+] as const;
 
 type BackupAdmin = {
   id: number;
   publicId?: string;
   username: string;
 };
+
+function anonymousBackupCreator(backupKind: BackupKind) {
+  if (backupKind === "automatic") return { username: "系统任务" } as const;
+  if (backupKind === "restore_snapshot") return { username: "恢复前安全快照" } as const;
+  return { username: "后台管理员" } as const;
+}
 
 export type BackupServiceHooks = {
   afterDatabaseSnapshot?: (context: { backupId: string; stagingDir: string }) => Promise<void> | void;
@@ -112,6 +147,14 @@ type RestoreResult = {
   preflight: BackupPreflightSummary;
 };
 
+export type AutomaticBackupRetentionResult = {
+  keepCount: number;
+  automaticBackupCount: number;
+  retainedBackupIds: string[];
+  deletedBackupIds: string[];
+  skippedConflictBackupIds: string[];
+};
+
 type ExtractedArchive = {
   files: string[];
   totalFileBytes: number;
@@ -125,7 +168,7 @@ type BackupArchiveFile = {
 };
 
 type BackupCompatibility = {
-  mode: "current_v2" | "known_prerbac_v1";
+  mode: "current_v3" | "current_v2" | "known_prerbac_v1";
   requiresRbacUpgrade: boolean;
 };
 
@@ -305,19 +348,117 @@ async function snapshotDatabase(prisma: AppPrismaClient, targetPath: string) {
   await mkdir(path.dirname(targetPath), { recursive: true });
   await rm(targetPath, { force: true });
   await prisma.$executeRawUnsafe(`VACUUM INTO ${safeSqliteStringLiteral(targetPath)}`);
-  const [metadata, sha256] = await Promise.all([stat(targetPath), sha256File(targetPath)]);
-  const [pageSizeRows, pageCountRows] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<{ page_size: number | bigint }>>("PRAGMA page_size"),
-    prisma.$queryRawUnsafe<Array<{ page_count: number | bigint }>>("PRAGMA page_count")
-  ]);
-  return {
-    path: databaseSnapshotFilename,
-    size: metadata.size,
-    sha256,
-    snapshotMethod,
-    pageSize: Number(pageSizeRows[0]?.page_size ?? 0),
-    pageCount: Number(pageCountRows[0]?.page_count ?? 0)
-  };
+  return databaseSnapshotMetadata(targetPath);
+}
+
+async function databaseSnapshotMetadata(snapshotPath: string) {
+  const [metadata, sha256] = await Promise.all([stat(snapshotPath), sha256File(snapshotPath)]);
+  const snapshotPrisma = createPrismaClient(`file:${snapshotPath}`);
+  try {
+    const [pageSizeRows, pageCountRows] = await Promise.all([
+      snapshotPrisma.$queryRawUnsafe<Array<{ page_size: number | bigint }>>("PRAGMA page_size"),
+      snapshotPrisma.$queryRawUnsafe<Array<{ page_count: number | bigint }>>("PRAGMA page_count")
+    ]);
+    return {
+      path: databaseSnapshotFilename,
+      size: metadata.size,
+      sha256,
+      snapshotMethod,
+      pageSize: Number(pageSizeRows[0]?.page_size ?? 0),
+      pageCount: Number(pageCountRows[0]?.page_count ?? 0)
+    };
+  } finally {
+    await snapshotPrisma.$disconnect().catch(() => undefined);
+  }
+}
+
+async function sanitizeV3NonIdentityDatabaseSnapshot(databasePath: string) {
+  const snapshotPrisma = createPrismaClient(`file:${databasePath}`);
+  try {
+    await sqliteIntegrityCheck(snapshotPrisma);
+    await snapshotPrisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
+    await snapshotPrisma.$executeRawUnsafe("BEGIN IMMEDIATE");
+    try {
+      if (await sqliteTableExists(snapshotPrisma, "edgeone_prefetch_attempts")) {
+        await snapshotPrisma.$executeRawUnsafe("DELETE FROM edgeone_prefetch_attempts");
+      }
+      if (await sqliteTableExists(snapshotPrisma, "edgeone_prefetch_resources")) {
+        await snapshotPrisma.$executeRawUnsafe("DELETE FROM edgeone_prefetch_resources");
+      }
+      if (await sqliteTableExists(snapshotPrisma, "media_assets")) {
+        await snapshotPrisma.$executeRawUnsafe("UPDATE media_assets SET createdBy = NULL WHERE createdBy IS NOT NULL");
+      }
+      for (const table of [
+        "admin_menu_permissions",
+        "admin_sessions",
+        "admin_password_reset_tokens",
+        "admin_notifications",
+        "admin_users",
+        "client_sessions",
+        "daily_user_visits",
+        "page_view_events",
+        "operation_logs",
+        "scheduled_task_states"
+      ]) {
+        if (await sqliteTableExists(snapshotPrisma, table)) {
+          await snapshotPrisma.$executeRawUnsafe(`DELETE FROM ${table}`);
+        }
+      }
+      if (await sqliteTableExists(snapshotPrisma, "sqlite_sequence")) {
+        await snapshotPrisma.$executeRawUnsafe(
+          `DELETE FROM sqlite_sequence WHERE name IN (${sqlInStringList(v3IdentityExcludedSequences)})`
+        );
+      }
+      await snapshotPrisma.$executeRawUnsafe("COMMIT");
+    } catch (error) {
+      await snapshotPrisma.$executeRawUnsafe("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+    await sqliteIntegrityCheck(snapshotPrisma);
+    await assertV3NonIdentityDatabase(snapshotPrisma);
+    await snapshotPrisma.$executeRawUnsafe("VACUUM");
+    await sqliteIntegrityCheck(snapshotPrisma);
+    await assertV3NonIdentityDatabase(snapshotPrisma);
+  } catch (error) {
+    if (error instanceof BackupServiceError) throw error;
+    throw new BackupServiceError("BACKUP_INVALID", "备份数据库身份数据清理失败", 500, error);
+  } finally {
+    await snapshotPrisma.$disconnect().catch(() => undefined);
+  }
+  return databaseSnapshotMetadata(databasePath);
+}
+
+async function assertV3NonIdentityDatabase(prisma: AppPrismaClient, statusCode = 500) {
+  for (const table of v3IdentityExcludedTables) {
+    if (!(await sqliteTableExists(prisma, table))) continue;
+    const count = await tableRowCount(prisma, table);
+    if (count !== 0) {
+      throw new BackupServiceError("BACKUP_INVALID", `v3 备份数据库仍包含身份数据表 ${table}`, statusCode);
+    }
+  }
+  if (await sqliteTableExists(prisma, "media_assets")) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
+      "SELECT COUNT(*) AS count FROM media_assets WHERE createdBy IS NOT NULL"
+    );
+    if (Number(rows[0]?.count ?? 0) !== 0) {
+      throw new BackupServiceError("BACKUP_INVALID", "v3 备份数据库仍包含媒体 actor", statusCode);
+    }
+  }
+}
+
+async function validateV3BackupSnapshotBeforePublish(databasePath: string, manifest: BackupManifest) {
+  if (manifest.formatVersion !== 3) return;
+  const snapshotPrisma = createPrismaClient(`file:${databasePath}`);
+  try {
+    await sqliteIntegrityCheck(snapshotPrisma);
+    await assertV3NonIdentityDatabase(snapshotPrisma);
+    await validateMediaManifestReferences(snapshotPrisma, manifest);
+  } catch (error) {
+    if (error instanceof BackupServiceError) throw error;
+    throw new BackupServiceError("BACKUP_INVALID", "v3 备份发布前数据库校验失败", 500, error);
+  } finally {
+    await snapshotPrisma.$disconnect().catch(() => undefined);
+  }
 }
 
 function manifestFilePath(root: string, manifestPath: string, statusCode = 500) {
@@ -370,7 +511,7 @@ async function readManifest(backupPath: string, invalidStatusCode = 500) {
     raw &&
     typeof raw === "object" &&
     "formatVersion" in raw &&
-    ![1, backupFormatVersion].includes(Number((raw as { formatVersion?: unknown }).formatVersion))
+    !supportedBackupFormatVersions.includes(Number((raw as { formatVersion?: unknown }).formatVersion) as 1 | 2 | 3)
   ) {
     throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份格式版本不兼容", 409);
   }
@@ -381,11 +522,23 @@ async function readManifest(backupPath: string, invalidStatusCode = 500) {
   return parsed.data;
 }
 
+function backupKindForLocalRecord(id: string, manifest: BackupManifest): BackupKind {
+  if (id.startsWith("import-")) return "imported";
+  if (manifest.formatVersion === 3) return manifest.backupKind;
+  return "manual";
+}
+
+function dataScopeForManifest(manifest: BackupManifest) {
+  return manifest.formatVersion === 3 ? manifest.dataScope : "full";
+}
+
 function toBackupDto(id: string, manifest: BackupManifest): BackupDto {
   return backupDtoSchema.parse({
     id,
     formatVersion: manifest.formatVersion,
     identityRestorePolicy: backupIdentityRestorePolicy,
+    dataScope: dataScopeForManifest(manifest),
+    backupKind: backupKindForLocalRecord(id, manifest),
     status: manifest.status,
     createdBy: manifest.createdBy,
     createdAt: manifest.createdAt,
@@ -450,7 +603,19 @@ function assertSchemaMetadataCompatible(
   const candidateMatchesManifest = schemaMetadataMatches(candidate, manifest.schema);
   const currentMatchesManifest = schemaMetadataMatches(current, manifest.schema);
 
-  if (manifest.formatVersion === backupFormatVersion) {
+  if (manifest.formatVersion === 3) {
+    if (
+      manifest.identityRestorePolicy === backupIdentityRestorePolicy &&
+      manifest.dataScope === "non_identity" &&
+      candidateMatchesManifest &&
+      currentMatchesManifest
+    ) {
+      return { mode: "current_v3", requiresRbacUpgrade: false };
+    }
+    throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
+  }
+
+  if (manifest.formatVersion === 2) {
     if (
       manifest.identityRestorePolicy === backupIdentityRestorePolicy &&
       candidateMatchesManifest &&
@@ -477,7 +642,7 @@ function assertPreparedRestoreSchemaCompatible(
   candidate: SchemaMetadata,
   compatibility: BackupCompatibility
 ) {
-  if (compatibility.mode === "current_v2") {
+  if (compatibility.mode === "current_v2" || compatibility.mode === "current_v3") {
     if (schemaMetadataMatches(candidate, current)) return;
     throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
   }
@@ -578,6 +743,7 @@ async function validateCandidateDatabase(databasePath: string, manifest: BackupM
     await sqliteIntegrityCheck(candidatePrisma);
     const candidateSchema = await collectSchemaMetadata(candidatePrisma);
     assertSchemaMetadataCompatible(currentSchema, manifest, candidateSchema);
+    if (manifest.formatVersion === 3) await assertV3NonIdentityDatabase(candidatePrisma, 400);
     await validateMediaManifestReferences(candidatePrisma, manifest);
     return candidatePrisma;
   } catch (error) {
@@ -594,7 +760,9 @@ async function determineBackupCompatibility(
 ) {
   await sqliteIntegrityCheck(prisma);
   const candidateSchema = await collectSchemaMetadata(prisma);
-  return assertSchemaMetadataCompatible(currentSchema, manifest, candidateSchema);
+  const compatibility = assertSchemaMetadataCompatible(currentSchema, manifest, candidateSchema);
+  if (manifest.formatVersion === 3) await assertV3NonIdentityDatabase(prisma, 400);
+  return compatibility;
 }
 
 function sqlInStringList(values: readonly string[]) {
@@ -905,6 +1073,7 @@ async function tableCounts(prisma: AppPrismaClient) {
 
 function buildPreflightSummary(input: {
   source: BackupSource;
+  backupKind: BackupKind;
   manifest: BackupManifest;
   currentCounts: Record<string, number>;
   candidateCounts: Record<string, number>;
@@ -916,6 +1085,8 @@ function buildPreflightSummary(input: {
   return backupPreflightSummarySchema.parse({
     formatVersion: input.manifest.formatVersion,
     identityRestorePolicy: backupIdentityRestorePolicy,
+    dataScope: dataScopeForManifest(input.manifest),
+    backupKind: input.backupKind,
     createdAt: input.manifest.createdAt,
     createdBy: input.manifest.createdBy,
     note: input.manifest.note,
@@ -1379,7 +1550,22 @@ async function listBackupRecords(backupDir: string): Promise<BackupRecord[]> {
       continue;
     }
   }
-  return records.sort((left, right) => right.manifest.createdAt.localeCompare(left.manifest.createdAt));
+  return records.sort(compareBackupRecordsNewestFirst);
+}
+
+function compareBackupRecordsNewestFirst(left: BackupRecord, right: BackupRecord) {
+  const createdAtOrder = right.manifest.createdAt.localeCompare(left.manifest.createdAt, "en-US");
+  if (createdAtOrder !== 0) return createdAtOrder;
+  return right.id.localeCompare(left.id, "en-US");
+}
+
+function isLocalSuccessfulAutomaticBackupRecord(record: BackupRecord) {
+  return (
+    !record.id.startsWith("import-") &&
+    record.manifest.formatVersion === 3 &&
+    record.manifest.status === "ready" &&
+    record.manifest.backupKind === "automatic"
+  );
 }
 
 async function ensureSafeDirectory(pathname: string) {
@@ -1709,6 +1895,7 @@ export function createBackupService(options: BackupServiceOptions) {
         manifest,
         summary: buildPreflightSummary({
           source,
+          backupKind: backupKindForLocalRecord(backupId, manifest),
           manifest,
           currentCounts,
           candidateCounts
@@ -1720,7 +1907,11 @@ export function createBackupService(options: BackupServiceOptions) {
   }
 
   const service = {
-    async createBackup(input: { createdBy: BackupAdmin; note?: string | null }): Promise<BackupDto> {
+    async createBackup(input: {
+      createdBy?: BackupAdmin;
+      note?: string | null;
+      backupKind?: Exclude<BackupKind, "imported">;
+    }): Promise<BackupDto> {
       if (createInProgress) {
         throw new BackupServiceError("BACKUP_CONFLICT", "已有备份创建任务正在进行，请稍后重试", 409);
       }
@@ -1736,8 +1927,9 @@ export function createBackupService(options: BackupServiceOptions) {
 
         await stat(await activeDatabasePath(options.prisma, databasePath));
         const schema = await collectSchemaMetadata(options.prisma);
-        const database = await snapshotDatabase(options.prisma, path.join(stagingDir, databaseSnapshotFilename));
+        let database = await snapshotDatabase(options.prisma, path.join(stagingDir, databaseSnapshotFilename));
         await options.hooks?.afterDatabaseSnapshot?.({ backupId, stagingDir });
+        database = await sanitizeV3NonIdentityDatabaseSnapshot(path.join(stagingDir, databaseSnapshotFilename));
 
         const uploadEntries: BackupManifest["uploads"] = [];
         for (const file of await collectUploadFiles(uploadDir, backupDir)) {
@@ -1752,19 +1944,18 @@ export function createBackupService(options: BackupServiceOptions) {
         }
 
         const totalBytes = database.size + uploadEntries.reduce((sum, file) => sum + file.size, 0);
+        const backupKind = input.backupKind ?? "manual";
         const manifest: BackupManifest = {
           formatVersion: backupFormatVersion,
           identityRestorePolicy: backupIdentityRestorePolicy,
+          dataScope: "non_identity",
+          backupKind,
           status: "ready",
           app: apiAppMetadata,
           schema,
-          createdBy: {
-            adminId: input.createdBy.id,
-            ...(input.createdBy.publicId ? { publicId: input.createdBy.publicId } : {}),
-            username: input.createdBy.username
-          },
+          createdBy: anonymousBackupCreator(backupKind),
           createdAt: toIso(createdAt),
-          note: input.note ?? null,
+          note: backupKind === "automatic" ? null : input.note ?? null,
           database,
           uploads: uploadEntries,
           totalBytes,
@@ -1772,10 +1963,12 @@ export function createBackupService(options: BackupServiceOptions) {
           sha256: computeBackupDigest(database, uploadEntries, backupFormatVersion)
         };
 
+        await validateV3BackupSnapshotBeforePublish(path.join(stagingDir, databaseSnapshotFilename), manifest);
         await verifyManifestFiles(stagingDir, manifest);
         await options.hooks?.beforePublish?.({ backupId, stagingDir, manifest });
         await writeFile(path.join(stagingDir, manifestFilename), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
         const parsedManifest = backupManifestSchema.parse(JSON.parse(await readFile(path.join(stagingDir, manifestFilename), "utf8")));
+        await validateV3BackupSnapshotBeforePublish(path.join(stagingDir, databaseSnapshotFilename), parsedManifest);
         await verifyManifestFiles(stagingDir, parsedManifest);
 
         const publishedPath = path.join(backupDir, backupId);
@@ -1788,6 +1981,43 @@ export function createBackupService(options: BackupServiceOptions) {
       } finally {
         createInProgress = false;
       }
+    },
+
+    async pruneAutomaticBackups(input: {
+      keep?: number;
+    } = {}): Promise<AutomaticBackupRetentionResult> {
+      const keepCount = input.keep ?? automaticBackupRetentionKeepCount;
+      if (!Number.isInteger(keepCount) || keepCount < 1) {
+        throw new BackupServiceError("BACKUP_INVALID", "自动备份保留数量配置无效", 500);
+      }
+      const automaticRecords = (await listBackupRecords(backupDir))
+        .filter(isLocalSuccessfulAutomaticBackupRecord)
+        .sort(compareBackupRecordsNewestFirst);
+      const retained = automaticRecords.slice(0, keepCount);
+      const candidates = automaticRecords.slice(keepCount);
+      const deletedBackupIds: string[] = [];
+      const skippedConflictBackupIds: string[] = [];
+
+      for (const record of candidates) {
+        try {
+          await service.deleteBackup(record.id);
+          deletedBackupIds.push(record.id);
+        } catch (error) {
+          if (error instanceof BackupServiceError && error.code === "BACKUP_CONFLICT") {
+            skippedConflictBackupIds.push(record.id);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      return {
+        keepCount,
+        automaticBackupCount: automaticRecords.length,
+        retainedBackupIds: retained.map((record) => record.id),
+        deletedBackupIds,
+        skippedConflictBackupIds
+      };
     },
 
     async listBackups(): Promise<BackupDto[]> {
@@ -1897,6 +2127,7 @@ export function createBackupService(options: BackupServiceOptions) {
         const preflight = await preflightBackupDirectory(record.backupId, record.backupPath, "existing_backup");
         const safetySnapshot = await service.createBackup({
           createdBy: input.createdBy,
+          backupKind: "restore_snapshot",
           note: `Pre-restore safety snapshot before ${record.backupId}`
         });
         const activePath = await activeDatabasePath(options.prisma, databasePath);

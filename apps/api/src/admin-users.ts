@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
   AdminAccountStatusSchema,
@@ -212,7 +212,6 @@ export async function updateAdminUser(
       : parseAccountStatus(input.data.status);
     assertCanManageTarget(issuer, target, nextRole);
     assertValidRoleStatusTransition(target, nextRole, nextStatus);
-    await assertNotRemovingLastEnabledSuper(tx, target, nextRole, nextStatus);
     if (requiresSuperAdminReauthentication(target, nextRole)) {
       assertCurrentPassword(issuer, input.data.currentPassword);
       if (input.data.confirmation !== true) {
@@ -226,6 +225,15 @@ export async function updateAdminUser(
 
     const roleChanged = nextRole !== target.role;
     const statusChanged = nextStatus !== target.status;
+    const updated = await updateAdminAccountFields(tx, {
+      target,
+      username: input.data.username,
+      nextRole,
+      nextStatus,
+      roleChanged,
+      statusChanged,
+      now: input.now
+    });
     let revokedSessionCount = 0;
     let revokedResetTokenCount = 0;
     if (roleChanged || statusChanged) {
@@ -243,15 +251,6 @@ export async function updateAdminUser(
       revokedResetTokenCount = revoked.revokedResetTokenCount;
     }
 
-    const updated = await tx.adminUser.update({
-      where: { id: target.id },
-      data: {
-        ...(input.data.username !== undefined ? { username: input.data.username } : {}),
-        ...(roleChanged ? { role: nextRole } : {}),
-        ...(statusChanged ? { status: nextStatus } : {})
-      },
-      include: { menuPermissions: true }
-    });
     if (roleChanged && nextRole === "SUPER_ADMIN") {
       await tx.adminMenuPermission.deleteMany({ where: { adminId: target.id } });
       updated.menuPermissions = [];
@@ -410,7 +409,7 @@ function assertCanManageTarget(
   nextRole: AdminRole
 ) {
   const issuerRole = parseRole(issuer.role);
-  if (issuer.id === target.id && issuerRole !== "SUPER_ADMIN") {
+  if (issuer.id === target.id) {
     throw new AdminUserError("ADMIN_USER_FORBIDDEN", "请使用自助入口管理当前账户", 403);
   }
   if (issuerRole === "SUPER_ADMIN") return;
@@ -444,29 +443,76 @@ function normalizeAssignablePermissions(
   return adminGrantableMenuKeyValues.filter((key): key is AdminGrantableMenuKey => expanded.includes(key));
 }
 
-async function assertNotRemovingLastEnabledSuper(
+async function updateAdminAccountFields(
   prisma: AdminUserClient,
-  target: AdminAccountRecord,
-  nextRole: AdminRole,
-  nextStatus: "pending_activation" | "enabled" | "disabled"
+  input: {
+    target: AdminAccountRecord;
+    username: string | undefined;
+    nextRole: AdminRole;
+    nextStatus: "pending_activation" | "enabled" | "disabled";
+    roleChanged: boolean;
+    statusChanged: boolean;
+    now: Date;
+  }
 ) {
-  if (target.role !== "SUPER_ADMIN" || target.status !== "enabled") return;
-  if (nextRole === "SUPER_ADMIN" && nextStatus === "enabled") return;
+  const removesEnabledSuper = isRemovingEnabledSuper(
+    input.target,
+    input.nextRole,
+    input.nextStatus
+  );
+  if (!removesEnabledSuper) {
+    return prisma.adminUser.update({
+      where: { id: input.target.id },
+      data: {
+        ...(input.username !== undefined ? { username: input.username } : {}),
+        ...(input.roleChanged ? { role: input.nextRole } : {}),
+        ...(input.statusChanged ? { status: input.nextStatus } : {})
+      },
+      include: { menuPermissions: true }
+    });
+  }
 
-  const otherEnabledSuperCount = await prisma.adminUser.count({
-    where: {
-      id: { not: target.id },
-      role: "SUPER_ADMIN",
-      status: "enabled"
-    }
-  });
-  if (otherEnabledSuperCount === 0) {
+  const assignments: Prisma.Sql[] = [];
+  if (input.username !== undefined) assignments.push(Prisma.sql`username = ${input.username}`);
+  if (input.roleChanged) assignments.push(Prisma.sql`role = ${input.nextRole}`);
+  if (input.statusChanged) assignments.push(Prisma.sql`status = ${input.nextStatus}`);
+  assignments.push(Prisma.sql`updatedAt = ${input.now}`);
+
+  const affected = await prisma.$executeRaw(Prisma.sql`
+    UPDATE admin_users
+    SET ${Prisma.join(assignments, ", ")}
+    WHERE id = ${input.target.id}
+      AND role = 'SUPER_ADMIN'
+      AND status = 'enabled'
+      AND EXISTS (
+        SELECT 1
+        FROM admin_users AS other
+        WHERE other.id <> ${input.target.id}
+          AND other.role = 'SUPER_ADMIN'
+          AND other.status = 'enabled'
+      )
+  `);
+  if (affected !== 1) {
     throw new AdminUserError(
       "ADMIN_USER_LAST_SUPER_ADMIN",
       "不能禁用或降级最后一个启用的超级管理员",
       409
     );
   }
+  return prisma.adminUser.findUniqueOrThrow({
+    where: { id: input.target.id },
+    include: { menuPermissions: true }
+  });
+}
+
+function isRemovingEnabledSuper(
+  target: AdminAccountRecord,
+  nextRole: AdminRole,
+  nextStatus: "pending_activation" | "enabled" | "disabled"
+) {
+  if (target.role !== "SUPER_ADMIN" || target.status !== "enabled") return false;
+  if (nextRole === "SUPER_ADMIN" && nextStatus === "enabled") return false;
+  return true;
 }
 
 function requiresSuperAdminReauthentication(target: AdminAccountRecord, nextRole: AdminRole) {
@@ -478,7 +524,7 @@ function assertValidRoleStatusTransition(
   nextRole: AdminRole,
   nextStatus: "pending_activation" | "enabled" | "disabled"
 ) {
-  if (nextRole === "SUPER_ADMIN" && target.status !== "enabled") {
+  if (target.role !== "SUPER_ADMIN" && nextRole === "SUPER_ADMIN" && target.status !== "enabled") {
     throw new AdminUserError(
       "ADMIN_USER_INVALID_REQUEST",
       "只能提升已启用账户为超级管理员",

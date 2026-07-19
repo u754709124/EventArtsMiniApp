@@ -172,7 +172,10 @@ describe("admin authorization", () => {
       "cases",
       "articles",
       "detail-pages",
-      "media-assets"
+      "media-assets",
+      "backups",
+      "scheduled-tasks",
+      "system-config"
     ]);
     expect(adminLogin.permissions).toEqual(["media-assets", "user-management", "change-password"]);
     expect(adminLogin.delegablePermissions).toEqual(["media-assets"]);
@@ -213,6 +216,42 @@ describe("admin authorization", () => {
       headers: auth(userLogin.token)
     });
     expect(userDashboard.statusCode).toBe(403);
+  });
+
+  it("allows sensitive admin routes only through live explicit menu grants", async () => {
+    const sensitiveAdmin = await createAdmin({
+      role: "ADMIN",
+      permissions: ["backups", "scheduled-tasks", "system-config"]
+    });
+    const plainAdmin = await createAdmin({ role: "ADMIN", permissions: ["media-assets"] });
+
+    const sensitiveLogin = await login(sensitiveAdmin.username, sensitiveAdmin.password);
+    const plainLogin = await login(plainAdmin.username, plainAdmin.password);
+
+    expect(sensitiveLogin.permissions).toEqual([
+      "user-management",
+      "backups",
+      "change-password",
+      "scheduled-tasks",
+      "system-config"
+    ]);
+    expect(sensitiveLogin.delegablePermissions).toEqual([]);
+
+    for (const url of [
+      "/api/admin/backups",
+      "/api/admin/scheduled-tasks",
+      "/api/admin/system-config/edgeone"
+    ]) {
+      const allowed = await app.inject({ method: "GET", url, headers: auth(sensitiveLogin.token) });
+      expect(allowed.statusCode).toBe(200);
+
+      const denied = await app.inject({ method: "GET", url, headers: auth(plainLogin.token) });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json()).toMatchObject({
+        success: false,
+        error: { code: "FORBIDDEN" }
+      });
+    }
   });
 
   it("ignores forged role and permission claims embedded in a JWT", async () => {

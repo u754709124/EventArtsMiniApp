@@ -16,8 +16,20 @@ import {
   Typography
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import type { AdminGrantableMenuKey, AdminMenuGroupKey, AdminPasswordResetPurpose, AdminRole, AdminUserDto } from "@event-arts/shared";
-import { adminGrantableMenuKeyValues, adminMenuCatalog, expandAdminMenuSelection } from "@event-arts/shared";
+import type {
+  AdminGrantableMenuKey,
+  AdminMenuGroupKey,
+  AdminMenuKey,
+  AdminPasswordResetPurpose,
+  AdminRole,
+  AdminUserDto
+} from "@event-arts/shared";
+import {
+  adminEffectiveMenuKeys,
+  adminGrantableMenuKeyValues,
+  adminMenuCatalog,
+  expandAdminMenuSelection
+} from "@event-arts/shared";
 import {
   createAdminUser,
   issueAdminPasswordResetLink,
@@ -78,6 +90,14 @@ const groupLabels: Record<AdminMenuGroupKey, string> = {
   account: "账号安全"
 };
 
+const permissionStateLabels: Partial<Record<AdminMenuKey, string>> = {
+  "user-management": "角色固有",
+  "change-password": "账号固有",
+  backups: "敏感权限",
+  "scheduled-tasks": "敏感权限",
+  "system-config": "敏感权限"
+};
+
 function formatDateTime(value: string | null) {
   if (!value) return "-";
   const date = new Date(value);
@@ -111,29 +131,57 @@ function roleOptions(roles: AdminRole[]) {
   return roles.map((role) => ({ value: role, label: adminRoleLabels[role] }));
 }
 
+function permissionNodeTitle(key: AdminMenuKey) {
+  const label = menuLabel(key);
+  const stateLabel = permissionStateLabels[key];
+  if (!stateLabel) return label;
+  return (
+    <Space size={4}>
+      <span>{label}</span>
+      <Tag>{stateLabel}</Tag>
+    </Space>
+  );
+}
+
 function permissionTreeData(assignable: AdminGrantableMenuKey[]) {
   const allowed = new Set(assignable);
-  const topLevel = adminGrantableMenuKeyValues
-    .filter((key) => allowed.has(key))
-    .filter((key) => !adminMenuCatalog.find((item) => item.key === key)?.parentKey)
-    .map((key) => ({ key, title: menuLabel(key) }));
+  const topLevel = adminMenuCatalog
+    .filter((item) => !item.parentKey)
+    .map((item) => ({
+      key: item.key,
+      title: permissionNodeTitle(item.key),
+      disabled: item.access !== "grantable" || !allowed.has(item.key as AdminGrantableMenuKey)
+    }));
   const groups = Object.entries(groupLabels).flatMap(([groupKey, title]) => {
-    const children = adminGrantableMenuKeyValues
-      .filter((key) => allowed.has(key))
-      .filter((key) => adminMenuCatalog.find((item) => item.key === key)?.parentKey === groupKey)
-      .map((key) => ({ key, title: menuLabel(key) }));
+    const children = adminMenuCatalog
+      .filter((item) => item.parentKey === groupKey)
+      .map((item) => ({
+        key: item.key,
+        title: permissionNodeTitle(item.key),
+        disabled: item.access !== "grantable" || !allowed.has(item.key as AdminGrantableMenuKey)
+      }));
     return children.length ? [{ key: groupKey, title, children }] : [];
   });
   return [...topLevel, ...groups];
 }
 
-function normalizeCheckedKeys(keys: unknown) {
+function intrinsicCheckedKeys(role: AdminRole) {
+  const grantable = new Set<string>(adminGrantableMenuKeyValues);
+  return adminEffectiveMenuKeys(role, []).filter((key) => !grantable.has(key));
+}
+
+function checkedKeysForTree(keys: readonly string[], role: AdminRole) {
+  return [...new Set([...expandAdminMenuSelection(keys), ...intrinsicCheckedKeys(role)])];
+}
+
+function normalizeCheckedKeys(keys: unknown, assignable: AdminGrantableMenuKey[]) {
   const rawKeys = Array.isArray(keys)
     ? keys
     : typeof keys === "object" && keys && "checked" in keys && Array.isArray((keys as { checked: unknown }).checked)
       ? (keys as { checked: unknown[] }).checked
       : [];
-  return expandAdminMenuSelection(rawKeys.map(String));
+  const allowed = new Set(assignable);
+  return expandAdminMenuSelection(rawKeys.map(String)).filter((key) => allowed.has(key));
 }
 
 export function AdminUsersPage() {
@@ -155,6 +203,7 @@ export function AdminUsersPage() {
   const [linkForm] = Form.useForm<LinkFormValues>();
   const [revokeForm] = Form.useForm<LinkFormValues>();
   const clickGuard = useRepeatClickGuard();
+  const watchedCreateRole = Form.useWatch("role", createForm);
 
   const assignable = useMemo(() => assignablePermissionKeys(identity), [identity]);
   const treeData = useMemo(() => permissionTreeData(assignable), [assignable]);
@@ -179,8 +228,13 @@ export function AdminUsersPage() {
   }, [load]);
 
   function openCreate() {
+    const role = creatableRoles(identity)[0] ?? "USER";
     createForm.resetFields();
-    createForm.setFieldsValue({ role: creatableRoles(identity)[0], permissions: [], confirmation: false });
+    createForm.setFieldsValue({
+      role,
+      permissions: checkedKeysForTree([], role),
+      confirmation: false
+    });
     setCreateOpen(true);
   }
 
@@ -199,7 +253,10 @@ export function AdminUsersPage() {
     setPermissionsUser(user);
     permissionsForm.resetFields();
     permissionsForm.setFieldsValue({
-      permissions: user.permissions.filter((key) => adminGrantableMenuKeyValues.includes(key as AdminGrantableMenuKey)),
+      permissions: checkedKeysForTree(
+        user.permissions.filter((key) => adminGrantableMenuKeyValues.includes(key as AdminGrantableMenuKey)),
+        user.role
+      ),
       confirmation: false
     });
   }
@@ -217,7 +274,7 @@ export function AdminUsersPage() {
       const result = await createAdminUser({
         username: values.username.trim(),
         role: values.role,
-        permissions: expandAdminMenuSelection(values.permissions ?? []),
+        permissions: normalizeCheckedKeys(values.permissions ?? [], assignable),
         currentPassword: values.currentPassword,
         confirmation: true
       });
@@ -272,7 +329,7 @@ export function AdminUsersPage() {
     try {
       const values = await permissionsForm.validateFields();
       await updateAdminUserPermissions(permissionsUser.publicId, {
-        permissions: expandAdminMenuSelection(values.permissions ?? []),
+        permissions: normalizeCheckedKeys(values.permissions ?? [], assignable),
         confirmation: true
       });
       setPermissionsUser(null);
@@ -489,16 +546,32 @@ export function AdminUsersPage() {
               <Input data-testid="admin-user-create-username" autoComplete="off" />
             </Form.Item>
             <Form.Item label="角色" name="role" rules={[{ required: true, message: "请选择角色" }]}>
-              <Select data-testid="admin-user-create-role" options={createRoleOptions} />
+              <Select
+                data-testid="admin-user-create-role"
+                options={createRoleOptions}
+                onChange={(role: AdminRole) => {
+                  createForm.setFieldValue(
+                    "permissions",
+                    checkedKeysForTree(createForm.getFieldValue("permissions") ?? [], role)
+                  );
+                }}
+              />
             </Form.Item>
           </FormSection>
           <FormSection title="菜单权限" description="只保存叶子菜单；分组选择会展开为当前可委派的叶子。">
             <Form.Item name="permissions" valuePropName="checkedKeys">
               <Tree
                 checkable
+                defaultExpandAll
                 selectable={false}
                 treeData={treeData}
-                onCheck={(keys) => createForm.setFieldValue("permissions", normalizeCheckedKeys(keys))}
+                onCheck={(keys) => createForm.setFieldValue(
+                  "permissions",
+                  checkedKeysForTree(
+                    normalizeCheckedKeys(keys, assignable),
+                    watchedCreateRole ?? createRoleOptions[0]?.value ?? "USER"
+                  )
+                )}
               />
             </Form.Item>
           </FormSection>
@@ -595,9 +668,13 @@ export function AdminUsersPage() {
             <Form.Item name="permissions" valuePropName="checkedKeys">
               <Tree
                 checkable
+                defaultExpandAll
                 selectable={false}
                 treeData={treeData}
-                onCheck={(keys) => permissionsForm.setFieldValue("permissions", normalizeCheckedKeys(keys))}
+                onCheck={(keys) => permissionsForm.setFieldValue(
+                  "permissions",
+                  checkedKeysForTree(normalizeCheckedKeys(keys, assignable), permissionsUser.role)
+                )}
               />
             </Form.Item>
             <Form.Item

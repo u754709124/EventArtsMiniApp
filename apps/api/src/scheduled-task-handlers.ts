@@ -11,10 +11,28 @@ import type { AppPrismaClient } from "./db";
 import { asEdgeOneDomainError, createEdgeOnePrefetchService, type EdgeOneClientFactory } from "./edgeone";
 import { sanitizeSummary, type ScheduledTaskHandler, type ScheduledTaskKey } from "./scheduled-tasks";
 
+type AutomaticBackupTaskResult = {
+  backup: {
+    id: string;
+    backupKind?: string;
+    dataScope?: string;
+  };
+  retention: {
+    keepCount: number;
+    automaticBackupCount: number;
+    retainedBackupIds: string[];
+    deletedBackupIds: string[];
+    skippedConflictBackupIds: string[];
+  };
+};
+
 type ScheduledTaskHandlerOptions = {
   prisma: AppPrismaClient;
   publicBaseUrl: string;
   analytics: ApiConfig["analytics"];
+  automaticBackup?: {
+    run: () => Promise<AutomaticBackupTaskResult>;
+  };
   edgeOne: {
     credentialEncryptionKey: Buffer | null;
     prefetch: ApiConfig["edgeOne"]["prefetch"];
@@ -132,6 +150,31 @@ export function createScheduledTaskHandlers(options: ScheduledTaskHandlerOptions
         }));
         throw safe;
       }
+    },
+    "automatic-backup": async () => {
+      if (!options.automaticBackup) {
+        throw Object.assign(new Error("automatic backup task is not configured"), {
+          code: "AUTOMATIC_BACKUP_NOT_CONFIGURED",
+          publicMessage: "自动备份任务未配置"
+        });
+      }
+      const result = await options.automaticBackup.run();
+      const summary = sanitizeSummary({
+        status: "completed",
+        createdBackupId: result.backup.id,
+        backupKind: result.backup.backupKind ?? "automatic",
+        dataScope: result.backup.dataScope ?? "non_identity",
+        keepCount: result.retention.keepCount,
+        automaticBackupCount: result.retention.automaticBackupCount,
+        retainedCount: result.retention.retainedBackupIds.length,
+        deletedCount: result.retention.deletedBackupIds.length,
+        skippedConflictCount: result.retention.skippedConflictBackupIds.length
+      });
+      writeOutput?.(JSON.stringify({
+        event: "automatic_backup",
+        ...summary
+      }));
+      return summary;
     }
   } satisfies Record<ScheduledTaskKey, ScheduledTaskHandler>;
 }

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminIdentity } from "../api";
 import type { AdminUserDto } from "@event-arts/shared";
+import { adminGrantableMenuKeyValues, adminMenuCatalog } from "@event-arts/shared";
 import { AdminSessionProvider } from "../auth/session";
 import { AdminUsersPage } from "./AdminUsersPage";
 
@@ -26,16 +27,8 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
     username: "current",
     role: "SUPER_ADMIN",
     status: "enabled",
-    permissions: [
-      "dashboard",
-      "media-assets",
-      "user-management",
-      "backups",
-      "change-password",
-      "scheduled-tasks",
-      "system-config"
-    ],
-    delegablePermissions: ["dashboard", "media-assets"],
+    permissions: adminMenuCatalog.map((item) => item.key),
+    delegablePermissions: [...adminGrantableMenuKeyValues],
     ...overrides
   };
 }
@@ -100,6 +93,22 @@ afterEach(() => {
 });
 
 describe("AdminUsersPage", () => {
+  it("renders the full shared menu catalog in the permission tree", async () => {
+    apiMocks.listAdminUsers.mockResolvedValue({ items: [], total: 0 });
+
+    renderPage(identity());
+
+    fireEvent.click(await screen.findByTestId("admin-user-create-open"));
+    const dialog = await screen.findByRole("dialog", { name: "新增后台账户" });
+
+    for (const item of adminMenuCatalog) {
+      expect(within(dialog).getByText(item.label)).toBeTruthy();
+    }
+    expect(within(dialog).getByText("账号固有")).toBeTruthy();
+    expect(within(dialog).getByText("角色固有")).toBeTruthy();
+    expect(within(dialog).getAllByText("敏感权限")).toHaveLength(3);
+  });
+
   it("keeps ADMIN users limited to USER targets and USER reset actions", async () => {
     const current = identity({
       role: "ADMIN",
@@ -188,5 +197,45 @@ describe("AdminUsersPage", () => {
     expect((screen.getByTestId("admin-user-reset-link-value") as HTMLTextAreaElement).value).toContain("#token=");
     expect(JSON.stringify(localStorage)).not.toContain(resetToken);
     expect(JSON.stringify(sessionStorage)).not.toContain(resetToken);
+  });
+
+  it("lets SUPER_ADMIN edit a peer SUPER_ADMIN without exposing link or permission actions", async () => {
+    const current = identity();
+    const targetSuper = user({
+      id: 6,
+      publicId: "66666666-6666-4666-8666-666666666666",
+      username: "peer-super",
+      role: "SUPER_ADMIN",
+      permissions: current.permissions,
+      delegablePermissions: current.delegablePermissions
+    });
+    apiMocks.listAdminUsers.mockResolvedValue({ items: [targetSuper], total: 1 });
+    apiMocks.updateAdminUser.mockResolvedValue({
+      user: targetSuper,
+      revokedSessionCount: 0,
+      revokedResetTokenCount: 0
+    });
+
+    renderPage(current);
+
+    await screen.findByText("peer-super");
+    expect(screen.getByTestId(`admin-user-edit-${targetSuper.publicId}`)).toBeTruthy();
+    expect(screen.queryByTestId(`admin-user-reset-link-${targetSuper.publicId}`)).toBeNull();
+    expect(screen.queryByTestId(`admin-user-permissions-${targetSuper.publicId}`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`admin-user-edit-${targetSuper.publicId}`));
+    const dialog = await screen.findByRole("dialog", { name: "编辑后台账户" });
+    expect(dialog.textContent).toContain("超级管理员相关变更需要重新认证");
+    fireEvent.change(within(dialog).getByTestId("admin-user-edit-password"), { target: { value: "Super-Password-1!" } });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /确认保存账户层级或状态变更/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /保\s*存/ }));
+
+    await waitFor(() => expect(apiMocks.updateAdminUser).toHaveBeenCalledWith(targetSuper.publicId, {
+      username: "peer-super",
+      role: "SUPER_ADMIN",
+      status: "enabled",
+      currentPassword: "Super-Password-1!",
+      confirmation: true
+    }));
   });
 });

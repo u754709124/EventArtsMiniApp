@@ -38,7 +38,6 @@ export type AdminAuthContext = AdminAuthIdentityDto & {
 
 const publicPolicy = { kind: "public" } as const;
 const authenticatedPolicy = { kind: "authenticated" } as const;
-const superAdminPolicy = { kind: "role", roles: ["SUPER_ADMIN"] } as const;
 
 function menuPolicy(menuKey: AdminMenuKey): AdminRouteAccessPolicy {
   return { kind: "menu", menuKey };
@@ -54,16 +53,16 @@ export const adminRoutePolicies = [
 
   { method: "GET", path: "/api/admin/dashboard/overview", policy: menuPolicy("dashboard") },
 
-  { method: "GET", path: "/api/admin/scheduled-tasks", policy: superAdminPolicy },
-  { method: "POST", path: "/api/admin/scheduled-tasks/:taskKey/run", policy: superAdminPolicy },
-  { method: "GET", path: "/api/admin/system-config/edgeone", policy: superAdminPolicy },
-  { method: "PUT", path: "/api/admin/system-config/edgeone", policy: superAdminPolicy },
-  { method: "GET", path: "/api/admin/backups", policy: superAdminPolicy },
-  { method: "GET", path: "/api/admin/backups/:id/download", policy: superAdminPolicy },
-  { method: "POST", path: "/api/admin/backups", policy: superAdminPolicy },
-  { method: "POST", path: "/api/admin/backups/import", policy: superAdminPolicy },
-  { method: "POST", path: "/api/admin/backups/:id/restore", policy: superAdminPolicy },
-  { method: "DELETE", path: "/api/admin/backups/:id", policy: superAdminPolicy },
+  { method: "GET", path: "/api/admin/scheduled-tasks", policy: menuPolicy("scheduled-tasks") },
+  { method: "POST", path: "/api/admin/scheduled-tasks/:taskKey/run", policy: menuPolicy("scheduled-tasks") },
+  { method: "GET", path: "/api/admin/system-config/edgeone", policy: menuPolicy("system-config") },
+  { method: "PUT", path: "/api/admin/system-config/edgeone", policy: menuPolicy("system-config") },
+  { method: "GET", path: "/api/admin/backups", policy: menuPolicy("backups") },
+  { method: "GET", path: "/api/admin/backups/:id/download", policy: menuPolicy("backups") },
+  { method: "POST", path: "/api/admin/backups", policy: menuPolicy("backups") },
+  { method: "POST", path: "/api/admin/backups/import", policy: menuPolicy("backups") },
+  { method: "POST", path: "/api/admin/backups/:id/restore", policy: menuPolicy("backups") },
+  { method: "DELETE", path: "/api/admin/backups/:id", policy: menuPolicy("backups") },
 
   { method: "POST", path: "/api/admin/edgeone/prefetch", policy: menuPolicy("media-assets") },
   { method: "GET", path: "/api/admin/edgeone/prefetch", policy: menuPolicy("media-assets") },

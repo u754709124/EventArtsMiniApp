@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { AdminUserDto } from "@event-arts/shared";
 import type { AdminIdentity } from "../api";
 import {
+  assignablePermissionKeys,
   canManageAdminUser,
   canIssuePasswordLink,
+  editableRoles,
   filterAdminMenuConfig,
   firstAccessibleAdminPath
 } from "./permissions";
@@ -41,7 +43,7 @@ describe("admin permission-aware navigation", () => {
     expect(firstAccessibleAdminPath(identity())).toBe("/change-password");
   });
 
-  it("hides super-admin-only menus from ADMIN while preserving user-management", () => {
+  it("shows only granted sensitive menus for ADMIN while preserving user-management", () => {
     const admin = identity({
       role: "ADMIN",
       permissions: ["media-assets", "user-management", "change-password"],
@@ -53,6 +55,21 @@ describe("admin permission-aware navigation", () => {
     expect(leaves).not.toContain("backups");
     expect(leaves).not.toContain("system-config");
     expect(leaves).not.toContain("scheduled-tasks");
+
+    const sensitiveAdmin = identity({
+      role: "ADMIN",
+      permissions: ["backups", "scheduled-tasks", "system-config", "user-management", "change-password"],
+      delegablePermissions: []
+    });
+
+    expect(menuLeaves(filterAdminMenuConfig(sensitiveAdmin)).map((item) => item.key)).toEqual([
+      "user-management",
+      "backups",
+      "change-password",
+      "scheduled-tasks",
+      "system-config"
+    ]);
+    expect(assignablePermissionKeys(sensitiveAdmin)).toEqual([]);
   });
 
   it("matches the reset-link issuer-target matrix used by the UI", () => {
@@ -75,5 +92,16 @@ describe("admin permission-aware navigation", () => {
     const superAdmin = identity({ role: "SUPER_ADMIN", permissions: ["user-management", "change-password"] });
 
     expect(canManageAdminUser(superAdmin, target({ publicId: superAdmin.publicId, role: "SUPER_ADMIN" }))).toBe(false);
+  });
+
+  it("lets a SUPER_ADMIN keep the peer role selected while re-enabling a disabled SUPER_ADMIN", () => {
+    const superAdmin = identity({ role: "SUPER_ADMIN", permissions: ["user-management", "change-password"] });
+    const disabledPeer = target({
+      publicId: "55555555-5555-4555-8555-555555555555",
+      role: "SUPER_ADMIN",
+      status: "disabled"
+    });
+
+    expect(editableRoles(superAdmin, disabledPeer)).toContain("SUPER_ADMIN");
   });
 });

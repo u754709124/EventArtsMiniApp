@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { backupManifestSchema, type BackupManifest } from "@event-arts/shared";
@@ -107,7 +107,7 @@ function sha256Buffer(buffer: Buffer) {
 function backupDigest(
   database: BackupManifest["database"],
   uploads: BackupManifest["uploads"],
-  formatVersion = 2
+  formatVersion: 1 | 2 | 3 = 3
 ) {
   const hash = createHash("sha256");
   hash.update(`format:${formatVersion}\n`);
@@ -222,7 +222,7 @@ describe("admin backup import preflight", () => {
 
     const response = await importArchive(token, archive);
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode, response.body).toBe(200);
     const body = response.json();
     expect(body.success).toBe(true);
     expect(body.data.backup.id).toMatch(/^import-/);
@@ -295,9 +295,28 @@ describe("admin backup import preflight", () => {
       { name: "database.sqlite", data: brokenDatabase }
     ]));
 
-    await writeFile(path.join(uploadDir, "orphan.txt"), "orphan upload");
-    const orphanBackup = await createBackup(token, "orphan");
-    rejectedArchives.push(await archiveBackup(orphanBackup.id));
+    const orphanContent = Buffer.from("orphan upload");
+    const orphanUploads: BackupManifest["uploads"] = [
+      ...validManifest.uploads,
+      {
+        path: "uploads/orphan.txt",
+        size: orphanContent.byteLength,
+        sha256: sha256Buffer(orphanContent),
+        modifiedAt: "2026-07-19T00:00:00.000Z"
+      }
+    ];
+    const orphanManifest: BackupManifest = {
+      ...validManifest,
+      uploads: orphanUploads,
+      totalBytes: validManifest.database.size + orphanUploads.reduce((sum, file) => sum + file.size, 0),
+      totalFiles: 1 + orphanUploads.length,
+      sha256: backupDigest(validManifest.database, orphanUploads, validManifest.formatVersion)
+    };
+    rejectedArchives.push(tarArchive([
+      { name: "manifest.json", data: Buffer.from(JSON.stringify(orphanManifest)) },
+      { name: validManifest.database.path, data: validDatabase },
+      { name: "uploads/orphan.txt", data: orphanContent }
+    ]));
 
     for (const archive of rejectedArchives) {
       const response = await importArchive(token, archive, "bad.tar");
@@ -305,8 +324,7 @@ describe("admin backup import preflight", () => {
       expect(response.json().success).toBe(false);
     }
 
-    expect(await publishedBackupIds()).toEqual([orphanBackup.id, sourceBackup.id].sort());
-    expect(await readFile(path.join(uploadDir, "orphan.txt"), "utf8")).toBe("orphan upload");
+    expect(await publishedBackupIds()).toEqual([sourceBackup.id]);
     expect(securityEvents()).toContain("backup_import_rejected");
     const failureLogs = await prisma.operationLog.findMany({ where: { action: "IMPORT_BACKUP_FAILED" } });
     expect(failureLogs.length).toBeGreaterThanOrEqual(rejectedArchives.length);
@@ -361,6 +379,16 @@ describe("admin backup restore", () => {
         occurredAt: new Date()
       }
     });
+    const targetAnnouncementSummary = `target-announcement-${randomUUID()}`;
+    const currentAnnouncementSummary = `current-announcement-${randomUUID()}`;
+    await prisma.announcement.create({
+      data: {
+        summary: targetAnnouncementSummary,
+        content: "will-be-restored",
+        displayDurationMs: 3000,
+        status: "enabled"
+      }
+    });
     await prisma.operationLog.create({ data: { action: "TARGET_STATE", detail: "will-be-restored" } });
     const targetBackup = await createBackup(firstToken, "target");
     await prisma.adminNotification.deleteMany({ where: { clientEventId: targetNotificationId } });
@@ -371,6 +399,15 @@ describe("admin backup restore", () => {
         level: "warning",
         message: "恢复前当前通知",
         occurredAt: new Date()
+      }
+    });
+    await prisma.announcement.deleteMany({ where: { summary: targetAnnouncementSummary } });
+    await prisma.announcement.create({
+      data: {
+        summary: currentAnnouncementSummary,
+        content: "will-disappear",
+        displayDurationMs: 3000,
+        status: "enabled"
       }
     });
     await prisma.operationLog.deleteMany({ where: { action: "TARGET_STATE" } });
@@ -389,8 +426,10 @@ describe("admin backup restore", () => {
     expect(restore.snapshotBackupId).toMatch(/^backup-/);
     expect(restore.revokedSessionCount).toBeGreaterThanOrEqual(2);
 
-    await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "TARGET_STATE" } }))
-      .resolves.toMatchObject({ detail: "will-be-restored" });
+    await expect(prisma.announcement.findFirstOrThrow({ where: { summary: targetAnnouncementSummary } }))
+      .resolves.toMatchObject({ content: "will-be-restored" });
+    await expect(prisma.announcement.findFirst({ where: { summary: currentAnnouncementSummary } })).resolves.toBeNull();
+    await expect(prisma.operationLog.findFirst({ where: { action: "TARGET_STATE" } })).resolves.toBeNull();
     await expect(prisma.operationLog.findFirst({ where: { action: "CURRENT_STATE" } })).resolves.toBeNull();
     await expect(prisma.adminNotification.findFirst({
       where: { clientEventId: targetNotificationId }
@@ -444,9 +483,26 @@ describe("admin backup restore", () => {
     await startApp();
     const token = await login();
 
-    await prisma.operationLog.create({ data: { action: "IMPORTED_TARGET", detail: "from-imported-archive" } });
+    const importedTargetSummary = `imported-target-${randomUUID()}`;
+    const importedCurrentSummary = `imported-current-${randomUUID()}`;
+    await prisma.announcement.create({
+      data: {
+        summary: importedTargetSummary,
+        content: "from-imported-archive",
+        displayDurationMs: 3000,
+        status: "enabled"
+      }
+    });
     const sourceBackup = await createBackup(token, "relative-import-target");
-    await prisma.operationLog.deleteMany({ where: { action: "IMPORTED_TARGET" } });
+    await prisma.announcement.deleteMany({ where: { summary: importedTargetSummary } });
+    await prisma.announcement.create({
+      data: {
+        summary: importedCurrentSummary,
+        content: "should-disappear",
+        displayDurationMs: 3000,
+        status: "enabled"
+      }
+    });
     await prisma.operationLog.create({ data: { action: "RELATIVE_CURRENT", detail: "should-disappear" } });
 
     const importResponse = await importArchive(token, await archiveBackup(sourceBackup.id, { gzip: true }));
@@ -466,8 +522,9 @@ describe("admin backup restore", () => {
       success: true,
       data: { backupId: importedBackupId }
     });
-    await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "IMPORTED_TARGET" } }))
-      .resolves.toMatchObject({ detail: "from-imported-archive" });
+    await expect(prisma.announcement.findFirstOrThrow({ where: { summary: importedTargetSummary } }))
+      .resolves.toMatchObject({ content: "from-imported-archive" });
+    await expect(prisma.announcement.findFirst({ where: { summary: importedCurrentSummary } })).resolves.toBeNull();
     await expect(prisma.operationLog.findFirst({ where: { action: "RELATIVE_CURRENT" } })).resolves.toBeNull();
   });
 

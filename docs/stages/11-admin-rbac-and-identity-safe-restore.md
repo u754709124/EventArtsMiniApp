@@ -2,21 +2,25 @@
 
 ## 目标
 
-本阶段将后台账户扩展为固定三级角色，增加按菜单叶子节点授权、账户管理、一次性激活/恢复链接和 `SUPER_ADMIN` 服务器重置命令；同时把全量备份恢复改为保留目标环境身份平面，防止导入其他环境的账户密码后无法登录。
+本阶段将后台账户扩展为固定三级角色，增加按菜单叶子节点授权、账户管理、一次性激活/恢复链接和 `SUPER_ADMIN` 服务器重置命令；同时把备份恢复改为保留目标环境身份平面，防止导入其他环境的账户密码后无法登录。2026-07-19 补充：新本地备份升级为 v3 非身份数据归档，并由内置定时任务每天午夜创建自动备份。
 
 ## 权限与恢复规则
 
 | 发起者 | 可管理目标 | 可生成恢复链接 | 忘记密码路径 |
 | --- | --- | --- | --- |
-| `SUPER_ADMIN` | `ADMIN`、`USER` | `ADMIN`、`USER` | 服务器 `admin:password:reset` |
+| `SUPER_ADMIN` | 其他 `SUPER_ADMIN`、`ADMIN`、`USER` | `ADMIN`、`USER` | 服务器 `admin:password:reset` |
 | `ADMIN` | `USER` | `USER` | 由 `SUPER_ADMIN` 生成链接 |
 | `USER` | 无 | 无 | 由 `ADMIN` 或 `SUPER_ADMIN` 生成链接 |
 
-同级、向上、自助签发和所有指向 `SUPER_ADMIN` 的 Web 链接均拒绝。新建 `ADMIN`/`USER` 为 `pending_activation`，通过一次性激活链接设置首个密码。服务端从实时数据库加载角色与叶子菜单权限；缺少路由策略时默认拒绝。
+`SUPER_ADMIN` 可管理其他 `SUPER_ADMIN`，但不能通过 Web 自助管理自身；涉及 `SUPER_ADMIN` 的角色/状态变更要求当前密码和显式确认，且系统始终保留至少一个启用的 `SUPER_ADMIN`。同级恢复链接、向上/向下越权、自助签发和所有指向 `SUPER_ADMIN` 的 Web 链接均拒绝。新建 `ADMIN`/`USER` 为 `pending_activation`，通过一次性激活链接设置首个密码，不能通过一次性链接新建 `SUPER_ADMIN`。服务端从实时数据库加载角色与叶子菜单权限；敏感菜单（备份、系统配置、定时任务）可由 `SUPER_ADMIN` 授予但不能由 `ADMIN` 继续下放；缺少路由策略时默认拒绝。
 
 ## 备份恢复语义
 
-新归档为 manifest v2，并标记 `identityRestorePolicy: preserve_target`。恢复业务数据和 uploads，但保留目标环境当前 `admin_users`、`admin_menu_permissions` 与管理员个人通知；候选和当前的 `admin_sessions`、`admin_password_reset_tokens` 均清空。历史操作者仅按稳定 `publicId` 映射，无法映射的可空引用置空；EdgeOne 等必须有创建者的候选记录在无法安全映射时被明确丢弃。
+新本地归档为 manifest v3，并标记 `identityRestorePolicy: preserve_target`、`dataScope: non_identity` 和 `backupKind`。v3 只恢复业务数据和 uploads，不包含 `admin_users`、`admin_menu_permissions`、后台 session/reset token、管理员个人通知、客户端会话、访问事件、操作日志、EdgeOne 预热运行态和定时任务状态；`media_assets.createdBy` 在快照中置空。旧 v1/v2 归档仍可兼容预检和恢复，但候选身份表永远不会成为线上身份。恢复时保留目标环境当前身份平面与个人通知，清空全部管理员 session/reset token，并创建 `restore_snapshot` 安全快照。历史操作者仅按稳定 `publicId` 映射，无法映射的可空引用置空；无法安全映射的敏感运行态被明确丢弃。
+
+## 自动备份语义
+
+真实 API 进程启动内置调度器，按 `Asia/Shanghai` 每天 `0 0 * * *` 执行 `automatic-backup`。自动备份创建 v3 非身份归档，只保留最新 3 个自动备份；手动备份、导入备份和恢复前安全快照不参与自动清理。后台“定时任务”只能展示固定目录并确认立即执行任务 key，浏览器不能提交 cron、命令、路径或环境变量。
 
 ## 自动化证据
 
