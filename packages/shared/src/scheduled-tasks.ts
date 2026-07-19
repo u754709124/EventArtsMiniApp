@@ -4,8 +4,7 @@ export const scheduledTaskKeyValues = [
   "admin-session-cleanup",
   "admin-notification-cleanup",
   "analytics-cleanup",
-  "edgeone-prefetch-reconcile",
-  "automatic-backup"
+  "edgeone-prefetch-reconcile"
 ] as const;
 
 export const scheduledTaskStatusValues = ["running", "success", "failed"] as const;

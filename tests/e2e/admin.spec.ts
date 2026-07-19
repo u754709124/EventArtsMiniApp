@@ -777,25 +777,6 @@ test("定时任务展示规划并确认后只立即执行一次", async ({ page 
       lastStatus: null,
       isRunning: false,
       resultSummary: null
-    },
-    {
-      taskKey: "automatic-backup",
-      name: "自动备份",
-      description: "每天午夜创建非身份数据备份并保留最新 3 个自动备份。",
-      cron: "0 0 * * *",
-      timezone: "Asia/Shanghai",
-      nextExecutionAt: "2026-07-18T16:00:00.000Z",
-      lastExecutionAt: "2026-07-17T16:00:00.000Z",
-      lastFinishedAt: "2026-07-17T16:00:03.000Z",
-      lastStatus: "success",
-      isRunning: false,
-      resultSummary: {
-        createdBackupId: "auto-20260718",
-        backupKind: "automatic",
-        dataScope: "non_identity",
-        keepCount: 3,
-        deletedCount: 1
-      }
     }
   ];
 
@@ -846,9 +827,7 @@ test("定时任务展示规划并确认后只立即执行一次", async ({ page 
   await expect(page.getByText("2026-07-18 09:02:00")).toBeVisible();
   await expect(page.getByText("从未执行").first()).toBeVisible();
   await expect(page.getByText("2026-07-18 03:10:00")).toBeVisible();
-  const automaticBackupRow = page.getByRole("row", { name: /自动备份/ });
-  await expect(automaticBackupRow).toContainText("每天午夜创建非身份数据备份并保留最新 3 个自动备份。");
-  await expect(automaticBackupRow).toContainText("0 0 * * *");
+  await expect(page.getByRole("row", { name: /自动备份/ })).toHaveCount(0);
 
   const runButton = page.getByTestId("scheduled-task-run-admin-session-cleanup");
   await runButton.click();

@@ -274,7 +274,7 @@ uploads 收集只包含普通文件，排除备份目录、`.tmp`、`.trash`、�
 
 恢复执行顺序为：确认请求体和路径 ID、进入维护模式并阻止业务写入、重新预检候选备份、自动创建 `backupKind: "restore_snapshot"` 恢复点、把候选 DB/uploads 物化到生产目录旁的 `.new` 路径、将目标环境当前 `admin_users`、`admin_menu_permissions`、管理员个人通知和身份运行态注入候选库、清空全部管理员 session/reset token、切换 SQLite 与 uploads、切换后再次校验。候选备份中的账户、密码 hash、角色、权限、通知、session、reset token、客户端会话、访问事件、操作日志和任务状态永远不会成为线上身份或运行态；业务数据与 uploads 正常恢复。历史操作者只按稳定 `publicId` 映射，无法映射的可空引用置空。切换失败会尽力将 `.old` 状态回滚到生产路径；成功响应包含 `restoreId`、原始 `backupId`、`snapshotBackupId`、`revokedSessionCount` 和 `revokedResetTokenCount`。
 
-创建、下载、删除、导入、自动备份和恢复成功/失败均写当前数据库的 `operation_logs`，并通过结构化安全日志记录 `backup_create_*`、`backup_download_*`、`backup_delete_*`、`backup_import_*`、`backup_restore_*` 事件；日志包含来源、操作者、结果和 requestId，但不记录归档内容、敏感请求体、Authorization、Cookie、JWT、本地路径或部署 secret。`operation_logs` 不进入 v3 备份快照。
+创建、下载、删除、导入和恢复成功/失败均写当前数据库的 `operation_logs`，并通过结构化安全日志记录 `backup_create_*`、`backup_download_*`、`backup_delete_*`、`backup_import_*`、`backup_restore_*` 事件；日志包含来源、操作者、结果和 requestId，但不记录归档内容、敏感请求体、Authorization、Cookie、JWT、本地路径或部署 secret。`operation_logs` 不进入 v3 备份快照。`backupKind: "automatic"` 仅用于兼容已有自动归档，当前服务不再自动创建此类备份。
 
 `system_config` 随 SQLite 快照一起备份，但其中只有 AES-256-GCM 密文；备份归档不包含 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`。恢复带有 EdgeOne 配置的数据库时必须向 API 提供创建密文时的同一主密钥，否则旧凭证不可解密。主密钥应通过数据库备份之外的 secret 管理系统独立恢复。
 
@@ -406,9 +406,8 @@ pnpm --filter api edgeone:prefetch:reconcile
 | `admin-notification-cleanup` | 管理员消息清理 | `10 3 * * *` | `pnpm --filter api admin:notifications:cleanup` |
 | `analytics-cleanup` | 访问统计清理 | `20 3 * * *` | `pnpm --filter api analytics:cleanup` |
 | `edgeone-prefetch-reconcile` | EdgeOne 预热对账 | `*/5 * * * *` | `pnpm --filter api edgeone:prefetch:reconcile` |
-| `automatic-backup` | 自动备份 | `0 0 * * *` | 无；由内置调度器或后台立即执行触发 |
 
-cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时启动内置调度器，在关闭时停止调度器。`nextExecutionAt` 是严格晚于服务器当前时间的计划值，`lastExecutionAt` 和 `lastFinishedAt` 来自统一 runner 的真实持久化记录，上线前历史不可追溯时为 `null`。自动调度、管理端立即执行与四条清理/对账 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。`automatic-backup` 每天午夜创建 v3 非身份备份并只保留最新 3 个自动备份，手动、导入和恢复前快照不参与自动清理。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。直接调用 `buildApp` 默认不启动后台计时器，测试只有显式启用时才运行调度器；一期单 API 进程部署不得再为相同目录配置重复的外部 cron。
+cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时启动内置调度器，在关闭时停止调度器。`nextExecutionAt` 是严格晚于服务器当前时间的计划值，`lastExecutionAt` 和 `lastFinishedAt` 来自统一 runner 的真实持久化记录，上线前历史不可追溯时为 `null`。自动调度、管理端立即执行与四条清理/对账 CLI 复用同一处理器并写入 `scheduled_task_states`；同 task key 使用可续租、可过期恢复的原子数据库租约，忙碌返回 `409/SCHEDULED_TASK_BUSY`，未知 key 返回 `404/SCHEDULED_TASK_NOT_FOUND`，任务失败返回脱敏的 `500/SCHEDULED_TASK_FAILED`。浏览器不能提交命令、cron、路径、参数、环境变量或 EdgeOne 目标/凭证。直接调用 `buildApp` 默认不启动后台计时器，测试只有显式启用时才运行调度器；一期单 API 进程部署不得再为相同目录配置重复的外部 cron。
 
 ## Media Field Rules
 

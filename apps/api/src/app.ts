@@ -1051,9 +1051,6 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       prisma,
       publicBaseUrl: options.publicBaseUrl,
       analytics: options.analytics ?? defaultPageViewAnalyticsConfig,
-      automaticBackup: {
-        run: runAutomaticBackupTask
-      },
       edgeOne: {
         credentialEncryptionKey: options.edgeOne?.credentialEncryptionKey ?? null,
         prefetch: options.edgeOne?.prefetch ?? defaultEdgeOnePrefetchConfig,
@@ -1150,16 +1147,6 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       backupDonePromise = null;
       resolve?.();
     }
-  }
-
-  async function runAutomaticBackupTask() {
-    const backup = await runBackupCreateExclusive(() =>
-      backupService.createBackup({
-        backupKind: "automatic"
-      })
-    );
-    const retention = await backupService.pruneAutomaticBackups();
-    return { backup, retention };
   }
 
   async function runRestoreExclusive<T>(handler: () => Promise<T>) {
