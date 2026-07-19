@@ -12,6 +12,7 @@
     "db:push": "prisma generate --schema prisma/schema.prisma && node --import tsx src/bootstrap-db.ts",
     "db:seed": "node --import tsx prisma/seed.ts",
     "admin:bootstrap": "node --import tsx src/admin-bootstrap.ts",
+    "admin:password:reset": "node --import tsx src/admin-password-reset-cli.ts",
     "admin:sessions:cleanup": "node --import tsx src/admin-sessions.ts",
     "admin:notifications:cleanup": "node --import tsx src/admin-notifications.ts",
     "analytics:cleanup": "node --import tsx src/analytics.ts",

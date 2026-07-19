@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ADMIN_SESSION_TTL_MS,
   ADMIN_SESSION_TTL_SECONDS,
+  adminResetTokenRevokeReasons,
   adminSessionRevokeReasons,
   cleanupExpiredAdminSessions
 } from "../src/admin-sessions";
@@ -163,6 +164,17 @@ describe("revocable admin sessions", () => {
     const firstToken = await login();
     const secondToken = await login();
     const nextPassword = `Next-${randomUUID()}-Aa1!`;
+    const admin = await prisma.adminUser.findFirstOrThrow({ where: { username: testAdminCredentials.username } });
+    const resetToken = await prisma.adminPasswordResetToken.create({
+      data: {
+        adminId: admin.id,
+        purpose: "recovery",
+        tokenHash: createHash("sha256").update(`reset-${randomUUID()}`).digest("hex"),
+        createdBy: admin.id,
+        targetRoleAtIssue: "SUPER_ADMIN",
+        expiresAt: new Date(clockNow.getTime() + 30 * 60 * 1000)
+      }
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -197,7 +209,12 @@ describe("revocable admin sessions", () => {
     const revokedSessions = await prisma.adminSession.findMany({
       where: { revokeReason: adminSessionRevokeReasons.passwordChanged }
     });
+    const revokedResetToken = await prisma.adminPasswordResetToken.findUniqueOrThrow({
+      where: { tokenHash: resetToken.tokenHash }
+    });
     expect(revokedSessions).toHaveLength(2);
+    expect(revokedResetToken.revokedAt).toBeInstanceOf(Date);
+    expect(revokedResetToken.revokeReason).toBe(adminResetTokenRevokeReasons.passwordChanged);
   });
 
   it("rejects wrong current passwords and weak new passwords without revoking the active session", async () => {

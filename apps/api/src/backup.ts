@@ -3,8 +3,9 @@ import { createReadStream } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, opendir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { createGunzip } from "node:zlib";
+import { createGzip, createGunzip } from "node:zlib";
 import {
+  adminGrantableMenuKeyValues,
   backupDtoSchema,
   backupIdSchema,
   backupManifestSchema,
@@ -14,21 +15,30 @@ import {
   type BackupPreflightSummary
 } from "@event-arts/shared";
 import { createPrismaClient, type AppPrismaClient } from "./db";
+import { ensureDatabaseSchema } from "./sqlite-schema";
 
-export const backupFormatVersion = 1;
+export const backupFormatVersion = 2;
 export const backupArchiveMaxBytes = 256 * 1024 * 1024;
 export const backupMaxExpandedBytes = 512 * 1024 * 1024;
 export const backupMaxFileCount = 10_000;
 export const backupMaxExpansionRatio = 200;
+export const backupIdentityRestorePolicy = "preserve_target" as const;
 const manualSchemaMigrationId = "manual-sqlite-schema";
+const adminRbacMigrationId = "20260719_admin_rbac_identity_v1";
+const knownPreRbacV1SchemaHashes = new Set([
+  "0f203a9f01cb09b7127e5f79593e5717d4ec3f8ea14612d56d983a044872f032"
+]);
 const manifestFilename = "manifest.json";
 const databaseSnapshotFilename = "database.sqlite";
 const snapshotMethod = "sqlite-vacuum-into" as const;
 const apiAppMetadata = { name: "api", version: "0.1.0" };
 const nonDeletableStatuses = new Set(["verifying", "restoring"]);
+const backupDownloadContentType = "application/gzip";
+const paxHeaderMaxBytes = 2048;
 
 type BackupAdmin = {
   id: number;
+  publicId?: string;
   username: string;
 };
 
@@ -97,6 +107,8 @@ type RestoreResult = {
   restoreId: string;
   backupId: string;
   snapshotBackupId: string;
+  revokedSessionCount: number;
+  revokedResetTokenCount: number;
   preflight: BackupPreflightSummary;
 };
 
@@ -104,6 +116,17 @@ type ExtractedArchive = {
   files: string[];
   totalFileBytes: number;
   expandedBytes: number;
+};
+
+type BackupArchiveFile = {
+  archivePath: string;
+  sourcePath: string;
+  size: number;
+};
+
+type BackupCompatibility = {
+  mode: "current_v2" | "known_prerbac_v1";
+  requiresRbacUpgrade: boolean;
 };
 
 function posixPath(value: string) {
@@ -166,9 +189,13 @@ function stableJson(value: unknown): string {
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(",")}}`;
 }
 
-function computeBackupDigest(database: BackupManifest["database"], uploads: BackupManifest["uploads"]) {
+function computeBackupDigest(
+  database: BackupManifest["database"],
+  uploads: BackupManifest["uploads"],
+  formatVersion = backupFormatVersion
+) {
   const hash = createHash("sha256");
-  hash.update(`format:${backupFormatVersion}\n`);
+  hash.update(`format:${formatVersion}\n`);
   hash.update(`database:${database.path}:${database.size}:${database.sha256}\n`);
   for (const file of uploads) {
     hash.update(`upload:${file.path}:${file.size}:${file.sha256}\n`);
@@ -326,7 +353,7 @@ async function verifyManifestFiles(stagingDir: string, manifest: BackupManifest,
   if (totalBytes !== manifest.totalBytes || entries.length !== manifest.totalFiles) {
     throw new BackupServiceError("BACKUP_INVALID", "备份总量校验失败", invalidStatusCode);
   }
-  const digest = computeBackupDigest(manifest.database, manifest.uploads);
+  const digest = computeBackupDigest(manifest.database, manifest.uploads, manifest.formatVersion);
   if (digest !== manifest.sha256) {
     throw new BackupServiceError("BACKUP_INVALID", "备份总 SHA-256 校验失败", invalidStatusCode);
   }
@@ -343,7 +370,7 @@ async function readManifest(backupPath: string, invalidStatusCode = 500) {
     raw &&
     typeof raw === "object" &&
     "formatVersion" in raw &&
-    (raw as { formatVersion?: unknown }).formatVersion !== backupFormatVersion
+    ![1, backupFormatVersion].includes(Number((raw as { formatVersion?: unknown }).formatVersion))
   ) {
     throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份格式版本不兼容", 409);
   }
@@ -358,6 +385,7 @@ function toBackupDto(id: string, manifest: BackupManifest): BackupDto {
   return backupDtoSchema.parse({
     id,
     formatVersion: manifest.formatVersion,
+    identityRestorePolicy: backupIdentityRestorePolicy,
     status: manifest.status,
     createdBy: manifest.createdBy,
     createdAt: manifest.createdAt,
@@ -381,9 +409,9 @@ function parseBackupId(value: string) {
   return parsed.data;
 }
 
-function ensureReadyManifest(manifest: BackupManifest, statusCode = 400) {
+function ensureReadyManifest(manifest: BackupManifest, statusCode = 400, message = "备份当前状态不可恢复") {
   if (manifest.status !== "ready") {
-    throw new BackupServiceError("BACKUP_CONFLICT", "备份当前状态不可恢复", statusCode);
+    throw new BackupServiceError("BACKUP_CONFLICT", message, statusCode);
   }
 }
 
@@ -392,24 +420,77 @@ function sameStringList(left: string[], right: string[]) {
   return left.every((value, index) => value === right[index]);
 }
 
-function assertSchemaMetadataCompatible(current: SchemaMetadata, manifest: SchemaMetadata, candidate: SchemaMetadata) {
-  const expectedMigrations = [...manifest.migrationIds].sort((left, right) => left.localeCompare(right, "en-US"));
-  const currentMigrations = [...current.migrationIds].sort((left, right) => left.localeCompare(right, "en-US"));
-  const candidateMigrations = [...candidate.migrationIds].sort((left, right) => left.localeCompare(right, "en-US"));
-  const candidateMatchesManifest =
-    candidate.provider === manifest.provider &&
-    candidate.userVersion === manifest.userVersion &&
-    candidate.schemaHash.toLowerCase() === manifest.schemaHash.toLowerCase() &&
-    sameStringList(candidateMigrations, expectedMigrations);
-  const currentMatchesManifest =
-    current.provider === manifest.provider &&
-    current.userVersion === manifest.userVersion &&
-    current.schemaHash.toLowerCase() === manifest.schemaHash.toLowerCase() &&
-    sameStringList(currentMigrations, expectedMigrations);
+function sortedMigrationIds(metadata: SchemaMetadata) {
+  return [...metadata.migrationIds].sort((left, right) => left.localeCompare(right, "en-US"));
+}
 
-  if (!candidateMatchesManifest || !currentMatchesManifest) {
+function schemaMetadataMatches(left: SchemaMetadata, right: SchemaMetadata) {
+  return (
+    left.provider === right.provider &&
+    left.userVersion === right.userVersion &&
+    left.schemaHash.toLowerCase() === right.schemaHash.toLowerCase() &&
+    sameStringList(sortedMigrationIds(left), sortedMigrationIds(right))
+  );
+}
+
+function isKnownPreRbacV1Manifest(manifest: BackupManifest) {
+  if (manifest.formatVersion !== 1) return false;
+  const migrations = sortedMigrationIds(manifest.schema);
+  return (
+    knownPreRbacV1SchemaHashes.has(manifest.schema.schemaHash.toLowerCase()) &&
+    sameStringList(migrations, [manualSchemaMigrationId])
+  );
+}
+
+function assertSchemaMetadataCompatible(
+  current: SchemaMetadata,
+  manifest: BackupManifest,
+  candidate: SchemaMetadata
+): BackupCompatibility {
+  const candidateMatchesManifest = schemaMetadataMatches(candidate, manifest.schema);
+  const currentMatchesManifest = schemaMetadataMatches(current, manifest.schema);
+
+  if (manifest.formatVersion === backupFormatVersion) {
+    if (
+      manifest.identityRestorePolicy === backupIdentityRestorePolicy &&
+      candidateMatchesManifest &&
+      currentMatchesManifest
+    ) {
+      return { mode: "current_v2", requiresRbacUpgrade: false };
+    }
     throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
   }
+
+  if (
+    isKnownPreRbacV1Manifest(manifest) &&
+    candidateMatchesManifest &&
+    current.migrationIds.includes(adminRbacMigrationId)
+  ) {
+    return { mode: "known_prerbac_v1", requiresRbacUpgrade: true };
+  }
+
+  throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
+}
+
+function assertPreparedRestoreSchemaCompatible(
+  current: SchemaMetadata,
+  candidate: SchemaMetadata,
+  compatibility: BackupCompatibility
+) {
+  if (compatibility.mode === "current_v2") {
+    if (schemaMetadataMatches(candidate, current)) return;
+    throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
+  }
+
+  if (
+    compatibility.mode === "known_prerbac_v1" &&
+    current.migrationIds.includes(adminRbacMigrationId) &&
+    candidate.migrationIds.includes(adminRbacMigrationId)
+  ) {
+    return;
+  }
+
+  throw new BackupServiceError("BACKUP_UNSUPPORTED_VERSION", "备份数据库 schema 与当前版本不兼容", 409);
 }
 
 function safeUploadStorageKey(filename: string) {
@@ -496,7 +577,7 @@ async function validateCandidateDatabase(databasePath: string, manifest: BackupM
   try {
     await sqliteIntegrityCheck(candidatePrisma);
     const candidateSchema = await collectSchemaMetadata(candidatePrisma);
-    assertSchemaMetadataCompatible(currentSchema, manifest.schema, candidateSchema);
+    assertSchemaMetadataCompatible(currentSchema, manifest, candidateSchema);
     await validateMediaManifestReferences(candidatePrisma, manifest);
     return candidatePrisma;
   } catch (error) {
@@ -506,31 +587,307 @@ async function validateCandidateDatabase(databasePath: string, manifest: BackupM
   }
 }
 
+async function determineBackupCompatibility(
+  prisma: AppPrismaClient,
+  manifest: BackupManifest,
+  currentSchema: SchemaMetadata
+) {
+  await sqliteIntegrityCheck(prisma);
+  const candidateSchema = await collectSchemaMetadata(prisma);
+  return assertSchemaMetadataCompatible(currentSchema, manifest, candidateSchema);
+}
+
+function sqlInStringList(values: readonly string[]) {
+  return values.map(safeSqliteStringLiteral).join(", ");
+}
+
+async function tableRowCount(prisma: AppPrismaClient, table: string) {
+  if (!(await sqliteTableExists(prisma, table))) return 0;
+  const rows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
+    `SELECT COUNT(*) AS count FROM ${table}`
+  );
+  return Number(rows[0]?.count ?? 0);
+}
+
+async function attachCurrentIdentityDatabase(prisma: AppPrismaClient, currentDatabasePath: string) {
+  await prisma.$executeRawUnsafe(
+    `ATTACH DATABASE ${safeSqliteStringLiteral(currentDatabasePath)} AS current_identity`
+  );
+}
+
+async function detachCurrentIdentityDatabase(prisma: AppPrismaClient) {
+  await prisma.$executeRawUnsafe("DETACH DATABASE current_identity").catch(() => undefined);
+}
+
+async function preserveTargetIdentityPlane(
+  prisma: AppPrismaClient,
+  currentDatabasePath: string
+) {
+  await attachCurrentIdentityDatabase(prisma, currentDatabasePath);
+  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF");
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      revokedSessionCount: number | bigint;
+      revokedResetTokenCount: number | bigint;
+    }>>(
+      `SELECT
+        (SELECT COUNT(*) FROM current_identity.admin_sessions WHERE revokedAt IS NULL) AS revokedSessionCount,
+        (SELECT COUNT(*) FROM current_identity.admin_password_reset_tokens WHERE usedAt IS NULL AND revokedAt IS NULL) AS revokedResetTokenCount`
+    );
+    const revokedSessionCount = Number(rows[0]?.revokedSessionCount ?? 0);
+    const revokedResetTokenCount = Number(rows[0]?.revokedResetTokenCount ?? 0);
+
+    await prisma.$executeRawUnsafe("BEGIN IMMEDIATE");
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE media_assets
+          SET createdBy = (
+            SELECT current_admin.id
+            FROM admin_users candidate_admin
+            JOIN current_identity.admin_users current_admin
+              ON current_admin.publicId = candidate_admin.publicId
+            WHERE candidate_admin.id = media_assets.createdBy
+          )
+          WHERE createdBy IS NOT NULL`
+      );
+      await prisma.$executeRawUnsafe(
+        `UPDATE operation_logs
+          SET createdBy = (
+            SELECT current_admin.id
+            FROM admin_users candidate_admin
+            JOIN current_identity.admin_users current_admin
+              ON current_admin.publicId = candidate_admin.publicId
+            WHERE candidate_admin.id = operation_logs.createdBy
+          )
+          WHERE createdBy IS NOT NULL`
+      );
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM edgeone_prefetch_attempts
+          WHERE prefetchResourceId IN (
+            SELECT resource.id
+            FROM edgeone_prefetch_resources resource
+            LEFT JOIN admin_users candidate_admin ON candidate_admin.id = resource.createdBy
+            LEFT JOIN current_identity.admin_users current_admin
+              ON current_admin.publicId = candidate_admin.publicId
+            WHERE current_admin.id IS NULL
+          )`
+      );
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM edgeone_prefetch_resources
+          WHERE id IN (
+            SELECT resource.id
+            FROM edgeone_prefetch_resources resource
+            LEFT JOIN admin_users candidate_admin ON candidate_admin.id = resource.createdBy
+            LEFT JOIN current_identity.admin_users current_admin
+              ON current_admin.publicId = candidate_admin.publicId
+            WHERE current_admin.id IS NULL
+          )`
+      );
+      await prisma.$executeRawUnsafe(
+        `UPDATE edgeone_prefetch_resources
+          SET createdBy = (
+            SELECT current_admin.id
+            FROM admin_users candidate_admin
+            JOIN current_identity.admin_users current_admin
+              ON current_admin.publicId = candidate_admin.publicId
+            WHERE candidate_admin.id = edgeone_prefetch_resources.createdBy
+          )`
+      );
+
+      await prisma.$executeRawUnsafe("DELETE FROM admin_password_reset_tokens");
+      await prisma.$executeRawUnsafe("DELETE FROM admin_sessions");
+      await prisma.$executeRawUnsafe("DELETE FROM admin_menu_permissions");
+      await prisma.$executeRawUnsafe("DELETE FROM admin_notifications");
+      await prisma.$executeRawUnsafe("DELETE FROM admin_users");
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO admin_users
+          (id, publicId, username, passwordHash, role, status, activatedAt, createdAt, updatedAt)
+          SELECT id, publicId, username, passwordHash, role, status, activatedAt, createdAt, updatedAt
+          FROM current_identity.admin_users
+          ORDER BY id`
+      );
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO admin_menu_permissions
+          (id, adminId, menuKey, grantedBy, createdAt)
+          SELECT id, adminId, menuKey, grantedBy, createdAt
+          FROM current_identity.admin_menu_permissions
+          ORDER BY id`
+      );
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO admin_notifications
+          (id, adminId, clientEventId, level, message, occurredAt, createdAt)
+          SELECT id, adminId, clientEventId, level, message, occurredAt, createdAt
+          FROM current_identity.admin_notifications
+          ORDER BY id`
+      );
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM sqlite_sequence
+          WHERE name IN (
+            'admin_users',
+            'admin_menu_permissions',
+            'admin_password_reset_tokens',
+            'admin_notifications'
+          )`
+      );
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO sqlite_sequence (name, seq)
+          SELECT name, seq
+          FROM current_identity.sqlite_sequence
+          WHERE name IN (
+            'admin_users',
+            'admin_menu_permissions',
+            'admin_password_reset_tokens',
+            'admin_notifications'
+          )`
+      );
+      await prisma.$executeRawUnsafe("COMMIT");
+    } catch (error) {
+      await prisma.$executeRawUnsafe("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+
+    return { revokedSessionCount, revokedResetTokenCount };
+  } finally {
+    await detachCurrentIdentityDatabase(prisma);
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON").catch(() => undefined);
+  }
+}
+
+async function validatePreparedIdentityPlane(prisma: AppPrismaClient) {
+  const [enabledSuperCount, sessionCount, resetTokenCount, invalidPermissionRows, invalidMediaActorRows, invalidLogActorRows] =
+    await Promise.all([
+      tableRowCount(prisma, "admin_users").then(async () => {
+        const rows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
+          "SELECT COUNT(*) AS count FROM admin_users WHERE role = 'SUPER_ADMIN' AND status = 'enabled'"
+        );
+        return Number(rows[0]?.count ?? 0);
+      }),
+      tableRowCount(prisma, "admin_sessions"),
+      tableRowCount(prisma, "admin_password_reset_tokens"),
+      prisma.$queryRawUnsafe<Array<{ id: number; menuKey: string }>>(
+        `SELECT id, menuKey
+          FROM admin_menu_permissions
+          WHERE menuKey NOT IN (${sqlInStringList(adminGrantableMenuKeyValues)})
+          LIMIT 1`
+      ),
+      prisma.$queryRawUnsafe<Array<{ id: number }>>(
+        `SELECT id
+          FROM media_assets
+          WHERE createdBy IS NOT NULL
+            AND createdBy NOT IN (SELECT id FROM admin_users)
+          LIMIT 1`
+      ),
+      prisma.$queryRawUnsafe<Array<{ id: number }>>(
+        `SELECT id
+          FROM operation_logs
+          WHERE createdBy IS NOT NULL
+            AND createdBy NOT IN (SELECT id FROM admin_users)
+          LIMIT 1`
+      )
+    ]);
+
+  if (enabledSuperCount < 1) {
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库缺少启用的超级管理员", 500);
+  }
+  if (sessionCount !== 0 || resetTokenCount !== 0) {
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库仍包含后台会话或重置令牌", 500);
+  }
+  if (invalidPermissionRows.length) {
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库包含无效菜单权限", 500);
+  }
+  if (invalidMediaActorRows.length || invalidLogActorRows.length) {
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库包含未映射的后台 actor", 500);
+  }
+}
+
+async function validatePreparedRestoreDatabase(
+  databasePath: string,
+  manifest: BackupManifest,
+  currentSchema: SchemaMetadata,
+  compatibility: BackupCompatibility
+) {
+  const candidatePrisma = createPrismaClient(`file:${databasePath}`);
+  try {
+    await sqliteIntegrityCheck(candidatePrisma);
+    const candidateSchema = await collectSchemaMetadata(candidatePrisma);
+    assertPreparedRestoreSchemaCompatible(currentSchema, candidateSchema, compatibility);
+    await validateMediaManifestReferences(candidatePrisma, manifest);
+    await validatePreparedIdentityPlane(candidatePrisma);
+  } catch (error) {
+    if (error instanceof BackupServiceError) throw error;
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库身份安全校验失败", 500, error);
+  } finally {
+    await candidatePrisma.$disconnect().catch(() => undefined);
+  }
+}
+
+async function prepareIdentitySafeRestoreCandidate(input: {
+  databasePath: string;
+  uploadDir: string;
+  manifest: BackupManifest;
+  currentDatabasePath: string;
+  currentSchema: SchemaMetadata;
+}) {
+  const candidatePrisma = createPrismaClient(`file:${input.databasePath}`);
+  let compatibility: BackupCompatibility;
+  try {
+    compatibility = await determineBackupCompatibility(candidatePrisma, input.manifest, input.currentSchema);
+    if (compatibility.requiresRbacUpgrade) {
+      await ensureDatabaseSchema(candidatePrisma, { uploadDir: input.uploadDir });
+    }
+    const invalidated = await preserveTargetIdentityPlane(candidatePrisma, input.currentDatabasePath);
+    await candidatePrisma.$disconnect();
+    await validatePreparedRestoreDatabase(
+      input.databasePath,
+      input.manifest,
+      input.currentSchema,
+      compatibility
+    );
+    return { compatibility, ...invalidated };
+  } catch (error) {
+    await candidatePrisma.$disconnect().catch(() => undefined);
+    if (error instanceof BackupServiceError) throw error;
+    throw new BackupServiceError("BACKUP_RESTORE_FAILED", "恢复候选库身份安全处理失败", 500, error);
+  }
+}
+
 export const backupImpactTables = [
-    "admin_users",
-    "admin_sessions",
-    "admin_notifications",
-    "edgeone_prefetch_resources",
-    "edgeone_prefetch_attempts",
-    "media_assets",
-    "media_asset_tags",
-    "site_config",
-    "system_config",
-    "announcements",
-    "banners",
-    "menu_items",
-    "artists",
-    "activity_cases",
-    "activity_case_media",
-    "articles",
-    "detail_page_configs",
-    "detail_page_banner_media",
-    "detail_page_content_media",
-    "daily_user_visits",
-    "page_view_events",
-    "operation_logs",
-    "scheduled_task_states"
-  ] as const;
+  "admin_users",
+  "admin_menu_permissions",
+  "admin_sessions",
+  "admin_password_reset_tokens",
+  "admin_notifications",
+  "edgeone_prefetch_resources",
+  "edgeone_prefetch_attempts",
+  "media_assets",
+  "media_asset_tags",
+  "site_config",
+  "system_config",
+  "announcements",
+  "banners",
+  "menu_items",
+  "artists",
+  "activity_cases",
+  "activity_case_media",
+  "articles",
+  "detail_page_configs",
+  "detail_page_banner_media",
+  "detail_page_content_media",
+  "daily_user_visits",
+  "page_view_events",
+  "operation_logs",
+  "scheduled_task_states"
+] as const;
+
+const preservedCurrentIdentityTables = new Set([
+  "admin_users",
+  "admin_menu_permissions",
+  "admin_notifications"
+]);
+const ignoredIdentityTables = new Set([
+  "admin_sessions",
+  "admin_password_reset_tokens"
+]);
 
 async function tableCounts(prisma: AppPrismaClient) {
   const tables = backupImpactTables;
@@ -558,6 +915,7 @@ function buildPreflightSummary(input: {
   ])].sort((left, right) => left.localeCompare(right, "en-US"));
   return backupPreflightSummarySchema.parse({
     formatVersion: input.manifest.formatVersion,
+    identityRestorePolicy: backupIdentityRestorePolicy,
     createdAt: input.manifest.createdAt,
     createdBy: input.manifest.createdBy,
     note: input.manifest.note,
@@ -587,11 +945,17 @@ function buildPreflightSummary(input: {
       tables: tables.map((table) => {
         const currentRows = input.currentCounts[table] ?? 0;
         const candidateRows = input.candidateCounts[table] ?? 0;
+        const restoreBehavior = preservedCurrentIdentityTables.has(table)
+          ? "preserved-current"
+          : ignoredIdentityTables.has(table)
+            ? "ignored"
+            : "restored";
         return {
           table,
           currentRows,
           candidateRows,
-          deltaRows: candidateRows - currentRows
+          deltaRows: restoreBehavior === "restored" ? candidateRows - currentRows : 0,
+          restoreBehavior
         };
       })
     }
@@ -658,6 +1022,199 @@ function isZeroTarBlock(block: Buffer) {
   return block.every((value) => value === 0);
 }
 
+function writeTarOctal(header: Buffer, value: number, start: number, length: number) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar header 无效", 400);
+  }
+  const text = value.toString(8);
+  if (text.length > length - 1) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar header 超出限制", 400);
+  }
+  header.write(`${text.padStart(length - 1, "0")}\0`, start, length, "ascii");
+}
+
+function writeTarText(header: Buffer, value: string, start: number, length: number) {
+  if (Buffer.byteLength(value) > length) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar 路径超出限制", 400);
+  }
+  header.write(value, start, length, "utf8");
+}
+
+function ustarPathParts(archivePath: string) {
+  if (Buffer.byteLength(archivePath) <= 100) return { name: archivePath, prefix: "" };
+  const slashIndexes: number[] = [];
+  for (let index = 0; index < archivePath.length; index += 1) {
+    if (archivePath[index] === "/") slashIndexes.push(index);
+  }
+  for (const slashIndex of slashIndexes.reverse()) {
+    const prefix = archivePath.slice(0, slashIndex);
+    const name = archivePath.slice(slashIndex + 1);
+    if (prefix && name && Buffer.byteLength(prefix) <= 155 && Buffer.byteLength(name) <= 100) {
+      return { name, prefix };
+    }
+  }
+  return null;
+}
+
+function tarHeader(input: {
+  archivePath: string;
+  size: number;
+  typeflag?: "0" | "x";
+}) {
+  const parts = ustarPathParts(input.archivePath);
+  if (!parts) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar 路径超出限制", 400);
+  }
+  const header = Buffer.alloc(512, 0);
+  writeTarText(header, parts.name, 0, 100);
+  writeTarOctal(header, 0o600, 100, 8);
+  writeTarOctal(header, 0, 108, 8);
+  writeTarOctal(header, 0, 116, 8);
+  writeTarOctal(header, input.size, 124, 12);
+  writeTarOctal(header, 0, 136, 12);
+  header.fill(0x20, 148, 156);
+  header.write(input.typeflag ?? "0", 156, 1, "ascii");
+  header.write("ustar", 257, 5, "ascii");
+  header.write("00", 263, 2, "ascii");
+  writeTarText(header, "eventarts", 265, 32);
+  writeTarText(header, "eventarts", 297, 32);
+  if (parts.prefix) writeTarText(header, parts.prefix, 345, 155);
+
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  const checksumText = checksum.toString(8).padStart(6, "0").slice(-6);
+  header.write(`${checksumText}\0 `, 148, 8, "ascii");
+  return header;
+}
+
+function tarPadding(size: number) {
+  const padding = (512 - (size % 512)) % 512;
+  return padding ? Buffer.alloc(padding, 0) : null;
+}
+
+function paxRecord(key: string, value: string) {
+  let length = Buffer.byteLength(` ${key}=${value}\n`) + 1;
+  while (true) {
+    const record = `${length} ${key}=${value}\n`;
+    const actualLength = Buffer.byteLength(record);
+    if (actualLength === length) return record;
+    length = actualLength;
+  }
+}
+
+function paxHeaderNameForPath(archivePath: string) {
+  return `PaxHeaders/${createHash("sha256").update(archivePath).digest("hex")}`;
+}
+
+function tarDataHeaderForPath(archivePath: string) {
+  return ustarPathParts(archivePath) ? archivePath : `PaxData/${createHash("sha256").update(archivePath).digest("hex")}`;
+}
+
+function tarPathMetadata(archivePath: string) {
+  const safePath = normalizeTarPath(archivePath, "0");
+  const paxPayload = ustarPathParts(safePath) ? null : Buffer.from(paxRecord("path", safePath), "utf8");
+  if (paxPayload && paxPayload.byteLength > paxHeaderMaxBytes) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar 路径超出限制", 400);
+  }
+  return {
+    archivePath: safePath,
+    paxPayload
+  };
+}
+
+async function* tarArchiveChunks(files: BackupArchiveFile[]) {
+  for (const file of files) {
+    const pathMetadata = tarPathMetadata(file.archivePath);
+    if (pathMetadata.paxPayload) {
+      yield tarHeader({
+        archivePath: paxHeaderNameForPath(pathMetadata.archivePath),
+        size: pathMetadata.paxPayload.byteLength,
+        typeflag: "x"
+      });
+      yield pathMetadata.paxPayload;
+      const paxPadding = tarPadding(pathMetadata.paxPayload.byteLength);
+      if (paxPadding) yield paxPadding;
+    }
+
+    yield tarHeader({
+      archivePath: tarDataHeaderForPath(pathMetadata.archivePath),
+      size: file.size,
+      typeflag: "0"
+    });
+    for await (const chunk of createReadStream(file.sourcePath)) {
+      yield chunk as Buffer;
+    }
+    const padding = tarPadding(file.size);
+    if (padding) yield padding;
+  }
+  yield Buffer.alloc(1024, 0);
+}
+
+function createBackupDownloadStream(files: BackupArchiveFile[]) {
+  const tarStream = Readable.from(tarArchiveChunks(files));
+  const gzipStream = createGzip();
+  tarStream.once("error", (error) => {
+    gzipStream.destroy(error);
+  });
+  return tarStream.pipe(gzipStream);
+}
+
+function parsePaxPath(payload: Buffer) {
+  let offset = 0;
+  let pathValue: string | null = null;
+  while (offset < payload.byteLength) {
+    const spaceIndex = payload.indexOf(0x20, offset);
+    if (spaceIndex <= offset) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+    }
+    const lengthText = payload.subarray(offset, spaceIndex).toString("ascii");
+    if (!/^[1-9]\d*$/.test(lengthText)) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+    }
+    const recordLength = Number(lengthText);
+    if (!Number.isSafeInteger(recordLength) || recordLength <= 0 || offset + recordLength > payload.byteLength) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+    }
+    const record = payload.subarray(spaceIndex + 1, offset + recordLength).toString("utf8");
+    if (!record.endsWith("\n")) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+    }
+    const body = record.slice(0, -1);
+    const equalsIndex = body.indexOf("=");
+    if (equalsIndex <= 0) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+    }
+    const key = body.slice(0, equalsIndex);
+    const value = body.slice(equalsIndex + 1);
+    if (key !== "path") {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档包含不支持的 PAX header", 400);
+    }
+    if (pathValue !== null) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档包含重复 PAX path", 400);
+    }
+    pathValue = value;
+    offset += recordLength;
+  }
+  if (!pathValue) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 缺少路径", 400);
+  }
+  return pathValue;
+}
+
+function assertSafeTarMetadataPath(rawPath: string) {
+  const cleaned = rawPath.replace(/\/+$/g, "");
+  if (
+    !cleaned ||
+    cleaned.includes("\0") ||
+    cleaned.includes("\\") ||
+    cleaned.startsWith("/") ||
+    cleaned.startsWith("./") ||
+    cleaned.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档包含不安全路径", 400);
+  }
+}
+
 function normalizeTarPath(rawPath: string, typeflag: string) {
   const cleaned = rawPath.replace(/\/+$/g, "");
   if (
@@ -692,6 +1249,7 @@ async function extractTarBuffer(tarBuffer: Buffer, stagingDir: string): Promise<
   let fileCount = 0;
   let totalFileBytes = 0;
   let sawEnd = false;
+  let pendingPaxPath: string | null = null;
 
   while (offset < tarBuffer.byteLength) {
     if (offset + 512 > tarBuffer.byteLength) {
@@ -700,6 +1258,9 @@ async function extractTarBuffer(tarBuffer: Buffer, stagingDir: string): Promise<
     const header = tarBuffer.subarray(offset, offset + 512);
     offset += 512;
     if (isZeroTarBlock(header)) {
+      if (pendingPaxPath) {
+        throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 未绑定文件", 400);
+      }
       sawEnd = true;
       break;
     }
@@ -712,11 +1273,33 @@ async function extractTarBuffer(tarBuffer: Buffer, stagingDir: string): Promise<
     const rawPath = prefix ? `${prefix}/${name}` : name;
     const typeflag = String.fromCharCode(header[156] || 0) || "0";
     const size = tarOctal(header, 124, 12);
+    const dataEnd = offset + size;
+    if (dataEnd > tarBuffer.byteLength) {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar 结构无效", 400);
+    }
 
-    if (["1", "2", "3", "4", "6", "7", "x", "g", "K", "L"].includes(typeflag)) {
+    if (typeflag === "x") {
+      assertSafeTarMetadataPath(rawPath);
+      if (pendingPaxPath) {
+        throw new BackupServiceError("BACKUP_INVALID", "备份归档包含未使用的 PAX header", 400);
+      }
+      if (size <= 0 || size > paxHeaderMaxBytes) {
+        throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX header 无效", 400);
+      }
+      pendingPaxPath = parsePaxPath(tarBuffer.subarray(offset, dataEnd));
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+
+    if (["1", "2", "3", "4", "6", "7", "g", "K", "L"].includes(typeflag)) {
       throw new BackupServiceError("BACKUP_INVALID", "备份归档包含不支持或不安全的 tar 条目", 400);
     }
-    const safePath = normalizeTarPath(rawPath, typeflag);
+    const hasPaxPath = pendingPaxPath !== null;
+    if (hasPaxPath && typeflag !== "0" && typeflag !== "\0") {
+      throw new BackupServiceError("BACKUP_INVALID", "备份归档 PAX path 只能用于文件", 400);
+    }
+    const safePath = normalizeTarPath(pendingPaxPath ?? rawPath, typeflag);
+    pendingPaxPath = null;
 
     if (typeflag === "5") {
       if (size !== 0) {
@@ -740,10 +1323,6 @@ async function extractTarBuffer(tarBuffer: Buffer, stagingDir: string): Promise<
       throw new BackupServiceError("BACKUP_INVALID", "备份归档展开后过大", 413);
     }
 
-    const dataEnd = offset + size;
-    if (dataEnd > tarBuffer.byteLength) {
-      throw new BackupServiceError("BACKUP_INVALID", "备份归档 tar 结构无效", 400);
-    }
     const targetPath = manifestFilePath(stagingDir, safePath, 400);
     const existingEntry = await lstat(targetPath).catch(() => null);
     if (existingEntry) {
@@ -808,6 +1387,37 @@ async function ensureSafeDirectory(pathname: string) {
   if (!entryStat || !entryStat.isDirectory() || entryStat.isSymbolicLink()) {
     throw new BackupServiceError("BACKUP_NOT_FOUND", "备份不存在", 404);
   }
+}
+
+async function archiveFileForPath(backupPath: string, archivePath: string): Promise<BackupArchiveFile> {
+  const safeArchivePath = normalizeTarPath(archivePath, "0");
+  const sourcePath = manifestFilePath(backupPath, safeArchivePath, 400);
+  const entryStat = await lstat(sourcePath).catch(() => null);
+  if (!entryStat || !entryStat.isFile() || entryStat.isSymbolicLink()) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份清单包含非普通文件", 400);
+  }
+  return {
+    archivePath: safeArchivePath,
+    sourcePath,
+    size: entryStat.size
+  };
+}
+
+async function downloadArchiveFiles(backupPath: string, manifest: BackupManifest): Promise<BackupArchiveFile[]> {
+  if (manifest.database.path !== databaseSnapshotFilename) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份数据库快照路径无效", 400);
+  }
+  if (manifest.totalFiles > backupMaxFileCount) {
+    throw new BackupServiceError("BACKUP_INVALID", "备份归档文件数量过多", 413);
+  }
+  const entries = [
+    await archiveFileForPath(backupPath, manifestFilename),
+    await archiveFileForPath(backupPath, manifest.database.path)
+  ];
+  for (const file of manifest.uploads) {
+    entries.push(await archiveFileForPath(backupPath, file.path));
+  }
+  return entries;
 }
 
 async function verifyRestoredUploadFiles(uploadRoot: string, manifest: BackupManifest) {
@@ -909,6 +1519,7 @@ async function switchProductionState(input: {
   prisma: AppPrismaClient;
   manifest: BackupManifest;
   currentSchema: SchemaMetadata;
+  compatibility: BackupCompatibility;
   restoreId: string;
   backupId: string;
   databasePath: string;
@@ -969,8 +1580,12 @@ async function switchProductionState(input: {
     state.uploadNewMoved = true;
     await input.hooks?.afterRestoreUploadSwitch?.({ restoreId: input.restoreId, backupId: input.backupId });
 
-    const activePrisma = await validateCandidateDatabase(input.databasePath, input.manifest, input.currentSchema);
-    await activePrisma.$disconnect();
+    await validatePreparedRestoreDatabase(
+      input.databasePath,
+      input.manifest,
+      input.currentSchema,
+      input.compatibility
+    );
     await verifyRestoredUploadFiles(input.uploadDir, input.manifest);
     await rm(oldDatabasePath, { force: true }).catch(() => undefined);
     await rm(oldUploadDir, { recursive: true, force: true }).catch(() => undefined);
@@ -993,6 +1608,7 @@ export function createBackupService(options: BackupServiceOptions) {
   const now = options.now ?? (() => new Date());
   let createInProgress = false;
   let restoreInProgress = false;
+  const activeBackupAccess = new Map<string, { downloads: number; deleting: boolean }>();
 
   if (isSameOrInside(uploadDir, backupDir)) {
     throw new BackupServiceError("BACKUP_INVALID", "备份目录不能位于 uploads 内部", 500);
@@ -1005,6 +1621,60 @@ export function createBackupService(options: BackupServiceOptions) {
       throw new BackupServiceError("BACKUP_INVALID", "备份 ID 无效", 400);
     }
     return { backupId: parsedId, backupPath };
+  }
+
+  function backupAccessForId(backupId: string) {
+    const existing = activeBackupAccess.get(backupId);
+    if (existing) return existing;
+    const access = { downloads: 0, deleting: false };
+    activeBackupAccess.set(backupId, access);
+    return access;
+  }
+
+  function cleanupBackupAccess(backupId: string) {
+    const access = activeBackupAccess.get(backupId);
+    if (access && access.downloads === 0 && !access.deleting) {
+      activeBackupAccess.delete(backupId);
+    }
+  }
+
+  function acquireDownloadLease(backupId: string) {
+    const access = backupAccessForId(backupId);
+    if (access.deleting) {
+      cleanupBackupAccess(backupId);
+      throw new BackupServiceError("BACKUP_CONFLICT", "备份正在删除，暂不可下载", 409);
+    }
+    access.downloads += 1;
+    let released = false;
+    return () => {
+      if (released) return false;
+      released = true;
+      const current = activeBackupAccess.get(backupId);
+      if (current) current.downloads = Math.max(0, current.downloads - 1);
+      cleanupBackupAccess(backupId);
+      return true;
+    };
+  }
+
+  function acquireDeleteLease(backupId: string) {
+    const access = backupAccessForId(backupId);
+    if (access.deleting) {
+      cleanupBackupAccess(backupId);
+      throw new BackupServiceError("BACKUP_CONFLICT", "备份正在删除，暂不可删除", 409);
+    }
+    if (access.downloads > 0) {
+      throw new BackupServiceError("BACKUP_CONFLICT", "备份正在下载，暂不可删除", 409);
+    }
+    access.deleting = true;
+    let released = false;
+    return () => {
+      if (released) return false;
+      released = true;
+      const current = activeBackupAccess.get(backupId);
+      if (current) current.deleting = false;
+      cleanupBackupAccess(backupId);
+      return true;
+    };
   }
 
   async function loadBackupRecord(backupId: string) {
@@ -1084,17 +1754,22 @@ export function createBackupService(options: BackupServiceOptions) {
         const totalBytes = database.size + uploadEntries.reduce((sum, file) => sum + file.size, 0);
         const manifest: BackupManifest = {
           formatVersion: backupFormatVersion,
+          identityRestorePolicy: backupIdentityRestorePolicy,
           status: "ready",
           app: apiAppMetadata,
           schema,
-          createdBy: { adminId: input.createdBy.id, username: input.createdBy.username },
+          createdBy: {
+            adminId: input.createdBy.id,
+            ...(input.createdBy.publicId ? { publicId: input.createdBy.publicId } : {}),
+            username: input.createdBy.username
+          },
           createdAt: toIso(createdAt),
           note: input.note ?? null,
           database,
           uploads: uploadEntries,
           totalBytes,
           totalFiles: 1 + uploadEntries.length,
-          sha256: computeBackupDigest(database, uploadEntries)
+          sha256: computeBackupDigest(database, uploadEntries, backupFormatVersion)
         };
 
         await verifyManifestFiles(stagingDir, manifest);
@@ -1120,20 +1795,50 @@ export function createBackupService(options: BackupServiceOptions) {
       return records.map((record) => toBackupDto(record.id, record.manifest));
     },
 
-    async deleteBackup(backupId: string): Promise<{ backupId: string }> {
-      const { backupPath } = backupPathForId(backupId);
-      await ensureSafeDirectory(backupPath);
-      const manifest = await readManifest(backupPath);
-      if (nonDeletableStatuses.has(manifest.status)) {
-        throw new BackupServiceError("BACKUP_CONFLICT", "备份当前状态不可删除", 409);
+    async createDownloadArchive(backupId: string) {
+      const { backupId: parsedBackupId, backupPath } = backupPathForId(backupId);
+      const release = acquireDownloadLease(parsedBackupId);
+      try {
+        await ensureSafeDirectory(backupPath);
+        const manifest = await readManifest(backupPath, 400);
+        ensureReadyManifest(manifest, 409, "备份当前状态不可下载");
+        await verifyManifestFiles(backupPath, manifest, 400);
+        const files = await downloadArchiveFiles(backupPath, manifest);
+        return {
+          backup: toBackupDto(parsedBackupId, manifest),
+          filename: `${parsedBackupId}.tar.gz`,
+          contentType: backupDownloadContentType,
+          declaredBytes: manifest.totalBytes,
+          manifestBytes: files[0]?.size ?? 0,
+          sha256: manifest.sha256,
+          stream: createBackupDownloadStream(files),
+          release
+        };
+      } catch (error) {
+        release();
+        throw error;
       }
+    },
 
-      const deletingRoot = path.join(backupDir, ".deleting");
-      await mkdir(deletingRoot, { recursive: true });
-      const deletingPath = path.join(deletingRoot, `${backupId}-${randomBytes(6).toString("hex")}`);
-      await rename(backupPath, deletingPath);
-      await rm(deletingPath, { recursive: true, force: true });
-      return { backupId };
+    async deleteBackup(backupId: string): Promise<{ backupId: string }> {
+      const { backupId: parsedBackupId, backupPath } = backupPathForId(backupId);
+      const releaseDelete = acquireDeleteLease(parsedBackupId);
+      try {
+        await ensureSafeDirectory(backupPath);
+        const manifest = await readManifest(backupPath);
+        if (nonDeletableStatuses.has(manifest.status)) {
+          throw new BackupServiceError("BACKUP_CONFLICT", "备份当前状态不可删除", 409);
+        }
+
+        const deletingRoot = path.join(backupDir, ".deleting");
+        await mkdir(deletingRoot, { recursive: true });
+        const deletingPath = path.join(deletingRoot, `${parsedBackupId}-${randomBytes(6).toString("hex")}`);
+        await rename(backupPath, deletingPath);
+        await rm(deletingPath, { recursive: true, force: true });
+        return { backupId: parsedBackupId };
+      } finally {
+        releaseDelete();
+      }
     },
 
     async importArchive(input: {
@@ -1186,6 +1891,7 @@ export function createBackupService(options: BackupServiceOptions) {
       restoreInProgress = true;
       const restoreId = makeRestoreId(now());
       let materialized: { newDatabasePath: string; newUploadDir: string } | null = null;
+      let invalidated = { revokedSessionCount: 0, revokedResetTokenCount: 0 };
       try {
         const record = await loadBackupRecord(input.backupId);
         const preflight = await preflightBackupDirectory(record.backupId, record.backupPath, "existing_backup");
@@ -1202,10 +1908,22 @@ export function createBackupService(options: BackupServiceOptions) {
           uploadDir
         });
         const currentSchema = await collectSchemaMetadata(options.prisma);
+        const prepared = await prepareIdentitySafeRestoreCandidate({
+          databasePath: materialized.newDatabasePath,
+          uploadDir: materialized.newUploadDir,
+          manifest: preflight.manifest,
+          currentDatabasePath: activePath,
+          currentSchema
+        });
+        invalidated = {
+          revokedSessionCount: prepared.revokedSessionCount,
+          revokedResetTokenCount: prepared.revokedResetTokenCount
+        };
         await switchProductionState({
           prisma: options.prisma,
           manifest: preflight.manifest,
           currentSchema,
+          compatibility: prepared.compatibility,
           restoreId,
           backupId: record.backupId,
           databasePath: activePath,
@@ -1219,6 +1937,8 @@ export function createBackupService(options: BackupServiceOptions) {
           restoreId,
           backupId: record.backupId,
           snapshotBackupId: safetySnapshot.id,
+          revokedSessionCount: invalidated.revokedSessionCount,
+          revokedResetTokenCount: invalidated.revokedResetTokenCount,
           preflight: preflight.summary
         };
       } catch (error) {

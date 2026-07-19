@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DetailPageReferenceIdSchema, DetailPageTypeSchema, DetailPageConfigDto } from "./detail-pages";
 
+export * from "./admin-rbac";
 export * from "./detail-pages";
 export * from "./detail-page-presentation";
 export * from "./admin-notifications";
@@ -986,6 +987,7 @@ export const backupManifestFileSchema = z.object({
 
 export const backupManifestCreatorSchema = z.object({
   adminId: z.number().int().positive(),
+  publicId: z.string().uuid().optional(),
   username: z.string().min(1).max(64)
 }).strict();
 
@@ -1012,8 +1014,10 @@ export const backupManifestUploadFileSchema = backupManifestFileSchema.extend({
   modifiedAt: apiIsoDateTimeStringSchema
 }).strict();
 
-export const backupManifestSchema = z.object({
-  formatVersion: z.literal(1),
+export const backupIdentityRestorePolicySchema = z.literal("preserve_target");
+export type BackupIdentityRestorePolicy = z.infer<typeof backupIdentityRestorePolicySchema>;
+
+const backupManifestBaseSchema = z.object({
   status: BackupStatusSchema,
   app: backupManifestAppSchema,
   schema: backupManifestSchemaMetadataSchema,
@@ -1027,9 +1031,22 @@ export const backupManifestSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/i)
 }).strict();
 
+export const backupManifestV1Schema = backupManifestBaseSchema.extend({
+  formatVersion: z.literal(1)
+}).strict();
+
+export const backupManifestV2Schema = backupManifestBaseSchema.extend({
+  formatVersion: z.literal(2),
+  identityRestorePolicy: backupIdentityRestorePolicySchema
+}).strict();
+
+export const backupManifestSchema = z.union([backupManifestV2Schema, backupManifestV1Schema]);
+const backupFormatVersionSchema = z.union([z.literal(1), z.literal(2)]);
+
 export const backupDtoSchema = z.object({
   id: backupIdSchema,
-  formatVersion: z.literal(1),
+  formatVersion: backupFormatVersionSchema,
+  identityRestorePolicy: backupIdentityRestorePolicySchema.optional(),
   status: BackupStatusSchema,
   createdBy: backupManifestCreatorSchema,
   createdAt: apiIsoDateTimeStringSchema,
@@ -1056,11 +1073,13 @@ export const backupPreflightTableImpactSchema = z.object({
   table: z.string().min(1).max(80),
   currentRows: z.number().int().min(0),
   candidateRows: z.number().int().min(0),
-  deltaRows: z.number().int()
+  deltaRows: z.number().int(),
+  restoreBehavior: z.enum(["restored", "ignored", "preserved-current"]).default("restored")
 }).strict();
 
 export const backupPreflightSummarySchema = z.object({
-  formatVersion: z.literal(1),
+  formatVersion: backupFormatVersionSchema,
+  identityRestorePolicy: backupIdentityRestorePolicySchema.optional(),
   createdAt: apiIsoDateTimeStringSchema,
   createdBy: backupManifestCreatorSchema,
   note: z.string().max(200).nullable(),
@@ -1095,7 +1114,8 @@ export const backupRestoreAcceptedResponseSchema = z.object({
   restoreId: z.string().min(1).max(128),
   backupId: backupIdSchema,
   snapshotBackupId: backupIdSchema,
-  revokedSessionCount: z.number().int().min(0)
+  revokedSessionCount: z.number().int().min(0),
+  revokedResetTokenCount: z.number().int().min(0).optional()
 }).strict();
 
 export type BackupCreateRequest = z.infer<typeof backupCreateRequestSchema>;

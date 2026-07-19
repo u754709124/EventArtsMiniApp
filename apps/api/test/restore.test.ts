@@ -104,9 +104,13 @@ function sha256Buffer(buffer: Buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-function backupDigest(database: BackupManifest["database"], uploads: BackupManifest["uploads"]) {
+function backupDigest(
+  database: BackupManifest["database"],
+  uploads: BackupManifest["uploads"],
+  formatVersion = 2
+) {
   const hash = createHash("sha256");
-  hash.update("format:1\n");
+  hash.update(`format:${formatVersion}\n`);
   hash.update(`database:${database.path}:${database.size}:${database.sha256}\n`);
   for (const file of uploads) hash.update(`upload:${file.path}:${file.size}:${file.sha256}\n`);
   return hash.digest("hex");
@@ -388,12 +392,12 @@ describe("admin backup restore", () => {
     await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "TARGET_STATE" } }))
       .resolves.toMatchObject({ detail: "will-be-restored" });
     await expect(prisma.operationLog.findFirst({ where: { action: "CURRENT_STATE" } })).resolves.toBeNull();
-    await expect(prisma.adminNotification.findFirstOrThrow({
-      where: { clientEventId: targetNotificationId }
-    })).resolves.toMatchObject({ level: "info", message: "目标备份通知" });
     await expect(prisma.adminNotification.findFirst({
-      where: { clientEventId: currentNotificationId }
+      where: { clientEventId: targetNotificationId }
     })).resolves.toBeNull();
+    await expect(prisma.adminNotification.findFirstOrThrow({
+      where: { clientEventId: currentNotificationId }
+    })).resolves.toMatchObject({ level: "warning", message: "恢复前当前通知" });
     await expect(prisma.operationLog.findFirstOrThrow({ where: { action: "RESTORE_BACKUP" } }))
       .resolves.toMatchObject({ createdBy: expect.any(Number) });
     const safetyManifest = await readManifest(restore.snapshotBackupId);

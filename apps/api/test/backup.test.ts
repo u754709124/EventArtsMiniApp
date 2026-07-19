@@ -7,7 +7,7 @@ import { backupManifestSchema, type BackupManifest } from "@event-arts/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
-import type { BackupServiceHooks } from "../src/backup";
+import { createBackupService, type BackupServiceHooks } from "../src/backup";
 import { createApiLoggerOptions } from "../src/logging";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
@@ -109,6 +109,21 @@ async function publishedBackupIds() {
   return visible.sort();
 }
 
+function multipartBody(fieldName: string, filename: string, content: Buffer) {
+  const boundary = `----eventarts-download-${randomUUID()}`;
+  const header = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\n` +
+    "Content-Type: application/gzip\r\n\r\n",
+    "utf8"
+  );
+  const footer = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+  return {
+    payload: Buffer.concat([header, content, footer]),
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` }
+  };
+}
+
 beforeEach(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "event-arts-g08-"));
   uploadDir = path.join(root, "uploads");
@@ -135,6 +150,7 @@ describe("admin backup API", () => {
 
     const list = await app!.inject({ method: "GET", url: "/api/admin/backups" });
     const create = await app!.inject({ method: "POST", url: "/api/admin/backups", payload: {} });
+    const download = await app!.inject({ method: "GET", url: "/api/admin/backups/missing/download" });
     const remove = await app!.inject({
       method: "DELETE",
       url: "/api/admin/backups/missing",
@@ -143,7 +159,130 @@ describe("admin backup API", () => {
 
     expect(list.statusCode).toBe(401);
     expect(create.statusCode).toBe(401);
+    expect(download.statusCode).toBe(401);
     expect(remove.statusCode).toBe(401);
+  });
+
+  it("downloads a private verified archive that the existing import preflight accepts", async () => {
+    const longDirectory = "a".repeat(90);
+    const longFilename = `${longDirectory}/${"b".repeat(40)}.txt`;
+    const longContent = "long pax path";
+    await mkdir(path.join(uploadDir, longDirectory), { recursive: true });
+    await writeFile(path.join(uploadDir, longFilename), longContent);
+    await prisma.mediaAsset.create({
+      data: {
+        resourceName: "PAX 长路径素材",
+        resourceNameKey: "pax-long-path",
+        originalName: "long.txt",
+        filename: longFilename,
+        md5: "1".repeat(32),
+        mimeType: "text/plain",
+        mediaType: "file",
+        url: `/uploads/${longFilename}`,
+        size: Buffer.byteLength(longContent)
+      }
+    });
+    await startApp();
+    const token = await login();
+    const backup = await createBackup(token, "download-roundtrip");
+
+    const response = await app!.inject({
+      method: "GET",
+      url: `/api/admin/backups/${backup.id}/download`,
+      headers: auth(token)
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/gzip");
+    expect(response.headers["content-disposition"]).toBe(`attachment; filename="${backup.id}.tar.gz"`);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+    expect(response.body).not.toContain(backupDir);
+    expect(response.body).not.toContain(databasePath);
+
+    const multipart = multipartBody("file", `${backup.id}.tar.gz`, response.rawPayload);
+    const imported = await app!.inject({
+      method: "POST",
+      url: "/api/admin/backups/import",
+      headers: { ...auth(token), ...multipart.headers },
+      payload: multipart.payload
+    });
+    expect(imported.statusCode, imported.body).toBe(200);
+    expect(imported.json().data).toMatchObject({
+      backup: { id: expect.stringMatching(/^import-/), status: "ready" },
+      preflight: {
+        source: "external_archive",
+        checks: {
+          manifest: "ok",
+          checksums: "ok",
+          sqliteIntegrity: "ok",
+          schemaCompatible: true,
+          mediaFiles: "ok"
+        }
+      }
+    });
+    expect(securityEvents()).toEqual(expect.arrayContaining([
+      "backup_download_requested",
+      "backup_download_completed"
+    ]));
+    await expect(prisma.operationLog.findFirstOrThrow({
+      where: { action: "DOWNLOAD_BACKUP" }
+    })).resolves.toMatchObject({ createdBy: expect.any(Number) });
+  });
+
+  it("rejects missing, non-ready, and damaged backup downloads without exposing an attachment", async () => {
+    await startApp();
+    const token = await login();
+    const missing = await app!.inject({
+      method: "GET",
+      url: "/api/admin/backups/backup-missing/download",
+      headers: auth(token)
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({ success: false, error: { code: "BACKUP_NOT_FOUND" } });
+    expect(missing.headers["content-disposition"]).toBeUndefined();
+
+    const backup = await createBackup(token);
+    const manifestPath = path.join(backupDir, backup.id, "manifest.json");
+    const readyManifest = await readManifest(backup.id);
+    await writeFile(manifestPath, `${JSON.stringify({ ...readyManifest, status: "restoring" }, null, 2)}\n`);
+    const nonReady = await app!.inject({
+      method: "GET",
+      url: `/api/admin/backups/${backup.id}/download`,
+      headers: auth(token)
+    });
+    expect(nonReady.statusCode).toBe(409);
+    expect(nonReady.json()).toMatchObject({ success: false, error: { code: "BACKUP_CONFLICT" } });
+    expect(nonReady.headers["content-disposition"]).toBeUndefined();
+
+    await writeFile(manifestPath, `${JSON.stringify(readyManifest, null, 2)}\n`);
+    await writeFile(path.join(backupDir, backup.id, readyManifest.database.path), "damaged");
+    const damaged = await app!.inject({
+      method: "GET",
+      url: `/api/admin/backups/${backup.id}/download`,
+      headers: auth(token)
+    });
+    expect(damaged.statusCode).toBe(400);
+    expect(damaged.json()).toMatchObject({ success: false, error: { code: "BACKUP_INVALID" } });
+    expect(damaged.headers["content-disposition"]).toBeUndefined();
+  });
+
+  it("blocks deletion while a backup download lease is active", async () => {
+    await startApp();
+    const token = await login();
+    const backup = await createBackup(token);
+    const service = createBackupService({ prisma, uploadDir, backupDir, databaseUrl });
+    const download = await service.createDownloadArchive(backup.id);
+    try {
+      await expect(service.deleteBackup(backup.id)).rejects.toMatchObject({
+        code: "BACKUP_CONFLICT",
+        statusCode: 409
+      });
+    } finally {
+      download.stream.destroy();
+      download.release();
+    }
   });
 
   it("creates a versioned manifest with a VACUUM INTO database snapshot and safe upload file checksums", async () => {
@@ -194,10 +333,11 @@ describe("admin backup API", () => {
     const manifest = await readManifest(backup.id);
 
     expect(manifest).toMatchObject({
-      formatVersion: 1,
+      formatVersion: 2,
+      identityRestorePolicy: "preserve_target",
       status: "ready",
       app: { name: "api", version: "0.1.0" },
-      createdBy: { username: testAdminCredentials.username },
+      createdBy: { username: testAdminCredentials.username, publicId: backupAdmin.publicId },
       note: "手动备份",
       database: { path: "database.sqlite", snapshotMethod: "sqlite-vacuum-into" }
     });

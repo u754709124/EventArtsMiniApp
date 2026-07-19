@@ -2,18 +2,67 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type AdminIdentity,
   ApiError,
   clearToken,
+  consumeAdminPasswordResetLink,
   createBackup,
+  createAdminUser,
   deleteBackup,
+  downloadBackupArchive,
   getAdminIdentity,
   getToken,
   importBackupArchive,
+  issueAdminPasswordResetLink,
+  listAdminUsers,
   request,
+  revokeAdminPasswordResetLinks,
   restoreBackup,
   setSessionExpiredHandler,
-  setToken
+  setToken,
+  updateAdminUser,
+  updateAdminUserPermissions
 } from "./api";
+
+function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
+  return {
+    id: 7,
+    publicId: "11111111-1111-4111-8111-111111111111",
+    username: "unit-admin",
+    role: "SUPER_ADMIN",
+    status: "enabled",
+    permissions: [
+      "dashboard",
+      "site-config",
+      "announcements",
+      "banners",
+      "menu-items",
+      "artists",
+      "cases",
+      "articles",
+      "detail-pages",
+      "media-assets",
+      "user-management",
+      "backups",
+      "change-password",
+      "scheduled-tasks",
+      "system-config"
+    ],
+    delegablePermissions: [
+      "dashboard",
+      "site-config",
+      "announcements",
+      "banners",
+      "menu-items",
+      "artists",
+      "cases",
+      "articles",
+      "detail-pages",
+      "media-assets"
+    ],
+    ...overrides
+  };
+}
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async () => response);
@@ -64,7 +113,8 @@ describe("admin API client", () => {
 
   it("clears expired protected sessions without treating login failures as expiry", async () => {
     const handler = vi.fn();
-    setToken("expired-token", { id: 7, username: "old-admin" });
+    const oldIdentity = identity({ username: "old-admin" });
+    setToken("expired-token", oldIdentity);
     setSessionExpiredHandler(handler);
     stubFetch(new Response(JSON.stringify({
       success: false,
@@ -72,7 +122,7 @@ describe("admin API client", () => {
     }), { status: 401 }));
 
     handler.mockImplementation(() => {
-      expect(getAdminIdentity()).toEqual({ id: 7, username: "old-admin" });
+      expect(getAdminIdentity()).toEqual(oldIdentity);
     });
     await expect(request("/api/admin/dashboard/overview")).rejects.toMatchObject({
       code: "UNAUTHORIZED",
@@ -93,8 +143,9 @@ describe("admin API client", () => {
   });
 
   it("clears a stale stored identity when a token is set without one", () => {
-    setToken("first-token", { id: 1, username: "first" });
-    expect(getAdminIdentity()).toEqual({ id: 1, username: "first" });
+    const firstIdentity = identity({ id: 1, username: "first" });
+    setToken("first-token", firstIdentity);
+    expect(getAdminIdentity()).toEqual(firstIdentity);
     setToken("legacy-token");
     expect(getAdminIdentity()).toBeNull();
   });
@@ -187,5 +238,132 @@ describe("admin API client", () => {
     expect(importInit.method).toBe("POST");
     expect(importInit.body).toBeInstanceOf(FormData);
     expect((importInit.headers as Headers).get("content-type")).toBeNull();
+  });
+
+  it("downloads backup attachments with bearer auth and a safe filename", async () => {
+    setToken("download-token");
+    const archive = new Blob(["archive"], { type: "application/gzip" });
+    const fetchMock = stubFetch(new Response(archive, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": "attachment; filename=\"backup-20260712.tar.gz\""
+      }
+    }));
+
+    const result = await downloadBackupArchive("backup-20260712");
+    expect(result.filename).toBe("backup-20260712.tar.gz");
+    expect(result.blob.size).toBeGreaterThan(0);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/admin/backups/backup-20260712/download");
+    expect((init.headers as Headers).get("authorization")).toBe("Bearer download-token");
+    expect(url).not.toContain("download-token");
+
+    fetchMock.mockResolvedValueOnce(new Response(archive, {
+      status: 200,
+      headers: { "Content-Disposition": "attachment; filename=\"../../token.txt\"" }
+    }));
+    await expect(downloadBackupArchive("backup-safe")).resolves.toMatchObject({
+      filename: "backup-safe.tar.gz"
+    });
+  });
+
+  it("uses the existing session-expiry path for failed binary downloads", async () => {
+    const handler = vi.fn();
+    setToken("expired-download-token", identity({ id: 9, username: "expired" }));
+    setSessionExpiredHandler(handler);
+    stubFetch(new Response(JSON.stringify({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "登录已失效" }
+    }), { status: 401 }));
+
+    await expect(downloadBackupArchive("backup-20260712")).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      status: 401
+    });
+    expect(getToken()).toBeNull();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls admin user management endpoints without persisting reset links", async () => {
+    const resetLink = "http://127.0.0.1:3001/admin/reset-password#token=" + "R".repeat(43);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { resetLink, revokedResetTokenCount: 1 },
+      message: "ok"
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    setToken("admin-user-token", identity());
+
+    await listAdminUsers();
+    expect((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[0]).toBe("/api/admin/users");
+
+    await createAdminUser({
+      username: "new-user",
+      role: "USER",
+      permissions: ["media-assets"],
+      currentPassword: "Current-Password-1!",
+      confirmation: true
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body))).toMatchObject({
+      username: "new-user",
+      role: "USER",
+      permissions: ["media-assets"],
+      confirmation: true
+    });
+
+    await updateAdminUser("22222222-2222-4222-8222-222222222222", {
+      status: "disabled",
+      confirmation: true
+    });
+    expect((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[0])
+      .toBe("/api/admin/users/22222222-2222-4222-8222-222222222222");
+
+    await updateAdminUserPermissions("22222222-2222-4222-8222-222222222222", {
+      permissions: ["media-assets"],
+      confirmation: true
+    });
+    expect((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[0])
+      .toBe("/api/admin/users/22222222-2222-4222-8222-222222222222/permissions");
+
+    await issueAdminPasswordResetLink("22222222-2222-4222-8222-222222222222", {
+      purpose: "recovery",
+      currentPassword: "Current-Password-1!",
+      confirmation: true
+    });
+    expect(JSON.stringify(localStorage)).not.toContain(resetLink);
+    expect(JSON.stringify(sessionStorage)).not.toContain(resetLink);
+
+    await revokeAdminPasswordResetLinks("22222222-2222-4222-8222-222222222222", {
+      currentPassword: "Current-Password-1!",
+      confirmation: true
+    });
+    expect((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[0])
+      .toBe("/api/admin/users/22222222-2222-4222-8222-222222222222/reset-links/revoke");
+  });
+
+  it("consumes public reset tokens without attaching bearer auth", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { purpose: "recovery", revokedSessionCount: 1, revokedResetTokenCount: 1 },
+      message: "ok"
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    setToken("stale-admin-token", identity());
+
+    await consumeAdminPasswordResetLink({
+      token: "T".repeat(43),
+      newPassword: "Next-Password-1!",
+      confirmPassword: "Next-Password-1!"
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/admin/auth/reset-password");
+    expect((init.headers as Headers).get("authorization")).toBeNull();
+    expect(JSON.parse(String(init.body))).toEqual({
+      token: "T".repeat(43),
+      newPassword: "Next-Password-1!",
+      confirmPassword: "Next-Password-1!"
+    });
   });
 });

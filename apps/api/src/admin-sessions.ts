@@ -13,10 +13,25 @@ export const ADMIN_SESSION_JWT_EXPIRES_IN = "2h";
 export const adminSessionRevokeReasons = {
   logout: "logout",
   passwordChanged: "password_changed",
+  roleChanged: "role_changed",
+  statusChanged: "status_changed",
+  permissionsChanged: "permissions_changed",
+  restoreCompleted: "restore_completed"
+} as const;
+
+export const adminResetTokenRevokeReasons = {
+  passwordChanged: "password_changed",
+  roleChanged: "role_changed",
+  statusChanged: "status_changed",
+  permissionsChanged: "permissions_changed",
+  newTokenIssued: "new_token_issued",
+  consumed: "consumed",
   restoreCompleted: "restore_completed"
 } as const;
 
 export type AdminSessionRevokeReason = (typeof adminSessionRevokeReasons)[keyof typeof adminSessionRevokeReasons];
+export type AdminResetTokenRevokeReason =
+  (typeof adminResetTokenRevokeReasons)[keyof typeof adminResetTokenRevokeReasons];
 export type SessionClock = () => Date;
 type AdminSessionClient = AppPrismaClient | Prisma.TransactionClient;
 
@@ -66,6 +81,48 @@ export async function revokeAdminSessionsForAdmin(
       revokeReason: input.reason
     }
   });
+}
+
+export async function revokeAdminResetTokensForAdmin(
+  prisma: AdminSessionClient,
+  input: { adminId: number; reason: AdminResetTokenRevokeReason; now: Date }
+) {
+  return prisma.adminPasswordResetToken.updateMany({
+    where: {
+      adminId: input.adminId,
+      usedAt: null,
+      revokedAt: null
+    },
+    data: {
+      revokedAt: input.now,
+      revokeReason: input.reason
+    }
+  });
+}
+
+export async function revokeAdminSecurityCredentialsForAdmin(
+  prisma: AdminSessionClient,
+  input: {
+    adminId: number;
+    sessionReason: AdminSessionRevokeReason;
+    resetTokenReason: AdminResetTokenRevokeReason;
+    now: Date;
+  }
+) {
+  const revokedSessions = await revokeAdminSessionsForAdmin(prisma, {
+    adminId: input.adminId,
+    reason: input.sessionReason,
+    now: input.now
+  });
+  const revokedResetTokens = await revokeAdminResetTokensForAdmin(prisma, {
+    adminId: input.adminId,
+    reason: input.resetTokenReason,
+    now: input.now
+  });
+  return {
+    revokedSessionCount: revokedSessions.count,
+    revokedResetTokenCount: revokedResetTokens.count
+  };
 }
 
 export async function revokeAllAdminSessions(

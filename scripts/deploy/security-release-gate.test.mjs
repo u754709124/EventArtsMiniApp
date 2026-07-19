@@ -52,4 +52,38 @@ upstream eventarts_api { server 198.51.100.10:3001; }
       await rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("fails when production reset flows leak a complete link or secret to browser storage", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eventarts-reset-leak-gate-"));
+    try {
+      await mkdir(join(tempDir, "apps/admin/src/pages"), { recursive: true });
+      await mkdir(join(tempDir, "deploy/nginx"), { recursive: true });
+      await writeFile(join(tempDir, ".env"), "API_HOST=127.0.0.1\nADMIN_HOST=127.0.0.1\n");
+      await writeFile(join(tempDir, "deploy/nginx/eventarts-miniapp.conf.template"), `
+upstream eventarts_admin { server 127.0.0.1:4173; }
+upstream eventarts_api { server 127.0.0.1:3001; }
+`);
+      await writeFile(
+        join(tempDir, "apps/admin/src/pages/ResetPasswordPage.tsx"),
+        [
+          "sessionStorage.setItem('passwordReset', rawToken);",
+          "console.log(resetLink);",
+          "const leaked = 'https://cms.example/admin/reset-password#token=abcdefghijklmnopqrstuvwxyz123456';"
+        ].join("\n")
+      );
+
+      const result = runSecurityReleaseGate({
+        repositoryRoot: tempDir,
+        processEnv: {}
+      });
+      const codes = result.issues.map((issue) => issue.code);
+      expect(codes).toEqual(expect.arrayContaining([
+        "RESET_SECRET_CONSOLE_LEAK",
+        "RESET_SECRET_STORAGE_LEAK",
+        "RESET_URL_LITERAL_LEAK"
+      ]));
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });

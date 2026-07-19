@@ -4,6 +4,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { adminPasswordResetPolicy } from "@event-arts/shared";
 
 export type RuntimeEnvironment = "development" | "test" | "production";
 
@@ -47,6 +48,11 @@ export type ApiConfig = {
     login: {
       windowMs: number;
       maxFailures: number;
+    };
+    adminPasswordReset: {
+      windowMs: number;
+      maxRequests: number;
+      tokenTtlMinutes: number;
     };
     analytics: {
       windowMs: number;
@@ -158,6 +164,12 @@ const rawEnvSchema = z.object({
   CORS_ALLOW_REQUESTS_WITHOUT_ORIGIN: booleanFromEnv.default(true),
   LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(900_000),
   LOGIN_RATE_LIMIT_MAX_FAILURES: z.coerce.number().int().min(1).max(1_000).default(5),
+  ADMIN_PASSWORD_RESET_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(600_000),
+  ADMIN_PASSWORD_RESET_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).max(100).default(5),
+  ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int()
+    .min(adminPasswordResetPolicy.minTtlMinutes)
+    .max(adminPasswordResetPolicy.maxTtlMinutes)
+    .default(adminPasswordResetPolicy.defaultTtlMinutes),
   ANALYTICS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   ANALYTICS_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).max(100_000).default(60),
   PAGE_VIEW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
@@ -477,6 +489,11 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
       login: {
         windowMs: raw.LOGIN_RATE_LIMIT_WINDOW_MS,
         maxFailures: raw.LOGIN_RATE_LIMIT_MAX_FAILURES
+      },
+      adminPasswordReset: {
+        windowMs: raw.ADMIN_PASSWORD_RESET_RATE_LIMIT_WINDOW_MS,
+        maxRequests: raw.ADMIN_PASSWORD_RESET_RATE_LIMIT_MAX_REQUESTS,
+        tokenTtlMinutes: raw.ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES
       },
       analytics: {
         windowMs: raw.ANALYTICS_RATE_LIMIT_WINDOW_MS,

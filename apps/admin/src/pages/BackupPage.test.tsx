@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   clearToken: vi.fn(),
   createBackup: vi.fn(),
   deleteBackup: vi.fn(),
+  downloadBackupArchive: vi.fn(),
   importBackupArchive: vi.fn(),
   listBackups: vi.fn(),
   restoreBackup: vi.fn()
@@ -30,7 +31,8 @@ function deferred<T>() {
 function backup(id = "backup-20260712"): BackupDto {
   return {
     id,
-    formatVersion: 1,
+    formatVersion: 2,
+    identityRestorePolicy: "preserve_target",
     status: "ready",
     createdBy: { adminId: 1, username: "admin" },
     createdAt: "2026-07-12T08:30:00.000Z",
@@ -72,7 +74,11 @@ function importResult(): BackupImportPreflightResponse {
         mediaFiles: "ok"
       },
       impact: {
-        tables: [{ table: "media_assets", currentRows: 1, candidateRows: 2, deltaRows: 1 }]
+        tables: [
+          { table: "media_assets", currentRows: 1, candidateRows: 2, deltaRows: 1, restoreBehavior: "restored" },
+          { table: "admin_users", currentRows: 1, candidateRows: 3, deltaRows: 2, restoreBehavior: "preserved-current" },
+          { table: "admin_sessions", currentRows: 2, candidateRows: 1, deltaRows: -1, restoreBehavior: "ignored" }
+        ]
       }
     }
   };
@@ -111,14 +117,26 @@ beforeAll(() => {
       getPropertyValue: () => ""
     })
   });
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn(() => "blob:backup-download")
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn()
+  });
 });
 
 beforeEach(() => {
   Object.values(apiMocks).forEach((mock) => mock.mockReset());
+  vi.mocked(URL.createObjectURL).mockClear();
+  vi.mocked(URL.revokeObjectURL).mockClear();
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("BackupPage", () => {
@@ -176,6 +194,37 @@ describe("BackupPage", () => {
     await waitFor(() => expect(apiMocks.deleteBackup).toHaveBeenCalledWith("backup-20260712"));
   });
 
+  it("downloads each ready row once and disables non-ready rows", async () => {
+    const pending = deferred<{ blob: Blob; filename: string }>();
+    apiMocks.listBackups.mockResolvedValue({
+      backups: [
+        backup("backup-ready"),
+        { ...backup("backup-restoring"), status: "restoring" }
+      ]
+    });
+    apiMocks.downloadBackupArchive.mockReturnValue(pending.promise);
+
+    renderPage();
+    const readyButton = await screen.findByTestId("backup-download-backup-ready");
+    const nonReadyButton = screen.getByTestId("backup-download-backup-restoring");
+    expect((nonReadyButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(readyButton);
+    fireEvent.click(readyButton);
+    await waitFor(() => expect(apiMocks.downloadBackupArchive).toHaveBeenCalledTimes(1));
+    expect(apiMocks.downloadBackupArchive).toHaveBeenCalledWith("backup-ready");
+    expect((readyButton as HTMLButtonElement).disabled).toBe(true);
+
+    pending.resolve({
+      blob: new Blob(["archive"], { type: "application/gzip" }),
+      filename: "backup-ready.tar.gz"
+    });
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:backup-download");
+    await waitFor(() => expect((readyButton as HTMLButtonElement).disabled).toBe(false));
+  });
+
   it("imports an external archive and displays only a safe preflight summary", async () => {
     apiMocks.listBackups.mockResolvedValue({ backups: [] });
     apiMocks.importBackupArchive.mockResolvedValue(importResult());
@@ -191,6 +240,8 @@ describe("BackupPage", () => {
     expect(preflight.textContent).toContain("import-20260712");
     expect(preflight.textContent).toContain("清单：通过");
     expect(preflight.textContent).toContain("media_assets");
+    expect(preflight.textContent).toContain("保留当前系统");
+    expect(preflight.textContent).toContain("忽略并清空");
     expect(preflight.textContent).not.toContain("manifest.json");
     expect(preflight.textContent).not.toContain("database.sqlite");
   });
@@ -201,7 +252,8 @@ describe("BackupPage", () => {
       restoreId: "restore-20260712",
       backupId: "backup-20260712",
       snapshotBackupId: "backup-safety",
-      revokedSessionCount: 2
+      revokedSessionCount: 2,
+      revokedResetTokenCount: 1
     });
 
     renderPage();
@@ -209,7 +261,8 @@ describe("BackupPage", () => {
 
     fireEvent.click(screen.getByTestId("backup-restore-backup-20260712"));
     const restoreDialog = await screen.findByTestId("backup-restore-modal");
-    expect(restoreDialog.textContent).toContain("当前登录和其他管理员会话都会失效");
+    expect(restoreDialog.textContent).toContain("保留当前后台账户、角色、菜单权限和个人通知");
+    expect(restoreDialog.textContent).toContain("未使用重置链接都会失效");
     expect((within(restoreDialog).getByTestId("backup-restore-confirmation") as HTMLInputElement).value).toBe("");
 
     fireEvent.change(within(restoreDialog).getByTestId("backup-restore-confirmation"), {

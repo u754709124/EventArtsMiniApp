@@ -45,6 +45,12 @@ describe("admin route matching", () => {
       breadcrumbs: ["账号安全", "修改密码"],
       title: "修改密码"
     });
+    expect(matchAdminRoute("/users")).toMatchObject({
+      selectedKeys: ["user-management"],
+      openKeys: ["account"],
+      breadcrumbs: ["账号安全", "用户管理"],
+      title: "用户管理"
+    });
     expect(matchAdminRoute("/backups")).toMatchObject({
       selectedKeys: ["backups"],
       openKeys: ["account"],

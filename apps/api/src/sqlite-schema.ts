@@ -1,9 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  adminAccountStatusValues,
+  adminPasswordResetPurposeValues,
+  adminRoleValues,
   menuConfigSchemaByType,
   normalizeLegacyArtistCategory,
   normalizeResourceName,
@@ -16,6 +19,16 @@ import { runDetailPageMigration } from "./detail-pages/detail-page-migration";
 
 const execFileAsync = promisify(execFile);
 
+const ADMIN_RBAC_MIGRATION_ID = "20260719_admin_rbac_identity_v1";
+
+function sqlStringLiteral(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function sqlInList(values: readonly string[]) {
+  return values.map(sqlStringLiteral).join(", ");
+}
+
 const statements = [
   `CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
@@ -23,12 +36,16 @@ const statements = [
   )`,
   `CREATE TABLE IF NOT EXISTS admin_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    publicId TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL UNIQUE,
     passwordHash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'enabled',
+    role TEXT NOT NULL DEFAULT 'SUPER_ADMIN' CHECK(role IN (${sqlInList(adminRoleValues)})),
+    status TEXT NOT NULL DEFAULT 'enabled' CHECK(status IN (${sqlInList(adminAccountStatusValues)})),
+    activatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS admin_users_publicId_key ON admin_users(publicId)`,
   `CREATE TABLE IF NOT EXISTS admin_sessions (
     jti TEXT PRIMARY KEY,
     adminId INTEGER NOT NULL,
@@ -41,6 +58,49 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS admin_sessions_adminId_idx ON admin_sessions(adminId)`,
   `CREATE INDEX IF NOT EXISTS admin_sessions_expiresAt_idx ON admin_sessions(expiresAt)`,
   `CREATE INDEX IF NOT EXISTS admin_sessions_revokedAt_idx ON admin_sessions(revokedAt)`,
+  `CREATE TABLE IF NOT EXISTS admin_menu_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adminId INTEGER NOT NULL,
+    menuKey TEXT NOT NULL CHECK(length(menuKey) BETWEEN 1 AND 96),
+    grantedBy INTEGER,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(adminId) REFERENCES admin_users(id) ON DELETE CASCADE,
+    FOREIGN KEY(grantedBy) REFERENCES admin_users(id) ON DELETE SET NULL,
+    UNIQUE(adminId, menuKey)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS admin_menu_permissions_adminId_menuKey_key
+    ON admin_menu_permissions(adminId, menuKey)`,
+  `CREATE INDEX IF NOT EXISTS admin_menu_permissions_menuKey_idx
+    ON admin_menu_permissions(menuKey)`,
+  `CREATE INDEX IF NOT EXISTS admin_menu_permissions_grantedBy_idx
+    ON admin_menu_permissions(grantedBy)`,
+  `CREATE TABLE IF NOT EXISTS admin_password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adminId INTEGER NOT NULL,
+    purpose TEXT NOT NULL CHECK(purpose IN (${sqlInList(adminPasswordResetPurposeValues)})),
+    tokenHash TEXT NOT NULL UNIQUE CHECK(length(tokenHash) BETWEEN 43 AND 128),
+    createdBy INTEGER,
+    targetRoleAtIssue TEXT NOT NULL CHECK(targetRoleAtIssue IN (${sqlInList(adminRoleValues)})),
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiresAt DATETIME NOT NULL,
+    usedAt DATETIME,
+    revokedAt DATETIME,
+    revokeReason TEXT,
+    FOREIGN KEY(adminId) REFERENCES admin_users(id) ON DELETE CASCADE,
+    FOREIGN KEY(createdBy) REFERENCES admin_users(id) ON DELETE SET NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS admin_password_reset_tokens_tokenHash_key
+    ON admin_password_reset_tokens(tokenHash)`,
+  `CREATE INDEX IF NOT EXISTS admin_password_reset_tokens_adminId_purpose_idx
+    ON admin_password_reset_tokens(adminId, purpose)`,
+  `CREATE INDEX IF NOT EXISTS admin_password_reset_tokens_createdBy_idx
+    ON admin_password_reset_tokens(createdBy)`,
+  `CREATE INDEX IF NOT EXISTS admin_password_reset_tokens_expiresAt_idx
+    ON admin_password_reset_tokens(expiresAt)`,
+  `CREATE INDEX IF NOT EXISTS admin_password_reset_tokens_usedAt_idx
+    ON admin_password_reset_tokens(usedAt)`,
+  `CREATE INDEX IF NOT EXISTS admin_password_reset_tokens_revokedAt_idx
+    ON admin_password_reset_tokens(revokedAt)`,
   `CREATE TABLE IF NOT EXISTS admin_notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     adminId INTEGER NOT NULL,
@@ -415,9 +475,76 @@ async function tableExists(prisma: AppPrismaClient, table: string) {
   return rows.length > 0;
 }
 
+type SqliteTableColumn = {
+  name: string;
+  notnull: number;
+  dflt_value: string | null;
+};
+
+async function tableColumns(prisma: AppPrismaClient, table: string) {
+  return prisma.$queryRawUnsafe<SqliteTableColumn[]>(`PRAGMA table_info(${table})`);
+}
+
+async function ensureAdminIdentitySchema(prisma: AppPrismaClient) {
+  if (!(await tableExists(prisma, "admin_users"))) return;
+
+  await prisma.$transaction(async (tx) => {
+    const columns = await tx.$queryRawUnsafe<SqliteTableColumn[]>("PRAGMA table_info(admin_users)");
+    const names = new Set(columns.map((column) => column.name));
+    const wasLegacyRoleSchema = !names.has("role");
+
+    if (!names.has("publicId")) {
+      await tx.$executeRawUnsafe("ALTER TABLE admin_users ADD COLUMN publicId TEXT");
+    }
+    if (!names.has("role")) {
+      await tx.$executeRawUnsafe("ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'SUPER_ADMIN'");
+    }
+    if (!names.has("activatedAt")) {
+      await tx.$executeRawUnsafe("ALTER TABLE admin_users ADD COLUMN activatedAt DATETIME");
+    }
+
+    const missingPublicIds = await tx.$queryRawUnsafe<Array<{ id: number }>>(
+      "SELECT id FROM admin_users WHERE publicId IS NULL OR TRIM(publicId) = '' ORDER BY id"
+    );
+    for (const row of missingPublicIds) {
+      await tx.$executeRawUnsafe("UPDATE admin_users SET publicId = ? WHERE id = ?", randomUUID(), row.id);
+    }
+
+    if (wasLegacyRoleSchema) {
+      await tx.$executeRawUnsafe(
+        "UPDATE admin_users SET role = 'SUPER_ADMIN', status = 'enabled', activatedAt = COALESCE(activatedAt, CURRENT_TIMESTAMP)"
+      );
+    } else {
+      await tx.$executeRawUnsafe(
+        "UPDATE admin_users SET activatedAt = COALESCE(activatedAt, CURRENT_TIMESTAMP) WHERE status = 'enabled'"
+      );
+    }
+
+    const invalidRoles = await tx.$queryRawUnsafe<Array<{ id: number; role: string }>>(
+      `SELECT id, role FROM admin_users WHERE role NOT IN (${sqlInList(adminRoleValues)})`
+    );
+    if (invalidRoles.length) {
+      throw new Error(`后台账户角色非法，账户 ID: ${invalidRoles.map((row) => row.id).join(", ")}`);
+    }
+
+    const invalidStatuses = await tx.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+      `SELECT id, status FROM admin_users WHERE status NOT IN (${sqlInList(adminAccountStatusValues)})`
+    );
+    if (invalidStatuses.length) {
+      throw new Error(`后台账户状态非法，账户 ID: ${invalidStatuses.map((row) => row.id).join(", ")}`);
+    }
+
+    await tx.$executeRawUnsafe("CREATE UNIQUE INDEX IF NOT EXISTS admin_users_publicId_key ON admin_users(publicId)");
+    await tx.$executeRawUnsafe(
+      "INSERT OR IGNORE INTO schema_migrations (id, appliedAt) VALUES (?, CURRENT_TIMESTAMP)",
+      ADMIN_RBAC_MIGRATION_ID
+    );
+  });
+}
+
 async function ensureArtistColumns(prisma: AppPrismaClient) {
   if (!(await tableExists(prisma, "artists"))) return;
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(artists)");
+  const columns = await tableColumns(prisma, "artists");
   const names = new Set(columns.map((column) => column.name));
   if (!names.has("location")) {
     await prisma.$executeRawUnsafe("ALTER TABLE artists ADD COLUMN location TEXT NOT NULL DEFAULT ''");
@@ -429,7 +556,7 @@ async function ensureArtistColumns(prisma: AppPrismaClient) {
 
 async function ensureMenuItemColumns(prisma: AppPrismaClient) {
   if (!(await tableExists(prisma, "menu_items"))) return;
-  const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(menu_items)");
+  const columns = await tableColumns(prisma, "menu_items");
   const names = new Set(columns.map((column) => column.name));
   if (!names.has("showOnHome")) {
     await prisma.$executeRawUnsafe("ALTER TABLE menu_items ADD COLUMN showOnHome BOOLEAN NOT NULL DEFAULT true");
@@ -687,6 +814,9 @@ export async function ensureDatabaseSchema(prisma: AppPrismaClient, options: Sch
   for (const statement of statements) {
     if (isDeferredDetailPageIndex(statement)) continue;
     await prisma.$executeRawUnsafe(statement);
+    if (/CREATE TABLE IF NOT EXISTS admin_users/.test(statement)) {
+      await ensureAdminIdentitySchema(prisma);
+    }
   }
   await ensureArtistColumns(prisma);
   await ensureMenuItemColumns(prisma);

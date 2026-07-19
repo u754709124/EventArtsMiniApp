@@ -55,11 +55,11 @@ export function matchAdminRoute(pathname: string): AdminRouteMatch {
   };
 }
 
-export function defaultOpenKeys() {
-  return adminMenuConfig.filter(isMenuGroup).map((item) => item.key);
+export function defaultOpenKeys(items = adminMenuConfig) {
+  return items.filter(isMenuGroup).map((item) => item.key);
 }
 
-export function validOpenKeys(keys: string[]) {
-  const groups = new Set(adminMenuConfig.filter(isMenuGroup).map((item) => item.key));
+export function validOpenKeys(keys: string[], items = adminMenuConfig) {
+  const groups = new Set(items.filter(isMenuGroup).map((item) => item.key));
   return keys.filter((key) => groups.has(key));
 }

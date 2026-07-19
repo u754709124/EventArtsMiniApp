@@ -8,6 +8,7 @@ import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { createApiLoggerOptions, logSecurityEvent, redactedValue } from "../src/logging";
 import { createInMemoryRateLimitStore } from "../src/rate-limit";
+import { hashPassword } from "../src/security";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
   clientAuthHeaders,
@@ -53,6 +54,10 @@ function auth(token: string) {
   return { authorization: `Bearer ${token}` };
 }
 
+function linkToken(link: string) {
+  return decodeURIComponent(new URL(link).hash.replace(/^#token=/, ""));
+}
+
 async function login(password: string = testAdminCredentials.password) {
   const response = await app.inject({
     method: "POST",
@@ -82,10 +87,70 @@ beforeEach(async () => {
     weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier(),
     rateLimit: {
       login: { windowMs: 10_000, maxFailures: 1 },
+      adminPasswordReset: { windowMs: 10_000, maxRequests: 5 },
       analytics: { windowMs: 10_000, maxRequests: 1 }
     },
     rateLimitStore: createInMemoryRateLimitStore(),
     analytics: { sampleRate: 1, retentionDays: 90, dedupeWindowSeconds: 30 }
+  });
+});
+
+describe("password reset audit redaction", () => {
+  it("does not log reset tokens, links, passwords, or token hashes", async () => {
+    const adminToken = await login();
+    const targetPassword = `Target-${randomUUID()}-Aa1!`;
+    const target = await prisma.adminUser.create({
+      data: {
+        username: `reset-log-target-${randomUUID()}`,
+        passwordHash: hashPassword(targetPassword),
+        role: "USER",
+        status: "enabled",
+        activatedAt: clockNow
+      }
+    });
+
+    const issue = await app.inject({
+      method: "POST",
+      url: `/api/admin/users/${target.publicId}/reset-links`,
+      headers: auth(adminToken),
+      payload: {
+        purpose: "recovery",
+        currentPassword: testAdminCredentials.password,
+        confirmation: true
+      }
+    });
+    expect(issue.statusCode).toBe(200);
+    const resetLink = String(issue.json().data.resetLink);
+    const rawToken = linkToken(resetLink);
+    const storedToken = await prisma.adminPasswordResetToken.findFirstOrThrow({
+      where: { adminId: target.id },
+      orderBy: { id: "desc" }
+    });
+    const nextPassword = `ResetLog-${randomUUID()}-Aa1!`;
+    const consume = await app.inject({
+      method: "POST",
+      url: "/api/admin/auth/reset-password",
+      payload: {
+        token: rawToken,
+        newPassword: nextPassword,
+        confirmPassword: nextPassword
+      }
+    });
+    expect(consume.statusCode).toBe(200);
+
+    const text = logText();
+    expect(text).toContain("admin_password_reset_link_created");
+    expect(text).toContain("admin_password_reset_link_consumed");
+    for (const secret of [
+      resetLink,
+      rawToken,
+      storedToken.tokenHash,
+      testAdminCredentials.password,
+      targetPassword,
+      nextPassword
+    ]) {
+      expect(text).not.toContain(secret);
+    }
   });
 });
 

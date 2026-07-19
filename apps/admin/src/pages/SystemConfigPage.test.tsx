@@ -97,6 +97,9 @@ describe("SystemConfigPage", () => {
 
     fireEvent.change(secretId, { target: { value: "AKIDROTATED" } });
     fireEvent.change(secretKey, { target: { value: "rotated-secret-key" } });
+    await waitFor(() => {
+      expect(guardMocks.useDirtyFormGuard).toHaveBeenCalledWith("edgeone-system-config", true);
+    });
     fireEvent.click(screen.getByTestId("edgeone-config-save"));
 
     await waitFor(() => expect(apiMocks.request).toHaveBeenCalledTimes(2));

@@ -50,6 +50,17 @@ TARO_APP_API_BASE_URL=<replace-with-real-wechat-api-https-origin>
 - Nginx 模板默认 upstream 为 `127.0.0.1:4173` 和 `127.0.0.1:3001`，公网只允许开放 Nginx 的 HTTPS 入口。真实防火墙、安全组和端口不可达性必须在目标服务器人工验证，仓库测试只能证明模板与配置层契约。
 - 生产上线前必须配置强 `JWT_SECRET`，并通过 `admin:bootstrap` 显式创建首个管理员。
 
+## 后台账户恢复运维
+
+`admin:bootstrap`、服务器密码重置和 Web 恢复链接是三条互斥路径：
+
+- 空库首次部署：`pnpm --filter api admin:bootstrap -- --username <name> --password-stdin` 创建首个 `SUPER_ADMIN`。
+- 现有 `SUPER_ADMIN` 忘记密码：在服务器执行 `pnpm --filter api admin:password:reset -- --username <name> --password-stdin`。密码只能从 stdin 读取；命令拒绝 `ADMIN`/`USER`，不创建、不启用账户。
+- `ADMIN` 忘记密码：由 `SUPER_ADMIN` 在后台生成一次性恢复链接。
+- `USER` 忘记密码：由 `ADMIN` 或 `SUPER_ADMIN` 生成一次性恢复链接。
+
+链接只能通过受控渠道交付给目标用户，不得写入工单正文、聊天机器人日志、访问日志或监控标签。生成新链接会立即撤销目标现有 session 和旧链接；一次消费、过期、角色/状态/权限变化后均不可再用。
+
 ## 小程序客户端 API 访问边界
 
 生产 `/api/client/**` 的身份边界是微信小程序 `wx.login` 临时 code 经服务端 `code2Session` 校验后签发的短期客户端会话。唯一匿名例外是 `POST /api/client/auth/wechat`；除此之外，客户端 API 都必须携带 `Authorization: Bearer <client-session-token>`。CORS、`Origin`、`Referer`、`User-Agent`、自定义 Header 和 IP 白名单不能替代该会话。
@@ -69,7 +80,7 @@ TARO_APP_API_BASE_URL=<replace-with-real-wechat-api-https-origin>
 - API 默认输出 Fastify/Pino JSON 结构化日志，并在每个响应返回 `X-Request-Id`。
 - 未知 5xx 与可恢复媒体/文件错误只向客户端返回稳定错误码、通用消息和 `requestId`；SQL、堆栈、本地文件路径、token、password、secret 等内部信息不得出现在响应体。
 - 日志集中脱敏 `Authorization`、Cookie、JWT、token、password、secret、敏感配置和请求体敏感字段。媒体恢复类错误会把运维定位信息写入日志，供按 `requestId` 排查。
-- 当前安全事件日志覆盖登录失败、登录限流、匿名统计限流、logout/session 撤销、密码修改、备份创建、备份删除、外部导入和恢复。导入/恢复日志只记录来源、操作者、结果、requestId、备份 ID 和归档大小等摘要，不记录归档内容、敏感请求体或本地路径。
+- 当前安全事件日志覆盖登录失败、登录限流、匿名统计限流、logout/session 撤销、密码修改、备份创建、备份下载、备份删除、外部导入和恢复。下载/导入/恢复日志只记录来源、操作者、结果、requestId、备份 ID、摘要大小和 SHA-256 等摘要，不记录归档内容、敏感请求体、Authorization 或本地路径。
 
 ## 统计采样与保留清理
 
@@ -193,6 +204,7 @@ API 提供受保护的后台备份接口：
 
 - `POST /api/admin/backups` 创建备份。
 - `GET /api/admin/backups` 查看备份列表。
+- `GET /api/admin/backups/:id/download` 以管理员 Bearer 鉴权流式下载已重新校验的 `ready` 备份 `.tar.gz`；响应禁止缓存，备份目录不产生公共 URL，下载期间同一备份不可删除。
 - `POST /api/admin/backups/import` 导入外部 `.tar`/`.tar.gz` 备份并执行预检。
 - `POST /api/admin/backups/:id/restore` 执行全量恢复，body 必须包含 `{ "backupId": "<same-id>", "confirmation": "RESTORE_FULL_BACKUP" }`。
 - `DELETE /api/admin/backups/:id` 删除可删除状态备份，body 必须包含 `{ "backupId": "<same-id>", "confirmation": "DELETE_BACKUP" }`。
@@ -205,7 +217,9 @@ API 提供受保护的后台备份接口：
 - `uploads` 普通文件副本；排除备份目录、临时文件、`.tmp`、`.trash`、隐藏文件/目录、符号链接、目录和 uploads root 外路径。
 - `manifest.json`，包含格式版本、app/schema metadata、创建者、时间戳、数据库快照元数据、上传文件元数据、大小和 SHA-256。
 
-创建流程先写入 `BACKUP_DIR/.staging`，完成文件和 manifest 校验后原子发布到最终备份目录；失败会清理 staging，不留下 partial published backup。并发创建会返回 `409/BACKUP_CONFLICT`。创建/删除成功和失败都会写 `operation_logs` 与安全事件日志。
+创建流程先写入 `BACKUP_DIR/.staging`，完成文件和 manifest 校验后原子发布到最终备份目录；失败会清理 staging，不留下 partial published backup。并发创建会返回 `409/BACKUP_CONFLICT`。创建/下载/删除成功和失败都会写 `operation_logs` 与安全事件日志。
+
+下载由 API 进程从私有备份目录流式生成 tar.gz，不应在 Nginx 中为 `BACKUP_DIR` 增加 `alias`、静态 location 或 CDN 回源。生产发布需结合最大备份体积验证代理读取超时、磁盘吞吐和响应缓冲；当前一期不支持 Range 或断点续传。备份中 `system_config` 仅含密文，下载归档不包含外部 `EDGEONE_CREDENTIAL_ENCRYPTION_KEY`，该主密钥仍须独立保管。
 
 外部导入流程：
 
@@ -220,7 +234,8 @@ API 提供受保护的后台备份接口：
 2. 调用 `POST /api/admin/backups/:id/restore`，请求体必须同时包含相同 `backupId` 和 `RESTORE_FULL_BACKUP`。
 3. API 进入维护模式，阻止业务写入；恢复前自动创建一个 G08 恢复点，响应中的 `snapshotBackupId` 即为回滚点。
 4. API 在隔离位置验证候选 DB/uploads 后，尽可能原子切换本地 SQLite 与 uploads；失败会自动回滚到恢复前状态。
-5. 成功后所有管理员 session 会被撤销，必须重新登录。
+5. `identityRestorePolicy: preserve_target`：保留目标环境当前后台账户、密码 hash、角色、菜单权限和个人通知；忽略归档中的 `admin_sessions` 与 `admin_password_reset_tokens`，并使目标环境现有 session/token 全部失效。
+6. 成功后所有后台用户都必须重新登录；候选备份中的任何账户或凭据都不会恢复为线上身份。
 
 发布前除应用备份外仍建议保存：
 

@@ -21,6 +21,7 @@
     "db:push": "pnpm --filter api db:push",
     "db:seed": "pnpm --filter api db:seed",
     "admin:bootstrap": "pnpm --filter api admin:bootstrap",
+    "admin:password:reset": "pnpm --filter api admin:password:reset",
     "analytics:cleanup": "pnpm --filter api analytics:cleanup",
     "edgeone:prefetch:reconcile": "pnpm --filter api edgeone:prefetch:reconcile",
     "deploy:smoke": "node scripts/deploy/production-smoke-check.mjs",

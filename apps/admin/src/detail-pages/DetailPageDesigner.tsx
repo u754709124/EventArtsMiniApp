@@ -180,10 +180,7 @@ export function DetailPageDesigner() {
         <div className="detail-designer__preview">
           <DetailPageLivePreview revision={revision} getDraft={getDraft} />
         </div>
-        <Card className="detail-designer__panel" styles={{ body: { paddingTop: 0 } }}>
-        <div className="detail-designer__toolbar" data-testid="detail-designer-toolbar">
-          <span data-testid="detail-designer-save-status">{saveStatus}</span>
-        </div>
+        <Card className="detail-designer__panel">
         <Spin spinning={loading}>
           <Form
             form={form}
@@ -289,7 +286,17 @@ export function DetailPageDesigner() {
             )}
           </section>
         )}
-        <FormActionBar saving={saving} saveTestid="detail-designer-save" onReturn={goBack} onSave={() => void save()} />
+        <FormActionBar
+          saving={saving}
+          saveTestid="detail-designer-save"
+          onReturn={goBack}
+          onSave={() => void save()}
+          extra={
+            <span className="detail-designer__save-status" data-testid="detail-designer-save-status" role="status" aria-live="polite">
+              {saveStatus}
+            </span>
+          }
+        />
       </Card>
       </div>
     </div>

@@ -117,6 +117,14 @@ body {
   padding: 24px;
 }
 
+.protected-error {
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px;
+  place-items: center;
+  background: #f6f3ef;
+}
+
 .page-stack {
   display: grid;
   min-width: 0;
@@ -589,6 +597,14 @@ body {
 
 .backup-restore-summary {
   margin: 16px 0;
+}
+
+.admin-user-security-note {
+  margin-bottom: 16px;
+}
+
+.admin-user-link-result {
+  width: 100%;
 }
 
 .table-loading-hint {

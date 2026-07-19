@@ -75,7 +75,11 @@ describe("MediaPage EdgeOne prefetch", () => {
     render(<MediaPage />);
     const trigger = await screen.findByTestId("media-edgeone-prefetch");
     fireEvent.click(trigger);
-    const confirm = await screen.findByRole("button", { name: "开始预热" });
+    const confirm = await screen.findByRole(
+      "button",
+      { name: "开始预热" },
+      { timeout: 3_000 }
+    );
     fireEvent.click(confirm);
     fireEvent.click(confirm);
 

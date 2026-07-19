@@ -82,13 +82,45 @@ import { extractRichTextMedia } from "./detail-pages/detail-page-sanitizer";
 import { DetailPageDomainError } from "./detail-pages/detail-page-types";
 import {
   ADMIN_SESSION_JWT_EXPIRES_IN,
+  adminResetTokenRevokeReasons,
   adminSessionRevokeReasons,
   createAdminSession,
-  revokeAllAdminSessions,
   revokeAdminSession,
-  revokeAdminSessionsForAdmin,
+  revokeAdminSecurityCredentialsForAdmin,
   type SessionClock
 } from "./admin-sessions";
+import {
+  adminAuthIdentityForAdmin,
+  adminRoutePolicyFor,
+  assertAdminRoutePolicyCoverage,
+  describeAdminRoutePolicy,
+  isAdminRouteAllowed,
+  loadAdminAuthContext,
+  type AdminAuthContext,
+  type AdminRouteAccessPolicy,
+  type AdminRegisteredRoute
+} from "./admin-authorization";
+import {
+  AdminPasswordResetError,
+  adminPasswordResetConsumeRequestSchema,
+  adminPasswordResetLinkRequestSchema,
+  adminPasswordResetLinksRevokeRequestSchema,
+  consumeAdminPasswordResetLink,
+  issueAdminPasswordResetLink,
+  revokeAdminPasswordResetLinks
+} from "./admin-password-reset";
+import {
+  AdminUserError,
+  adminUserCreateRequestSchema,
+  adminUserPermissionsUpdateRequestSchema,
+  adminUserPublicIdParamSchema,
+  adminUserUpdateRequestSchema,
+  createAdminUser,
+  getAdminUser,
+  listAdminUsers,
+  updateAdminUser,
+  updateAdminUserPermissions
+} from "./admin-users";
 import {
   ADMIN_NOTIFICATION_MAX_FUTURE_SKEW_MS,
   createAdminNotification,
@@ -174,6 +206,11 @@ type AppRateLimitConfig = {
     windowMs: number;
     maxFailures: number;
   };
+  adminPasswordReset?: {
+    windowMs: number;
+    maxRequests: number;
+    tokenTtlMinutes?: number;
+  };
   analytics: {
     windowMs: number;
     maxRequests: number;
@@ -213,7 +250,7 @@ type BuildOptions = {
 };
 
 type AdminRequest = FastifyRequest & {
-  admin?: { id: number; username: string; sessionJti: string };
+  admin?: AdminAuthContext;
 };
 
 type ClientRequest = FastifyRequest & {
@@ -242,6 +279,7 @@ const defaultUploadedFileCacheControl = "public, max-age=0";
 const uploadedImageFilePattern = /\.(?:jpg|png|webp)$/i;
 const defaultAppRateLimit: AppRateLimitConfig = {
   login: { windowMs: 900_000, maxFailures: 5 },
+  adminPasswordReset: { windowMs: 600_000, maxRequests: 5, tokenTtlMinutes: 30 },
   analytics: { windowMs: 60_000, maxRequests: 60 }
 };
 const defaultEdgeOnePrefetchConfig: EdgeOnePrefetchRuntimeConfig = {
@@ -256,6 +294,16 @@ const edgeOnePrefetchWriteRateLimitPolicy: FixedWindowRateLimitPolicy = {
   windowMs: 60_000,
   limit: 10
 };
+const g03AdminRoutePolicies = [
+  { method: "POST", path: "/api/admin/auth/reset-password", policy: { kind: "public" } },
+  { method: "GET", path: "/api/admin/users", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "POST", path: "/api/admin/users", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "GET", path: "/api/admin/users/:id", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "PATCH", path: "/api/admin/users/:id", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "PUT", path: "/api/admin/users/:id/permissions", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "POST", path: "/api/admin/users/:id/reset-links", policy: { kind: "menu", menuKey: "user-management" } },
+  { method: "POST", path: "/api/admin/users/:id/reset-links/revoke", policy: { kind: "menu", menuKey: "user-management" } }
+] as const satisfies readonly { method: string; path: string; policy: AdminRouteAccessPolicy }[];
 const statusInputSchema = z.enum(["enabled", "disabled"]);
 const positiveIdSchema = z.coerce.number().int().positive();
 const positiveBodyIdSchema = z.number().int().positive();
@@ -342,6 +390,12 @@ type EdgeOneOperation =
   | "prefetch_list"
   | "prefetch_reconcile";
 
+type BackupDownloadSecurityEvent =
+  | "backup_download_requested"
+  | "backup_download_completed"
+  | "backup_download_failed"
+  | "backup_download_interrupted";
+
 function logEdgeOneOperationFailure(
   request: FastifyRequest,
   operation: EdgeOneOperation,
@@ -359,6 +413,42 @@ function logEdgeOneOperationFailure(
   );
 }
 
+function logBackupDownloadSecurityEvent(
+  request: FastifyRequest,
+  securityEvent: BackupDownloadSecurityEvent,
+  details: Record<string, unknown> = {},
+  level: "info" | "warn" | "error" = "info"
+) {
+  request.log[level](
+    {
+      event: "security",
+      securityEvent,
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+      route: request.routeOptions?.url,
+      clientIp: request.ip,
+      details: redactSensitive(details)
+    },
+    "security event"
+  );
+}
+
+function safeBackupDownloadErrorForLog(error: unknown) {
+  if (error instanceof BackupServiceError) {
+    return {
+      type: error.name,
+      code: error.code,
+      statusCode: error.statusCode,
+      message: error.message
+    };
+  }
+  return {
+    type: error instanceof Error ? error.name : "UnknownError",
+    code: "INTERNAL_ERROR"
+  };
+}
+
 function loginRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLimitPolicy {
   return {
     windowMs: config.login.windowMs,
@@ -371,6 +461,32 @@ function analyticsRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLi
     windowMs: config.analytics.windowMs,
     limit: config.analytics.maxRequests
   };
+}
+
+function adminPasswordResetRateLimitPolicy(config: AppRateLimitConfig): FixedWindowRateLimitPolicy {
+  const reset = config.adminPasswordReset ?? defaultAppRateLimit.adminPasswordReset!;
+  return {
+    windowMs: reset.windowMs,
+    limit: reset.maxRequests
+  };
+}
+
+function g03AdminRoutePolicyFor(method: string, path: string) {
+  const normalizedMethod = method.toUpperCase() === "HEAD" ? "GET" : method.toUpperCase();
+  return g03AdminRoutePolicies.find((entry) => entry.method === normalizedMethod && entry.path === path)?.policy ?? null;
+}
+
+function assertG03AdminRoutePolicyCoverage(routes: readonly AdminRegisteredRoute[]) {
+  const missing = new Set<string>();
+  for (const route of routes) {
+    const method = route.method.toUpperCase() === "HEAD" ? "GET" : route.method.toUpperCase();
+    if (method === "OPTIONS") continue;
+    if (route.url !== "/api/admin/auth/reset-password" && !route.url.startsWith("/api/admin/users")) continue;
+    if (!g03AdminRoutePolicyFor(method, route.url)) missing.add(`${method} ${route.url}`);
+  }
+  if (missing.size > 0) {
+    throw new Error(`未声明 G03 后台路由访问策略: ${[...missing].sort().join(", ")}`);
+  }
 }
 
 function trustedClientIp(request: FastifyRequest) {
@@ -889,6 +1005,13 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     requestIdHeader: "x-request-id",
     genReqId: (request) => requestIdFromHeaders(request.headers)
   });
+  const registeredRoutes: AdminRegisteredRoute[] = [];
+  app.addHook("onRoute", (routeOptions) => {
+    const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method];
+    for (const method of methods) {
+      registeredRoutes.push({ method: String(method), url: routeOptions.url });
+    }
+  });
   const { prisma } = options;
   const corsConfig = options.cors ?? defaultCorsConfig;
   const uploadLimits = getUploadLimits();
@@ -967,6 +1090,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   let businessIdleResolvers: Array<() => void> = [];
   const loginLimiterPolicy = loginRateLimitPolicy(rateLimitConfig);
   const analyticsLimiterPolicy = analyticsRateLimitPolicy(rateLimitConfig);
+  const adminPasswordResetLimiterPolicy = adminPasswordResetRateLimitPolicy(rateLimitConfig);
   const invalidLoginPasswordHash = hashPassword(randomUUID());
 
   async function waitForBackupCreate() {
@@ -1055,7 +1179,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     origin: corsOriginResolver(corsConfig),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type", "X-Request-Id"],
-    exposedHeaders: ["X-Request-Id"]
+    exposedHeaders: ["X-Request-Id", "Content-Disposition"]
   });
   await app.register(jwt, { secret: options.jwtSecret });
   await app.register(multipart, {
@@ -1152,26 +1276,50 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   async function requireAdmin(request: AdminRequest, reply: FastifyReply) {
+    let decoded: { id: number; username: string; jti?: string };
     try {
-      const decoded = await request.jwtVerify<{ id: number; username: string; jti?: string }>();
-      if (!decoded.jti) throw new Error("missing session id");
-      const session = await prisma.adminSession.findUnique({
-        where: { jti: decoded.jti },
-        include: { admin: true }
-      });
-      if (
-        !session ||
-        session.adminId !== decoded.id ||
-        session.revokedAt ||
-        session.expiresAt <= currentTime() ||
-        session.admin.status !== "enabled"
-      ) {
-        throw new Error("invalid admin session");
-      }
-      request.admin = { id: session.admin.id, username: session.admin.username, sessionJti: session.jti };
+      decoded = await request.jwtVerify<{ id: number; username: string; jti?: string }>();
     } catch {
       return sendError(reply, 401, "UNAUTHORIZED", "请先登录");
     }
+
+    const context = await loadAdminAuthContext(prisma, {
+      id: decoded.id,
+      jti: decoded.jti,
+      now: currentTime()
+    });
+    if (!context) {
+      return sendError(reply, 401, "UNAUTHORIZED", "请先登录");
+    }
+
+    const routePath = request.routeOptions.url ?? request.url.split("?")[0] ?? request.url;
+    const policy = adminRoutePolicyFor(request.method, routePath) ?? g03AdminRoutePolicyFor(request.method, routePath);
+    if (!policy) {
+      request.log.error({
+        event: "admin_authorization_unmapped_route",
+        requestId: request.id,
+        adminId: context.id,
+        username: context.username,
+        method: request.method,
+        routePath
+      }, "Unmapped admin route denied");
+      return sendError(reply, 403, "FORBIDDEN", "无权访问");
+    }
+    if (!isAdminRouteAllowed(context, policy)) {
+      request.log.warn({
+        event: "admin_authorization_denied",
+        requestId: request.id,
+        adminId: context.id,
+        username: context.username,
+        role: context.role,
+        method: request.method,
+        routePath,
+        policy: describeAdminRoutePolicy(policy)
+      }, "Admin authorization denied");
+      return sendError(reply, 403, "FORBIDDEN", "无权访问");
+    }
+
+    request.admin = context;
   }
 
   async function setNoStore(_request: FastifyRequest, reply: FastifyReply) {
@@ -1319,10 +1467,14 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       clientIp,
       username: parsed.data.username
     });
-    const admin = await prisma.adminUser.findUnique({ where: { username: parsed.data.username } });
+    const admin = await prisma.adminUser.findUnique({
+      where: { username: parsed.data.username },
+      include: { menuPermissions: true }
+    });
     const candidatePasswordHash = admin?.status === "enabled" ? admin.passwordHash : invalidLoginPasswordHash;
     const passwordMatches = verifyPassword(parsed.data.password, candidatePasswordHash);
-    if (!admin || admin.status !== "enabled" || !passwordMatches) {
+    const identity = admin?.status === "enabled" ? adminAuthIdentityForAdmin(admin) : null;
+    if (!admin || admin.status !== "enabled" || !identity || !passwordMatches) {
       const limitDecision = await rateLimiter.consume(loginLimiterKey, loginLimiterPolicy);
       logSecurityEvent(request, "admin_login_failed", {
         username: parsed.data.username,
@@ -1348,7 +1500,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       { id: admin.id, username: admin.username, jti: session.jti },
       { expiresIn: ADMIN_SESSION_JWT_EXPIRES_IN }
     );
-    return reply.send(ok({ token, id: admin.id, username: admin.username }));
+    return reply.send(ok({ token, ...identity }));
   });
 
   app.post("/api/admin/auth/logout", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
@@ -1368,7 +1520,17 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   app.get("/api/admin/auth/me", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
-    return reply.send(ok({ id: request.admin!.id, username: request.admin!.username }));
+    const context = request.admin!;
+    const identity = {
+      id: context.id,
+      publicId: context.publicId,
+      username: context.username,
+      role: context.role,
+      status: context.status,
+      permissions: context.permissions,
+      delegablePermissions: context.delegablePermissions
+    };
+    return reply.send(ok(identity));
   });
 
   app.post(
@@ -1450,12 +1612,17 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       });
       if (updated.count !== 1) return { status: "stale_password" as const };
 
-      const revoked = await revokeAdminSessionsForAdmin(tx, {
+      const revoked = await revokeAdminSecurityCredentialsForAdmin(tx, {
         adminId: admin.id,
-        reason: adminSessionRevokeReasons.passwordChanged,
+        sessionReason: adminSessionRevokeReasons.passwordChanged,
+        resetTokenReason: adminResetTokenRevokeReasons.passwordChanged,
         now: currentTime()
       });
-      return { status: "changed" as const, revokedSessionCount: revoked.count };
+      return {
+        status: "changed" as const,
+        revokedSessionCount: revoked.revokedSessionCount,
+        revokedResetTokenCount: revoked.revokedResetTokenCount
+      };
     });
 
     if (result.status !== "changed") {
@@ -1473,10 +1640,308 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     logSecurityEvent(request, "admin_sessions_revoked", {
       adminId: request.admin!.id,
       reason: adminSessionRevokeReasons.passwordChanged,
-      revokedSessionCount: result.revokedSessionCount
+      revokedSessionCount: result.revokedSessionCount,
+      revokedResetTokenCount: result.revokedResetTokenCount
     });
     return reply.send(ok({ revokedSessionCount: result.revokedSessionCount }));
   });
+
+  app.post(
+    "/api/admin/auth/reset-password",
+    { preHandler: setNoStore },
+    async (request, reply) => {
+      const parsed = adminPasswordResetConsumeRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        const weakPassword = parsed.error.issues.some((issue) => issue.path[0] === "newPassword");
+        const badToken = parsed.error.issues.some((issue) => issue.path[0] === "token");
+        return sendError(
+          reply,
+          400,
+          weakPassword ? "WEAK_PASSWORD" : badToken ? "PASSWORD_RESET_TOKEN_INVALID" : "VALIDATION_ERROR",
+          weakPassword
+            ? firstZodIssueMessage(parsed.error, "密码不符合强度要求")
+            : badToken
+              ? "重置链接无效或已失效"
+              : firstZodIssueMessage(parsed.error, "重置密码参数错误")
+        );
+      }
+      const limitDecision = await rateLimiter.consume(
+        `admin-password-reset:consume:${trustedClientIp(request)}`,
+        adminPasswordResetLimiterPolicy
+      );
+      if (!limitDecision.allowed) {
+        request.log.warn({
+          event: "admin_password_reset_rate_limited",
+          requestId: request.id,
+          operation: "consume",
+          clientIp: trustedClientIp(request),
+          retryAfterSeconds: limitDecision.retryAfterSeconds
+        }, "Admin password reset rate limited");
+        return sendRateLimitError(reply, limitDecision);
+      }
+      try {
+        const result = await consumeAdminPasswordResetLink(prisma, {
+          ...parsed.data,
+          now: currentTime()
+        });
+        request.log.info({
+          event: "admin_password_reset_link_consumed",
+          requestId: request.id,
+          purpose: result.purpose,
+          revokedSessionCount: result.revokedSessionCount,
+          revokedResetTokenCount: result.revokedResetTokenCount
+        }, "Admin password reset link consumed");
+        return reply.header("Cache-Control", "no-store").send(ok(result));
+      } catch (error) {
+        if (error instanceof AdminPasswordResetError) {
+          request.log.warn({
+            event: "admin_password_reset_failed",
+            requestId: request.id,
+            operation: "consume",
+            code: error.code
+          }, "Admin password reset failed");
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.get("/api/admin/users", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    try {
+      return reply.header("Cache-Control", "no-store").send(ok(await listAdminUsers(prisma, request.admin!.id)));
+    } catch (error) {
+      if (error instanceof AdminUserError) return sendError(reply, error.statusCode, error.code, error.message);
+      throw error;
+    }
+  });
+
+  app.post("/api/admin/users", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    const parsed = adminUserCreateRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "后台账户参数错误"));
+    }
+    const limitDecision = await rateLimiter.consume(
+      `admin-password-reset:create:${request.admin!.id}`,
+      adminPasswordResetLimiterPolicy
+    );
+    if (!limitDecision.allowed) return sendRateLimitError(reply, limitDecision);
+    try {
+      const result = await createAdminUser(prisma, {
+        issuerId: request.admin!.id,
+        data: parsed.data,
+        now: currentTime(),
+        publicBaseUrl: options.publicBaseUrl,
+        tokenTtlMinutes: rateLimitConfig.adminPasswordReset?.tokenTtlMinutes
+      });
+      request.log.info({
+        event: "admin_user_created",
+        requestId: request.id,
+        issuerPublicId: request.admin!.publicId,
+        targetPublicId: result.user.publicId,
+        targetRole: result.user.role,
+        revokedSessionCount: result.revokedSessionCount,
+        revokedResetTokenCount: result.revokedResetTokenCount
+      }, "Admin user created");
+      return reply.header("Cache-Control", "no-store").send(ok(result));
+    } catch (error) {
+      if (error instanceof AdminUserError || error instanceof AdminPasswordResetError) {
+        request.log.warn({
+          event: "admin_user_create_failed",
+          requestId: request.id,
+          issuerPublicId: request.admin!.publicId,
+          code: error.code
+        }, "Admin user create failed");
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/admin/users/:id", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    const id = adminUserPublicIdParamSchema.safeParse((request.params as { id?: string }).id);
+    if (!id.success) return sendError(reply, 400, "VALIDATION_ERROR", "后台账户 ID 无效");
+    try {
+      return reply.header("Cache-Control", "no-store").send(ok(await getAdminUser(prisma, request.admin!.id, id.data)));
+    } catch (error) {
+      if (error instanceof AdminUserError) return sendError(reply, error.statusCode, error.code, error.message);
+      throw error;
+    }
+  });
+
+  app.patch("/api/admin/users/:id", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    const id = adminUserPublicIdParamSchema.safeParse((request.params as { id?: string }).id);
+    if (!id.success) return sendError(reply, 400, "VALIDATION_ERROR", "后台账户 ID 无效");
+    const parsed = adminUserUpdateRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "后台账户参数错误"));
+    }
+    try {
+      const result = await updateAdminUser(prisma, {
+        issuerId: request.admin!.id,
+        targetPublicId: id.data,
+        data: parsed.data,
+        now: currentTime()
+      });
+      request.log.info({
+        event: "admin_user_updated",
+        requestId: request.id,
+        issuerPublicId: request.admin!.publicId,
+        targetPublicId: result.user.publicId,
+        revokedSessionCount: result.revokedSessionCount,
+        revokedResetTokenCount: result.revokedResetTokenCount
+      }, "Admin user updated");
+      return reply.header("Cache-Control", "no-store").send(ok(result));
+    } catch (error) {
+      if (error instanceof AdminUserError) {
+        request.log.warn({
+          event: "admin_user_update_failed",
+          requestId: request.id,
+          issuerPublicId: request.admin!.publicId,
+          targetPublicId: id.data,
+          code: error.code
+        }, "Admin user update failed");
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.put(
+    "/api/admin/users/:id/permissions",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const id = adminUserPublicIdParamSchema.safeParse((request.params as { id?: string }).id);
+      if (!id.success) return sendError(reply, 400, "VALIDATION_ERROR", "后台账户 ID 无效");
+      const parsed = adminUserPermissionsUpdateRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "权限参数错误"));
+      }
+      try {
+        const result = await updateAdminUserPermissions(prisma, {
+          issuerId: request.admin!.id,
+          targetPublicId: id.data,
+          data: parsed.data,
+          now: currentTime()
+        });
+        request.log.info({
+          event: "admin_user_permissions_updated",
+          requestId: request.id,
+          issuerPublicId: request.admin!.publicId,
+          targetPublicId: result.user.publicId,
+          revokedSessionCount: result.revokedSessionCount,
+          revokedResetTokenCount: result.revokedResetTokenCount
+        }, "Admin user permissions updated");
+        return reply.header("Cache-Control", "no-store").send(ok(result));
+      } catch (error) {
+        if (error instanceof AdminUserError) {
+          request.log.warn({
+            event: "admin_user_permissions_update_failed",
+            requestId: request.id,
+            issuerPublicId: request.admin!.publicId,
+            targetPublicId: id.data,
+            code: error.code
+          }, "Admin user permissions update failed");
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/users/:id/reset-links",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const id = adminUserPublicIdParamSchema.safeParse((request.params as { id?: string }).id);
+      if (!id.success) return sendError(reply, 400, "VALIDATION_ERROR", "后台账户 ID 无效");
+      const parsed = adminPasswordResetLinkRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "重置链接参数错误"));
+      }
+      const limitDecision = await rateLimiter.consume(
+        `admin-password-reset:issue:${request.admin!.id}:${id.data}:${parsed.data.purpose}`,
+        adminPasswordResetLimiterPolicy
+      );
+      if (!limitDecision.allowed) return sendRateLimitError(reply, limitDecision);
+      try {
+        const result = await issueAdminPasswordResetLink(prisma, {
+          issuerId: request.admin!.id,
+          targetPublicId: id.data,
+          purpose: parsed.data.purpose,
+          currentPassword: parsed.data.currentPassword,
+          now: currentTime(),
+          publicBaseUrl: options.publicBaseUrl,
+          tokenTtlMinutes: rateLimitConfig.adminPasswordReset?.tokenTtlMinutes
+        });
+        request.log.info({
+          event: "admin_password_reset_link_created",
+          requestId: request.id,
+          issuerPublicId: request.admin!.publicId,
+          targetPublicId: id.data,
+          purpose: result.purpose,
+          revokedSessionCount: result.revokedSessionCount,
+          revokedResetTokenCount: result.revokedResetTokenCount
+        }, "Admin password reset link created");
+        return reply.header("Cache-Control", "no-store").send(ok(result));
+      } catch (error) {
+        if (error instanceof AdminPasswordResetError) {
+          request.log.warn({
+            event: "admin_password_reset_link_create_failed",
+            requestId: request.id,
+            issuerPublicId: request.admin!.publicId,
+            targetPublicId: id.data,
+            code: error.code
+          }, "Admin password reset link create failed");
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/users/:id/reset-links/revoke",
+    { preHandler: [setNoStore, requireAdmin] },
+    async (request: AdminRequest, reply) => {
+      const id = adminUserPublicIdParamSchema.safeParse((request.params as { id?: string }).id);
+      if (!id.success) return sendError(reply, 400, "VALIDATION_ERROR", "后台账户 ID 无效");
+      const parsed = adminPasswordResetLinksRevokeRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(reply, 400, "VALIDATION_ERROR", firstZodIssueMessage(parsed.error, "撤销链接参数错误"));
+      }
+      try {
+        const result = await revokeAdminPasswordResetLinks(prisma, {
+          issuerId: request.admin!.id,
+          targetPublicId: id.data,
+          purpose: parsed.data.purpose,
+          currentPassword: parsed.data.currentPassword,
+          now: currentTime()
+        });
+        request.log.info({
+          event: "admin_password_reset_links_revoked",
+          requestId: request.id,
+          issuerPublicId: request.admin!.publicId,
+          targetPublicId: id.data,
+          purpose: parsed.data.purpose ?? null,
+          revokedResetTokenCount: result.revokedResetTokenCount
+        }, "Admin password reset links revoked");
+        return reply.header("Cache-Control", "no-store").send(ok(result));
+      } catch (error) {
+        if (error instanceof AdminPasswordResetError) {
+          request.log.warn({
+            event: "admin_password_reset_links_revoke_failed",
+            requestId: request.id,
+            issuerPublicId: request.admin!.publicId,
+            targetPublicId: id.data,
+            code: error.code
+          }, "Admin password reset links revoke failed");
+          return sendError(reply, error.statusCode, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+  );
 
   app.get("/api/admin/dashboard/overview", { preHandler: [setNoStore, requireAdmin] }, async (request, reply) => {
     const overview = await dailyUserVisitOverview(prisma, currentTime());
@@ -1729,6 +2194,140 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     return reply.send(ok({ backups: await backupService.listBackups() }));
   });
 
+  app.get("/api/admin/backups/:id/download", { preHandler: [setNoStore, requireAdmin] }, async (request: AdminRequest, reply) => {
+    const parsedId = backupIdSchema.safeParse((request.params as { id?: string }).id);
+    if (!parsedId.success) {
+      await writeOperationLog(
+        "DOWNLOAD_BACKUP_FAILED",
+        { result: "failed", requestId: request.id, code: "VALIDATION_ERROR" },
+        request.admin!.id
+      ).catch(() => undefined);
+      logBackupDownloadSecurityEvent(request, "backup_download_failed", {
+        adminId: request.admin!.id,
+        result: "failed",
+        requestId: request.id,
+        code: "VALIDATION_ERROR"
+      }, "warn");
+      return sendError(reply, 400, "VALIDATION_ERROR", "备份 ID 无效");
+    }
+
+    const auditBase = {
+      backupId: parsedId.data,
+      operator: { adminId: request.admin!.id, username: request.admin!.username },
+      requestId: request.id
+    };
+    await writeOperationLog(
+      "DOWNLOAD_BACKUP_REQUESTED",
+      { ...auditBase, result: "requested" },
+      request.admin!.id
+    );
+    logBackupDownloadSecurityEvent(request, "backup_download_requested", {
+      adminId: request.admin!.id,
+      username: request.admin!.username,
+      backupId: parsedId.data,
+      result: "requested",
+      requestId: request.id
+    });
+
+    let download: Awaited<ReturnType<typeof backupService.createDownloadArchive>> | null = null;
+    try {
+      download = await backupService.createDownloadArchive(parsedId.data);
+      const downloadAudit = {
+        ...auditBase,
+        backupTotalBytes: download.declaredBytes,
+        manifestBytes: download.manifestBytes,
+        sha256: download.sha256
+      };
+
+      const settleDownload = (
+        result: "completed" | "failed" | "interrupted",
+        error?: unknown
+      ) => {
+        if (!download?.release()) return;
+        const code = error ? backupErrorCode(error) : undefined;
+        const statusCode = error ? backupErrorStatusCode(error) : undefined;
+        const detail = {
+          ...downloadAudit,
+          result,
+          ...(code ? { code } : {}),
+          ...(statusCode ? { statusCode } : {})
+        };
+        const action =
+          result === "completed"
+            ? "DOWNLOAD_BACKUP"
+            : result === "interrupted"
+              ? "DOWNLOAD_BACKUP_INTERRUPTED"
+              : "DOWNLOAD_BACKUP_FAILED";
+        const securityEvent =
+          result === "completed"
+            ? "backup_download_completed"
+            : result === "interrupted"
+              ? "backup_download_interrupted"
+              : "backup_download_failed";
+        void writeOperationLog(action, detail, request.admin!.id).catch(() => undefined);
+        logBackupDownloadSecurityEvent(request, securityEvent, {
+          adminId: request.admin!.id,
+          backupId: parsedId.data,
+          result,
+          requestId: request.id,
+          backupTotalBytes: downloadAudit.backupTotalBytes,
+          manifestBytes: downloadAudit.manifestBytes,
+          sha256: downloadAudit.sha256,
+          ...(code ? { code } : {}),
+          ...(statusCode ? { statusCode } : {})
+        }, result === "completed" ? "info" : "warn");
+      };
+
+      download.stream.once("error", (error) => {
+        settleDownload("failed", error);
+      });
+      request.raw.once("aborted", () => {
+        download?.stream.destroy(new Error("backup download aborted"));
+        settleDownload("interrupted");
+      });
+      reply.raw.once("finish", () => {
+        settleDownload("completed");
+      });
+      reply.raw.once("close", () => {
+        if (reply.raw.writableEnded) return;
+        download?.stream.destroy();
+        settleDownload("interrupted");
+      });
+
+      return reply
+        .code(200)
+        .headers({
+          "Content-Type": download.contentType,
+          "Content-Disposition": `attachment; filename="${download.filename}"`,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        })
+        .send(download.stream);
+    } catch (error) {
+      download?.release();
+      const code = backupErrorCode(error);
+      const statusCode = backupErrorStatusCode(error);
+      await writeOperationLog(
+        "DOWNLOAD_BACKUP_FAILED",
+        { ...auditBase, result: "failed", code, statusCode },
+        request.admin!.id
+      ).catch(() => undefined);
+      logBackupDownloadSecurityEvent(request, "backup_download_failed", {
+        adminId: request.admin!.id,
+        backupId: parsedId.data,
+        result: "failed",
+        requestId: request.id,
+        code,
+        statusCode,
+        error: safeBackupDownloadErrorForLog(error)
+      }, statusCode >= 500 ? "error" : "warn");
+      if (error instanceof BackupServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
   app.post("/api/admin/backups", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
     const parsed = backupCreateRequestSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -1751,7 +2350,11 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
     try {
       const backup = await runBackupCreateExclusive(() =>
         backupService.createBackup({
-          createdBy: { id: request.admin!.id, username: request.admin!.username },
+          createdBy: {
+            id: request.admin!.id,
+            publicId: request.admin!.publicId,
+            username: request.admin!.username
+          },
           note: parsed.data.note
         })
       );
@@ -1819,7 +2422,11 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       const imported = await backupService.importArchive({
         archive,
         originalName,
-        importedBy: { id: request.admin!.id, username: request.admin!.username }
+        importedBy: {
+          id: request.admin!.id,
+          publicId: request.admin!.publicId,
+          username: request.admin!.username
+        }
       });
       await writeOperationLog(
         "IMPORT_BACKUP",
@@ -1904,13 +2511,13 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       const restore = await runRestoreExclusive(() =>
         backupService.restoreBackup({
           backupId: parsedId.data,
-          createdBy: { id: request.admin!.id, username: request.admin!.username }
+          createdBy: {
+            id: request.admin!.id,
+            publicId: request.admin!.publicId,
+            username: request.admin!.username
+          }
         })
       );
-      const revoked = await revokeAllAdminSessions(prisma, {
-        reason: adminSessionRevokeReasons.restoreCompleted,
-        now: currentTime()
-      });
       await writeOperationLog(
         "RESTORE_BACKUP",
         {
@@ -1921,7 +2528,8 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
           operator: { adminId: request.admin!.id, username: request.admin!.username },
           result: "completed",
           requestId: request.id,
-          revokedSessionCount: revoked.count
+          revokedSessionCount: restore.revokedSessionCount,
+          revokedResetTokenCount: restore.revokedResetTokenCount
         },
         request.admin!.id
       );
@@ -1933,13 +2541,15 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         source: "backup",
         result: "completed",
         requestId: request.id,
-        revokedSessionCount: revoked.count
+        revokedSessionCount: restore.revokedSessionCount,
+        revokedResetTokenCount: restore.revokedResetTokenCount
       });
       return reply.send(ok(backupRestoreAcceptedResponseSchema.parse({
         restoreId: restore.restoreId,
         backupId: restore.backupId,
         snapshotBackupId: restore.snapshotBackupId,
-        revokedSessionCount: revoked.count
+        revokedSessionCount: restore.revokedSessionCount,
+        revokedResetTokenCount: restore.revokedResetTokenCount
       })));
     } catch (error) {
       await writeOperationLog(
@@ -2676,6 +3286,10 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
   });
 
   registerCrud(app, prisma, requireAdmin, options.publicBaseUrl);
+  assertG03AdminRoutePolicyCoverage(registeredRoutes);
+  assertAdminRoutePolicyCoverage(
+    registeredRoutes.filter((route) => !g03AdminRoutePolicyFor(route.method, route.url))
+  );
 
   return app;
 }

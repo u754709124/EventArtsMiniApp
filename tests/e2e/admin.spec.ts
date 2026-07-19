@@ -1,7 +1,6 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { gzipSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { DashboardOverviewResponse, EdgeOneConfigResponse, ScheduledTaskDto } from "@event-arts/shared";
 import sharp from "sharp";
@@ -149,83 +148,6 @@ async function createUniqueLibraryUploadPng() {
       }
     }
   }).png().toBuffer();
-}
-
-function writeTarOctal(header: Buffer, value: number, start: number, length: number) {
-  const text = value.toString(8).padStart(length - 1, "0").slice(-(length - 1));
-  header.write(`${text}\0`, start, length, "ascii");
-}
-
-function tarEntry(input: { name: string; data: Buffer }) {
-  const header = Buffer.alloc(512, 0);
-  header.write(input.name, 0, Math.min(Buffer.byteLength(input.name), 100), "utf8");
-  writeTarOctal(header, 0o644, 100, 8);
-  writeTarOctal(header, 0, 108, 8);
-  writeTarOctal(header, 0, 116, 8);
-  writeTarOctal(header, input.data.byteLength, 124, 12);
-  writeTarOctal(header, 0, 136, 12);
-  header.fill(0x20, 148, 156);
-  header.write("0", 156, 1, "ascii");
-  header.write("ustar", 257, 5, "ascii");
-  header.write("00", 263, 2, "ascii");
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
-  const padding = Buffer.alloc((512 - (input.data.byteLength % 512)) % 512, 0);
-  return Buffer.concat([header, input.data, padding]);
-}
-
-function tarArchive(entries: Array<{ name: string; data: Buffer }>) {
-  return Buffer.concat([...entries.map(tarEntry), Buffer.alloc(1024, 0)]);
-}
-
-function backupDigest(database: { path: string; size: number; sha256: string }, uploads: Array<{ path: string; size: number; sha256: string }>) {
-  const hash = createHash("sha256");
-  hash.update("format:1\n");
-  hash.update(`database:${database.path}:${database.size}:${database.sha256}\n`);
-  for (const file of uploads) {
-    hash.update(`upload:${file.path}:${file.size}:${file.sha256}\n`);
-  }
-  return hash.digest("hex");
-}
-
-function uploadPathFromAssetUrl(url: string) {
-  const pathname = new URL(url, apiBase).pathname;
-  if (!pathname.startsWith("/uploads/")) return null;
-  return decodeURIComponent(pathname.slice(1));
-}
-
-async function archiveBackupFromDisk(backupId: string, allowedUploadPaths?: Set<string>) {
-  const backupRoot = path.resolve(process.cwd(), "var/backups", backupId);
-  const manifestPath = path.join(backupRoot, "manifest.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-    database: { path: string; size: number; sha256: string };
-    uploads: Array<{ path: string; size: number; sha256: string }>;
-    totalFiles: number;
-    totalBytes: number;
-    sha256: string;
-  };
-  if (allowedUploadPaths) {
-    const availablePaths = new Set(manifest.uploads.map((file) => file.path));
-    const missingPaths = [...allowedUploadPaths].filter((filePath) => !availablePaths.has(filePath));
-    if (missingPaths.length > 0) {
-      throw new Error(`备份归档缺少数据库引用的媒体文件：${missingPaths.slice(0, 5).join(", ")}`);
-    }
-    manifest.uploads = manifest.uploads.filter((file) => allowedUploadPaths.has(file.path));
-    manifest.totalFiles = 1 + manifest.uploads.length;
-    manifest.totalBytes = manifest.database.size + manifest.uploads.reduce((total, file) => total + file.size, 0);
-    manifest.sha256 = backupDigest(manifest.database, manifest.uploads);
-  }
-  const manifestData = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
-  const entries = [
-    { name: "manifest.json", data: manifestData },
-    { name: manifest.database.path, data: await readFile(path.join(backupRoot, manifest.database.path)) },
-    ...await Promise.all(manifest.uploads.map(async (file) => ({
-      name: file.path,
-      data: await readFile(path.join(backupRoot, file.path))
-    })))
-  ];
-  return gzipSync(tarArchive(entries));
 }
 
 async function proxyBackupApiThroughPlaywright(page: Page, apiRequest: Parameters<typeof adminToken>[0], importArchive?: Buffer) {
@@ -384,6 +306,64 @@ test("登录成功进入看板并展示 PV", async ({ page }) => {
   await expect(page.getByTestId("dashboard-pv-today")).toContainText(/今日浏览量.*\d+/s);
   await expect(page.getByTestId("dashboard-pv-week")).toContainText(/本周浏览量.*\d+/s);
   await expect(page.getByTestId("dashboard-pv-month")).toContainText(/本月浏览量.*\d+/s);
+});
+
+test("三级用户激活、菜单裁剪、直达拒绝和恢复链接均走真实链路", async ({ page, request }) => {
+  const runId = `${Date.now()}-${randomBytes(3).toString("hex")}`;
+  const username = `e2e-rbac-user-${runId}`;
+  const password = `E2e-Activated-${runId}-Aa1!`;
+  const rootPassword = process.env.E2E_ADMIN_PASSWORD;
+  expect(rootPassword).toBeTruthy();
+  const rootToken = await adminToken(request);
+  const createResponse = await request.post(`${apiBase}/api/admin/users`, {
+    headers: { authorization: `Bearer ${rootToken}` },
+    data: {
+      username,
+      role: "USER",
+      permissions: ["media-assets"],
+      currentPassword: rootPassword,
+      confirmation: true
+    }
+  });
+  const createBody = await createResponse.json();
+  expect(createBody.success, JSON.stringify(createBody)).toBe(true);
+  const publicId = String(createBody.data.user.publicId);
+  const activationUrl = new URL(String(createBody.data.activationLink));
+
+  await page.goto(`${adminPath("/reset-password")}${activationUrl.hash}`);
+  await expect(page).not.toHaveURL(/token=/);
+  await page.getByTestId("reset-new-password").fill(password);
+  await page.getByTestId("reset-confirm-password").fill(password);
+  await page.getByTestId("reset-password-submit").click();
+  await expect(page.getByText("密码已设置")).toBeVisible();
+
+  await page.goto(adminPath("/login"));
+  await page.getByTestId("login-username").fill(username);
+  await page.getByTestId("login-password").fill(password);
+  await page.getByTestId("login-submit").click();
+  await expect(page.getByTestId("sidebar-media-assets")).toBeVisible();
+  await expect(page.getByTestId("sidebar-backups")).toHaveCount(0);
+  await page.goto(adminPath("/backups"));
+  await expect(page.getByText("无权访问", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "备份与恢复" })).toHaveCount(0);
+
+  await page.evaluate(() => localStorage.clear());
+  await loginAdminUi(page);
+  await page.goto(adminPath("/users"));
+  await expect(page.getByRole("row", { name: new RegExp(username) })).toBeVisible();
+  await page.getByTestId(`admin-user-reset-link-${publicId}`).click();
+  const linkDialog = page.getByRole("dialog", { name: "生成恢复链接" });
+  await linkDialog.getByTestId("admin-user-link-password").fill(rootPassword!);
+  await linkDialog.getByRole("checkbox").check();
+  await linkDialog.getByRole("button", { name: "生成一次性链接" }).click();
+  const generatedLink = await page.getByTestId("admin-user-reset-link-value").inputValue();
+  expect(generatedLink).toContain("#token=");
+  const browserState = await page.evaluate(() => ({
+    href: location.href,
+    local: JSON.stringify(localStorage),
+    session: JSON.stringify(sessionStorage)
+  }));
+  expect(JSON.stringify(browserState)).not.toContain(new URL(generatedLink).hash.slice(1));
 });
 
 test("统一通知支持主题堆叠、进度补位和跨浏览器失败日志", async ({ page, browser }) => {
@@ -1618,23 +1598,28 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   const source = await adminApi<{ backup: BackupSummary }>(request, "POST", "/api/admin/backups", {
     note: sourceNote
   });
-  const media = await adminApi<{ items: Array<{ url: string }> }>(request, "GET", "/api/admin/media-assets?pageSize=100");
-  const referencedUploadPaths = new Set(
-    media.items.map((item) => uploadPathFromAssetUrl(item.url)).filter((item): item is string => Boolean(item))
-  );
-  const archive = await archiveBackupFromDisk(source.backup.id, referencedUploadPaths);
   const removable = await adminApi<{ backup: BackupSummary }>(request, "POST", "/api/admin/backups", {
     note: removableNote
   });
 
   const uiToken = await adminToken(request);
-  await proxyBackupApiThroughPlaywright(page, request, archive);
+  await proxyBackupApiThroughPlaywright(page, request);
   await page.goto(adminPath("/login"));
   await page.evaluate((token) => localStorage.setItem("eventarts.admin.token", token), uiToken);
   await page.goto(adminPath("/backups"));
   await expect(page.getByRole("heading", { level: 2, name: "备份与恢复" })).toBeVisible();
   await expect(page.getByTestId("sidebar-backups")).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(source.backup.id) })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId(`backup-download-${source.backup.id}`).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`${source.backup.id}.tar.gz`);
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
+  const archive = await readFile(downloadedPath!);
+  expect(archive.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+  await waitForToast(page, "备份下载已开始");
 
   await page.getByTestId(`backup-delete-${removable.backup.id}`).click();
   const deleteDialog = page.getByRole("dialog").filter({ hasText: "确认删除备份？" });
@@ -1674,7 +1659,7 @@ test("备份与恢复后台可走真实创建、删除、导入预检和恢复�
   await page.getByRole("button", { name: /恢\s*复\s*此\s*备\s*份/ }).click();
   const restoreDialog = page.getByTestId("backup-restore-modal");
   await expect(restoreDialog).toBeVisible();
-  await expect(restoreDialog).toContainText("当前登录和其他管理员会话都会失效");
+  await expect(restoreDialog).toContainText("当前后台会话和未使用重置链接都会失效");
   await page.getByTestId("backup-restore-confirmation").fill("RESTORE_FULL_BACKUP");
   const restoreResponsePromise = page.waitForResponse((response) =>
     response.url().includes(`/api/admin/backups/${importedBackupId}/restore`)

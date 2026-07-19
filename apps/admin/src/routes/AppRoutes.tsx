@@ -1,6 +1,10 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useNavigate } from "react-router-dom";
+import { Button, Result } from "antd";
+import type { AdminMenuKey } from "@event-arts/shared";
 import { setSessionExpiredHandler } from "../api";
+import { useAdminSession } from "../auth/session";
+import { canAccessRouteMenu, firstAccessibleAdminPath } from "../navigation/permissions";
 import { ADMIN_BASENAME, isAdminLoginPathname } from "./admin-paths";
 import { notify } from "../notifications/notification";
 
@@ -53,6 +57,8 @@ const MediaPage = lazyNamed(() => import("../media/MediaPage"), "MediaPage");
 const BackupPage = lazyNamed(() => import("../pages/BackupPage"), "BackupPage");
 const ScheduledTasksPage = lazyNamed(() => import("../pages/ScheduledTasksPage"), "ScheduledTasksPage");
 const ChangePasswordPage = lazyNamed(() => import("../pages/ChangePasswordPage"), "ChangePasswordPage");
+const AdminUsersPage = lazyNamed(() => import("../pages/AdminUsersPage"), "AdminUsersPage");
+const ResetPasswordPage = lazyNamed(() => import("../pages/ResetPasswordPage"), "ResetPasswordPage");
 const NotFoundPage = lazy(async () => {
   const { Result } = await import("antd");
   return {
@@ -102,36 +108,67 @@ function lazyElement(children: ReactNode) {
   return <Suspense fallback={<RouteLoading />}>{children}</Suspense>;
 }
 
+export function ForbiddenPage() {
+  const { identity } = useAdminSession();
+  const navigate = useNavigate();
+  const target = firstAccessibleAdminPath(identity);
+  return (
+    <Result
+      status="403"
+      title="无权访问"
+      subTitle="当前后台账户没有此页面权限。"
+      extra={<Button onClick={() => navigate(target, { replace: true })}>返回可访问页面</Button>}
+    />
+  );
+}
+
+export function PermissionRoute({ menuKey, children }: { menuKey: AdminMenuKey; children: ReactNode }) {
+  const { identity } = useAdminSession();
+  if (!canAccessRouteMenu(identity, menuKey)) return <ForbiddenPage />;
+  return <>{children}</>;
+}
+
+function protectedElement(menuKey: AdminMenuKey, children: ReactNode) {
+  return <PermissionRoute menuKey={menuKey}>{lazyElement(children)}</PermissionRoute>;
+}
+
+function DefaultAdminRoute() {
+  const { identity } = useAdminSession();
+  return <Navigate to={firstAccessibleAdminPath(identity)} replace />;
+}
+
 export const router = createBrowserRouter(
   [
     { path: "/login", element: lazyElement(<LoginPage />) },
+    { path: "/reset-password", element: lazyElement(<ResetPasswordPage />) },
     {
       path: "/",
       element: lazyElement(<AdminShell />),
       children: [
-        { index: true, element: <Navigate to="/dashboard" replace /> },
-        { path: "dashboard", element: lazyElement(<DashboardPage />) },
-        { path: "system-config", element: lazyElement(<SystemConfigPage />) },
-        { path: "site-config", element: lazyElement(<SiteConfigPage />) },
-        { path: "announcements", element: lazyElement(<AnnouncementListPage />) },
-        { path: "banners", element: lazyElement(<BannerListPage />) },
-        { path: "menu-items", element: lazyElement(<MenuItemListPage />) },
-        { path: "artists", element: lazyElement(<ArtistListPage />) },
-        { path: "artists/new", element: lazyElement(<ArtistFormPage />) },
-        { path: "artists/:id/edit", element: lazyElement(<ArtistFormPage />) },
-        { path: "cases", element: lazyElement(<CaseListPage />) },
-        { path: "cases/new", element: lazyElement(<CaseFormPage />) },
-        { path: "cases/:id/edit", element: lazyElement(<CaseFormPage />) },
-        { path: "articles", element: lazyElement(<ArticleListPage />) },
-        { path: "articles/new", element: lazyElement(<ArticleFormPage />) },
-        { path: "articles/:id/edit", element: lazyElement(<ArticleFormPage />) },
-        { path: "detail-pages", element: lazyElement(<DetailPageList />) },
-        { path: "detail-pages/new", element: lazyElement(<DetailPageDesigner />) },
-        { path: "detail-pages/:id/edit", element: lazyElement(<DetailPageDesigner />) },
-        { path: "media-assets", element: lazyElement(<MediaPage />) },
-        { path: "backups", element: lazyElement(<BackupPage />) },
-        { path: "scheduled-tasks", element: lazyElement(<ScheduledTasksPage />) },
-        { path: "change-password", element: lazyElement(<ChangePasswordPage />) },
+        { index: true, element: <DefaultAdminRoute /> },
+        { path: "dashboard", element: protectedElement("dashboard", <DashboardPage />) },
+        { path: "system-config", element: protectedElement("system-config", <SystemConfigPage />) },
+        { path: "site-config", element: protectedElement("site-config", <SiteConfigPage />) },
+        { path: "announcements", element: protectedElement("announcements", <AnnouncementListPage />) },
+        { path: "banners", element: protectedElement("banners", <BannerListPage />) },
+        { path: "menu-items", element: protectedElement("menu-items", <MenuItemListPage />) },
+        { path: "artists", element: protectedElement("artists", <ArtistListPage />) },
+        { path: "artists/new", element: protectedElement("artists", <ArtistFormPage />) },
+        { path: "artists/:id/edit", element: protectedElement("artists", <ArtistFormPage />) },
+        { path: "cases", element: protectedElement("cases", <CaseListPage />) },
+        { path: "cases/new", element: protectedElement("cases", <CaseFormPage />) },
+        { path: "cases/:id/edit", element: protectedElement("cases", <CaseFormPage />) },
+        { path: "articles", element: protectedElement("articles", <ArticleListPage />) },
+        { path: "articles/new", element: protectedElement("articles", <ArticleFormPage />) },
+        { path: "articles/:id/edit", element: protectedElement("articles", <ArticleFormPage />) },
+        { path: "detail-pages", element: protectedElement("detail-pages", <DetailPageList />) },
+        { path: "detail-pages/new", element: protectedElement("detail-pages", <DetailPageDesigner />) },
+        { path: "detail-pages/:id/edit", element: protectedElement("detail-pages", <DetailPageDesigner />) },
+        { path: "media-assets", element: protectedElement("media-assets", <MediaPage />) },
+        { path: "users", element: protectedElement("user-management", <AdminUsersPage />) },
+        { path: "backups", element: protectedElement("backups", <BackupPage />) },
+        { path: "scheduled-tasks", element: protectedElement("scheduled-tasks", <ScheduledTasksPage />) },
+        { path: "change-password", element: protectedElement("change-password", <ChangePasswordPage />) },
         { path: "*", element: lazyElement(<NotFoundPage />) }
       ]
     }

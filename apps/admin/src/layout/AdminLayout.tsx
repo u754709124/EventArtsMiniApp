@@ -4,13 +4,15 @@ import { HistoryOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined }
 import type { ItemType } from "antd/es/menu/interface";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, request } from "../api";
-import { adminMenuConfig, isMenuGroup } from "../navigation/menu-config";
+import { isMenuGroup } from "../navigation/menu-config";
+import { adminRoleLabels, filterAdminMenuConfig } from "../navigation/permissions";
 import { defaultOpenKeys, matchAdminRoute, validOpenKeys } from "../navigation/route-matching";
 import { useUnsavedChanges } from "../forms/unsaved-changes";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { stripAdminBasename } from "../routes/admin-paths";
 import { NotificationHistoryDrawer } from "../notifications/NotificationHistoryDrawer";
 import { notify } from "../notifications/notification";
+import { useAdminSession } from "../auth/session";
 
 const collapsedKey = "event-arts-admin-sider-collapsed";
 const openKeysKey = "event-arts-admin-menu-open-keys";
@@ -31,12 +33,17 @@ function readOpenKeys() {
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { identity } = useAdminSession();
   const dirtyGuard = useUnsavedChanges();
   const routePathname = stripAdminBasename(location.pathname);
   const routeMatch = matchAdminRoute(routePathname);
+  const visibleMenuConfig = useMemo(() => filterAdminMenuConfig(identity), [identity]);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [responsiveCollapsed, setResponsiveCollapsed] = useState(false);
-  const [openKeys, setOpenKeys] = useState(() => readOpenKeys().length ? readOpenKeys() : defaultOpenKeys());
+  const [openKeys, setOpenKeys] = useState(() => {
+    const stored = readOpenKeys();
+    return stored.length ? validOpenKeys(stored, visibleMenuConfig) : defaultOpenKeys(visibleMenuConfig);
+  });
   const [historyOpen, setHistoryOpen] = useState(false);
   const clickGuard = useRepeatClickGuard();
   const siderCollapsed = collapsed || responsiveCollapsed;
@@ -48,13 +55,13 @@ export function AdminLayout() {
   useEffect(() => {
     if (!routeMatch.openKeys.length) return;
     setOpenKeys((current) => {
-      const next = [...new Set([...current, ...routeMatch.openKeys])];
+      const next = validOpenKeys([...new Set([...current, ...routeMatch.openKeys])], visibleMenuConfig);
       localStorage.setItem(openKeysKey, JSON.stringify(next));
       return next;
     });
-  }, [routeMatch.openKeys.join("|")]);
+  }, [routeMatch.openKeys.join("|"), visibleMenuConfig]);
 
-  const menuItems = useMemo<ItemType[]>(() => adminMenuConfig.map((item) => {
+  const menuItems = useMemo<ItemType[]>(() => visibleMenuConfig.map((item) => {
     if (!isMenuGroup(item)) {
       return {
         key: item.key,
@@ -68,10 +75,11 @@ export function AdminLayout() {
       label: <span data-testid={item.testid}>{item.label}</span>,
       children: item.children.map((child) => ({
         key: child.key,
+        icon: child.icon,
         label: <span data-testid={child.testid}>{child.label}</span>
       }))
     };
-  }), []);
+  }), [visibleMenuConfig]);
 
   async function logout() {
     if (!dirtyGuard.confirmIfDirty()) return;
@@ -104,13 +112,15 @@ export function AdminLayout() {
           openKeys={siderCollapsed ? [] : openKeys}
           items={menuItems}
           onOpenChange={(keys) => {
-            const next = validOpenKeys(keys);
+            const next = validOpenKeys(keys, visibleMenuConfig);
             setOpenKeys(next);
             localStorage.setItem(openKeysKey, JSON.stringify(next));
           }}
           onClick={({ key }) => {
             clickGuard(`admin-menu:${key}`, () => {
-              const target = adminMenuConfig.flatMap((item) => isMenuGroup(item) ? item.children : [item]).find((item) => item.key === key);
+              const target = visibleMenuConfig
+                .flatMap((item) => isMenuGroup(item) ? item.children : [item])
+                .find((item) => item.key === key);
               if (!target || target.path === routePathname) return;
               navigate(target.path);
             });
@@ -139,7 +149,7 @@ export function AdminLayout() {
                 onClick={() => setHistoryOpen(true)}
               />
             </Tooltip>
-            <span>管理员</span>
+            <span data-testid="admin-header-identity">{identity.username} · {adminRoleLabels[identity.role]}</span>
             <Button data-testid="logout-button" icon={<LogoutOutlined />} onClick={() => clickGuard("admin:logout", logout)}>
               退出登录
             </Button>

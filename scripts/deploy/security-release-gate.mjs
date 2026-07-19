@@ -86,6 +86,43 @@ function scanForbiddenDefaults(root, issues) {
   }
 }
 
+function scanAdminResetCredentialLeaks(root, issues) {
+  const sensitiveProductionFiles = [
+    "apps/api/src/admin-password-reset.ts",
+    "apps/api/src/admin-password-reset-cli.ts",
+    "apps/api/src/admin-users.ts",
+    "apps/admin/src/api.ts",
+    "apps/admin/src/pages/AdminUsersPage.tsx",
+    "apps/admin/src/pages/ResetPasswordPage.tsx"
+  ];
+  const forbiddenPatterns = [
+    {
+      code: "RESET_SECRET_CONSOLE_LEAK",
+      pattern: /console\.(?:log|info|warn|error|debug)\([^;\n]*(?:resetLink|rawToken|tokenHash|passwordHash|newPassword)/,
+      message: "must not write reset links, raw tokens, hashes, or passwords to console output"
+    },
+    {
+      code: "RESET_SECRET_STORAGE_LEAK",
+      pattern: /(?:localStorage|sessionStorage)\.(?:setItem|getItem)\([^;\n]*(?:resetLink|rawToken|passwordReset|newPassword)/,
+      message: "must not persist reset links, raw tokens, or reset passwords in browser storage"
+    },
+    {
+      code: "RESET_URL_LITERAL_LEAK",
+      pattern: /https?:\/\/[^\s"'`]+\/admin\/reset-password#token=[A-Za-z0-9_-]{20,}/,
+      message: "must not contain a complete reusable reset URL literal"
+    }
+  ];
+
+  for (const relativePath of sensitiveProductionFiles) {
+    const content = readProjectFile(root, relativePath);
+    for (const rule of forbiddenPatterns) {
+      if (rule.pattern.test(content)) {
+        addIssue(issues, "P0", rule.code, `${relativePath} ${rule.message}`);
+      }
+    }
+  }
+}
+
 function assertContains(issues, level, code, label, content, needles) {
   for (const needle of needles) {
     if (!content.includes(needle)) {
@@ -105,6 +142,7 @@ export function runSecurityReleaseGate(options = {}) {
 
   for (const issue of smoke.issues) addIssue(issues, "P0", "PRODUCTION_ROUTING", issue);
   scanForbiddenDefaults(root, issues);
+  scanAdminResetCredentialLeaks(root, issues);
 
   const envExample = readProjectFile(root, ".env.example");
   assertContains(issues, "P0", "ENV_EXAMPLE", ".env.example", envExample, [
@@ -151,7 +189,7 @@ export function runSecurityReleaseGate(options = {}) {
   assertContains(issues, "P0", "AUTH_RATE_LIMIT_RESTORE", "apps/api/src/app.ts", app, [
     "loginRateLimitPolicy",
     "analyticsRateLimitPolicy",
-    "revokeAllAdminSessions",
+    "runRestoreExclusive",
     "RESTORE_BACKUP",
     "MAINTENANCE_MODE",
     "clientAuthLoginExchangePath",
@@ -195,6 +233,30 @@ export function runSecurityReleaseGate(options = {}) {
     "jti"
   ]);
 
+  const passwordReset = readProjectFile(root, "apps/api/src/admin-password-reset.ts");
+  assertContains(issues, "P0", "ADMIN_PASSWORD_RESET", "apps/api/src/admin-password-reset.ts", passwordReset, [
+    "createHash(\"sha256\")",
+    "targetRoleAtIssue",
+    "SUPER_ADMIN",
+    "usedAt",
+    "revokedAt"
+  ]);
+
+  const passwordResetCli = readProjectFile(root, "apps/api/src/admin-password-reset-cli.ts");
+  assertContains(issues, "P0", "SUPER_ADMIN_RESET_CLI", "apps/api/src/admin-password-reset-cli.ts", passwordResetCli, [
+    "--password-stdin",
+    "ADMIN_PASSWORD_RESET_CLI_TARGET_NOT_SUPER_ADMIN",
+    "SUPER_ADMIN"
+  ]);
+
+  const resetPage = readProjectFile(root, "apps/admin/src/pages/ResetPasswordPage.tsx");
+  assertContains(issues, "P0", "RESET_PAGE_BROWSER_HYGIENE", "apps/admin/src/pages/ResetPasswordPage.tsx", resetPage, [
+    "window.location.hash",
+    "history.replaceState",
+    "no-referrer",
+    "consumeAdminPasswordReset"
+  ]);
+
   const logging = readProjectFile(root, "apps/api/src/logging.ts");
   assertContains(issues, "P1", "SECURITY_LOGGING", "apps/api/src/logging.ts", logging, [
     "apiLogRedactPaths",
@@ -216,7 +278,21 @@ export function runSecurityReleaseGate(options = {}) {
   assertContains(issues, "P1", "BACKUP_RESTORE", "apps/api/src/backup.ts", backup, [
     "VACUUM INTO",
     "activeDatabasePath",
-    "restoreInProgress"
+    "restoreInProgress",
+    "createDownloadArchive",
+    "activeBackupAccess",
+    "createReadStream",
+    "identityRestorePolicy",
+    "preserve_target",
+    "admin_password_reset_tokens"
+  ]);
+  assertContains(issues, "P1", "BACKUP_DOWNLOAD", "apps/api/src/app.ts", app, [
+    "/api/admin/backups/:id/download",
+    "requireAdmin",
+    "Content-Disposition",
+    "Cache-Control",
+    "X-Content-Type-Options",
+    "backup_download_completed"
   ]);
 
   const sharedContracts = readProjectFile(root, "packages/shared/src/index.ts");
@@ -248,13 +324,16 @@ export function runSecurityReleaseGate(options = {}) {
     "admin:bootstrap",
     "analytics:cleanup",
     "RESTORE_FULL_BACKUP",
+    "/api/admin/backups/:id/download",
     "nginx -t",
     "防火墙",
     "异地",
     "WECHAT_MINIAPP_APP_ID",
     "WECHAT_MINIAPP_APP_SECRET",
     "CLIENT_AUTH_REQUIRED",
-    "微信 request 合法域名"
+    "微信 request 合法域名",
+    "admin:password:reset",
+    "preserve_target"
   ]);
 
   const readme = readProjectFile(root, "README.md");
@@ -266,7 +345,9 @@ export function runSecurityReleaseGate(options = {}) {
     "WECHAT_MINIAPP_APP_ID",
     "生产 `/api/client/**`",
     "wx.login",
-    "edgeone:prefetch:reconcile"
+    "edgeone:prefetch:reconcile",
+    "SUPER_ADMIN",
+    "恢复链接"
   ]);
 
   const ok = issues.length === 0;

@@ -157,17 +157,18 @@ describe("DashboardPage", () => {
   });
 
   it("keeps the last successful EdgeOne values when only EdgeOne refresh fails", async () => {
-    apiMocks.request
-      .mockResolvedValueOnce(readyOverview(2))
-      .mockResolvedValueOnce({
+    apiMocks.request.mockResolvedValueOnce(readyOverview(2));
+
+    renderPage();
+    await screen.findByLabelText("2.00 GB");
+
+    apiMocks.request.mockResolvedValueOnce({
         todayUniqueUsers: 9,
         weekDailyUniqueUsers: 10,
         monthDailyUniqueUsers: 11,
         edgeOne: { status: "error", code: "EDGEONE_UPSTREAM_ERROR", message: "腾讯云暂时不可用" }
       } satisfies DashboardOverviewResponse);
 
-    renderPage();
-    await screen.findByLabelText("2.00 GB");
     const refresh = screen.getByTestId("dashboard-refresh-all") as HTMLButtonElement;
     await waitFor(() => expect(refresh.disabled).toBe(false));
     fireEvent.click(refresh);

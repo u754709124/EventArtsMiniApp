@@ -12,9 +12,10 @@ import {
   SettingOutlined,
   TeamOutlined
 } from "@ant-design/icons";
+import type { AdminMenuKey } from "@event-arts/shared";
 
 export type AdminMenuLeaf = {
-  key: string;
+  key: AdminMenuKey;
   label: string;
   icon?: React.ReactNode;
   path: string;
@@ -156,6 +157,15 @@ export const adminMenuConfig: AdminMenuItem[] = [
     breadcrumb: "账号安全",
     testid: "sidebar-group-account",
     children: [
+      {
+        key: "user-management",
+        label: "用户管理",
+        icon: <TeamOutlined />,
+        path: "/users",
+        matchPaths: ["/users"],
+        breadcrumb: "用户管理",
+        testid: "sidebar-users"
+      },
       {
         key: "backups",
         label: "备份与恢复",

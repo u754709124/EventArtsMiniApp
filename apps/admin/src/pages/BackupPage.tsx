@@ -16,9 +16,24 @@ import {
   Typography
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  ExclamationCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  UploadOutlined
+} from "@ant-design/icons";
 import type { BackupDto, BackupPreflightSummary, BackupRestoreAcceptedResponse, BackupStatus } from "@event-arts/shared";
-import { clearToken, createBackup, deleteBackup, importBackupArchive, listBackups, restoreBackup } from "../api";
+import {
+  clearToken,
+  createBackup,
+  deleteBackup,
+  downloadBackupArchive,
+  importBackupArchive,
+  listBackups,
+  restoreBackup
+} from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { useRepeatClickGuard } from "../utils/repeat-click-guard";
 import { useNavigate } from "react-router-dom";
@@ -59,6 +74,21 @@ function statusTag(status: BackupStatus) {
   return <Badge status={item.status} text={<Tag color={item.color}>{item.text}</Tag>} />;
 }
 
+function identityPolicyTag(policy: BackupDto["identityRestorePolicy"] | BackupPreflightSummary["identityRestorePolicy"]) {
+  if (policy === "preserve_target") return <Tag color="purple">保留当前身份</Tag>;
+  return <Tag>旧版清单</Tag>;
+}
+
+function restoreBehaviorTag(value: BackupPreflightSummary["impact"]["tables"][number]["restoreBehavior"]) {
+  const labels: Record<typeof value, { text: string; color: string }> = {
+    restored: { text: "恢复备份数据", color: "blue" },
+    ignored: { text: "忽略并清空", color: "default" },
+    "preserved-current": { text: "保留当前系统", color: "purple" }
+  };
+  const item = labels[value];
+  return <Tag color={item.color}>{item.text}</Tag>;
+}
+
 function errorMessage(error: unknown) {
   if (!(error instanceof Error)) return "操作失败";
   const apiError = error as Error & { code?: string };
@@ -80,6 +110,22 @@ function checkTags(preflight: BackupPreflightSummary) {
   ] as const;
 }
 
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  try {
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function BackupPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm<CreateBackupForm>();
@@ -95,6 +141,7 @@ export function BackupPage() {
   const [restoreTarget, setRestoreTarget] = useState<BackupDto | null>(null);
   const [restoreText, setRestoreText] = useState("");
   const [restoringBackupId, setRestoringBackupId] = useState<string | null>(null);
+  const [downloadingIds, setDownloadingIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const clickGuard = useRepeatClickGuard();
 
@@ -184,6 +231,20 @@ export function BackupPage() {
     }
   }
 
+  async function handleDownload(backup: BackupDto) {
+    if (backup.status !== "ready" || downloadingIds.includes(backup.id)) return;
+    setDownloadingIds((current) => (current.includes(backup.id) ? current : [...current, backup.id]));
+    try {
+      const archive = await downloadBackupArchive(backup.id);
+      saveBlob(archive.blob, archive.filename);
+      notify.success("备份下载已开始");
+    } catch (error) {
+      notify.error(errorMessage(error));
+    } finally {
+      setDownloadingIds((current) => current.filter((id) => id !== backup.id));
+    }
+  }
+
   async function submitRestore() {
     if (!restoreTarget || restoreText !== restoreConfirmation) return;
     setRestoringBackupId(restoreTarget.id);
@@ -198,7 +259,7 @@ export function BackupPage() {
   }
 
   function finishRestore(result: BackupRestoreAcceptedResponse) {
-    notify.success(`恢复完成，安全快照 ${result.snapshotBackupId} 已创建，请重新登录`);
+    notify.success(`恢复完成，安全快照 ${result.snapshotBackupId} 已创建，后台会话和重置链接已失效`);
     clearToken();
     setRestoreTarget(null);
     setRestoreText("");
@@ -219,6 +280,7 @@ export function BackupPage() {
       render: (value) => <Typography.Text code copyable>{String(value)}</Typography.Text>
     },
     { title: "版本", dataIndex: "formatVersion", width: 80, render: (value) => `v${value}` },
+    { title: "身份恢复", width: 130, render: (_, backup) => identityPolicyTag(backup.identityRestorePolicy) },
     { title: "状态", dataIndex: "status", width: 110, render: (value: BackupStatus) => statusTag(value) },
     { title: "创建者", width: 140, render: (_, backup) => backup.createdBy.username },
     { title: "总大小", dataIndex: "size", width: 120, render: (value) => formatBytes(Number(value)) },
@@ -237,32 +299,45 @@ export function BackupPage() {
     {
       title: "操作",
       fixed: "right",
-      width: 190,
-      render: (_, backup) => (
-        <Space>
-          <Button
-            data-testid={`backup-restore-${backup.id}`}
-            disabled={busy || backup.status !== "ready"}
-            loading={restoringBackupId === backup.id}
-            onClick={() => clickGuard(`backup:restore:open:${backup.id}`, () => {
-              setRestoreTarget(backup);
-              setRestoreText("");
-            })}
-          >
-            恢复
-          </Button>
-          <Button
-            danger
-            icon={<DeleteOutlined />}
-            data-testid={`backup-delete-${backup.id}`}
-            disabled={busy || backup.status !== "ready"}
-            loading={deletingIds.includes(backup.id)}
-            onClick={() => clickGuard(`backup:delete:open:${backup.id}`, () => confirmDelete([backup.id]))}
-          >
-            删除
-          </Button>
-        </Space>
-      )
+      width: 280,
+      render: (_, backup) => {
+        const downloading = downloadingIds.includes(backup.id);
+        const rowBusy = busy || downloading;
+        return (
+          <Space>
+            <Button
+              icon={<DownloadOutlined />}
+              data-testid={`backup-download-${backup.id}`}
+              disabled={busy || backup.status !== "ready" || downloading}
+              loading={downloading}
+              onClick={() => clickGuard(`backup:download:${backup.id}`, () => handleDownload(backup))}
+            >
+              下载
+            </Button>
+            <Button
+              data-testid={`backup-restore-${backup.id}`}
+              disabled={rowBusy || backup.status !== "ready"}
+              loading={restoringBackupId === backup.id}
+              onClick={() => clickGuard(`backup:restore:open:${backup.id}`, () => {
+                setRestoreTarget(backup);
+                setRestoreText("");
+              })}
+            >
+              恢复
+            </Button>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              data-testid={`backup-delete-${backup.id}`}
+              disabled={rowBusy || backup.status !== "ready"}
+              loading={deletingIds.includes(backup.id)}
+              onClick={() => clickGuard(`backup:delete:open:${backup.id}`, () => confirmDelete([backup.id]))}
+            >
+              删除
+            </Button>
+          </Space>
+        );
+      }
     }
   ];
 
@@ -271,7 +346,7 @@ export function BackupPage() {
       <PageHeader
         title="备份与恢复"
         breadcrumbs={["账号安全", "备份与恢复"]}
-        description="全量备份包含数据库与 uploads 文件；恢复会覆盖当前数据并使现有登录失效。"
+        description="全量备份包含数据库与 uploads 文件；恢复业务数据时保留当前后台账户、角色、菜单权限和个人通知，并使现有登录与重置链接失效。"
         extra={
           <Space wrap>
             <Button
@@ -415,6 +490,7 @@ export function BackupPage() {
               <Descriptions.Item label="来源">外部归档</Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDateTime(importResult.preflight.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="创建者">{importResult.preflight.createdBy.username}</Descriptions.Item>
+              <Descriptions.Item label="身份恢复">{identityPolicyTag(importResult.preflight.identityRestorePolicy)}</Descriptions.Item>
               <Descriptions.Item label="数据库">{formatBytes(importResult.preflight.database.size)}</Descriptions.Item>
               <Descriptions.Item label="上传文件">{importResult.preflight.uploads.fileCount} 个 / {formatBytes(importResult.preflight.uploads.totalBytes)}</Descriptions.Item>
               <Descriptions.Item label="总大小">{formatBytes(importResult.preflight.totals.totalBytes)}</Descriptions.Item>
@@ -434,7 +510,8 @@ export function BackupPage() {
                 { title: "表", dataIndex: "table" },
                 { title: "当前行数", dataIndex: "currentRows" },
                 { title: "备份行数", dataIndex: "candidateRows" },
-                { title: "变化", dataIndex: "deltaRows" }
+                { title: "变化", dataIndex: "deltaRows" },
+                { title: "恢复行为", dataIndex: "restoreBehavior", render: (value) => restoreBehaviorTag(value) }
               ]}
               locale={{ emptyText: <Empty description="无表级变化" /> }}
             />
@@ -463,11 +540,12 @@ export function BackupPage() {
               type="warning"
               showIcon
               title="这是破坏性全量恢复"
-              description="恢复会覆盖当前数据库与 uploads 文件，服务会进入维护状态，服务端会先创建恢复前安全快照，成功后当前登录和其他管理员会话都会失效。"
+              description="恢复会覆盖业务数据与 uploads 文件，但会保留当前后台账户、角色、菜单权限和个人通知；服务端会先创建恢复前安全快照，成功后当前后台会话和未使用重置链接都会失效。"
             />
             <Descriptions size="small" bordered column={1} className="backup-restore-summary">
               <Descriptions.Item label="备份 ID">{restoreTarget.id}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDateTime(restoreTarget.createdAt)}</Descriptions.Item>
+              <Descriptions.Item label="身份恢复">{identityPolicyTag(restoreTarget.identityRestorePolicy)}</Descriptions.Item>
               <Descriptions.Item label="总大小">{formatBytes(restoreTarget.size)}</Descriptions.Item>
             </Descriptions>
             <Form layout="vertical">

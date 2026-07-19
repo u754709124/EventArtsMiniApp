@@ -115,7 +115,7 @@
 .rich-text-editor .tiptap.ProseMirror {
   min-height: 260px;
   max-width: 100%;
-  padding: 16px;
+  padding: 16px 16px 128px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   white-space: break-spaces;
@@ -209,6 +209,6 @@
 
   .rich-text-editor .tiptap.ProseMirror {
     min-height: 220px;
-    padding: 12px;
+    padding: 12px 12px 104px;
   }
 }

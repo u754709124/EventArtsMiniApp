@@ -233,6 +233,17 @@ pnpm assets:slice:artist-detail
 
 首页返回 `featuredArticles`，最多 2 条启用精选文章；小程序首页和文章列表共用 `ArticleCard`。媒体删除保护包含 `article.cover`，详情页引用保护包含 sourceType `article`。完整模型、接口、seed、截图路径和资源复用说明见 `docs/design/article-module.md`；本模块复用已有资源，未使用参考图切片。
 
+## 后台账户、权限与密码恢复
+
+后台账户固定为三级：`SUPER_ADMIN`（超级管理员）、`ADMIN`（管理员）和 `USER`（普通用户）。`SUPER_ADMIN` 拥有全部后台菜单；`ADMIN` 和 `USER` 只获得被分配的叶子菜单，服务端会在每次请求时从数据库重新计算角色和权限，前端菜单隐藏与路由守卫仅用于交互提示。
+
+- 首个 `SUPER_ADMIN`：仅在系统没有任何后台账户时，运行 `pnpm --filter api admin:bootstrap -- --username <name> --password-stdin` 创建。
+- `SUPER_ADMIN` 忘记密码：只能在服务器运行 `pnpm --filter api admin:password:reset -- --username <name> --password-stdin`；命令拒绝 `ADMIN` 和 `USER`。
+- `ADMIN` 忘记密码：由 `SUPER_ADMIN` 在用户管理页生成一次性恢复链接。
+- `USER` 忘记密码：由 `ADMIN` 或 `SUPER_ADMIN` 生成一次性恢复链接；`ADMIN` 只能管理 `USER`，且只能下放自己已有的业务菜单权限。
+
+新建 `ADMIN`/`USER` 默认处于待激活状态，通过一次性激活链接设置首个密码。链接默认 30 分钟有效，只在生成结果中展示一次；数据库仅保存 SHA-256 token hash。生成新链接、修改角色/状态/权限或修改密码都会撤销相关会话和旧链接。任何 Web 账户都不能为 `SUPER_ADMIN` 生成恢复链接。
+
 ## 测试
 
 ```bash
@@ -278,7 +289,7 @@ pnpm e2e -- --project=miniapp-h5 --grep "四种详情页视觉截图与人员详
 - 生产必须配置真实 `WECHAT_MINIAPP_APP_ID`、`WECHAT_MINIAPP_APP_SECRET` 和 `WECHAT_AUTH_VERIFIER_MODE=wechat`；缺失、占位或 fake verifier 会让 API 启动失败。
 - Admin upstream 默认 `127.0.0.1:4173`，API upstream 默认 `127.0.0.1:3001`，公网只开放 Nginx。
 - 为 `/uploads` 或对象存储配置备份、访问控制和 CDN。
-- 后台“账号安全 / 备份与恢复”支持创建全量备份、查看列表、删除、导入 `.tar`/`.tar.gz` 外部备份并执行 `RESTORE_FULL_BACKUP` 二次确认恢复。恢复成功会撤销所有管理员会话。
+- 后台“账号安全 / 备份与恢复”支持创建全量备份、查看列表、逐条下载受保护的 `.tar.gz`、删除、导入 `.tar`/`.tar.gz` 外部备份并执行 `RESTORE_FULL_BACKUP` 二次确认恢复。下载使用管理员 Bearer 鉴权且不暴露 `BACKUP_DIR` 公共 URL；恢复成功会撤销所有管理员会话。
 - 生产调度器继续调用 `admin:sessions:cleanup`、`admin:notifications:cleanup`、`analytics:cleanup` 和 `edgeone:prefetch:reconcile`；四条 CLI 与后台立即执行复用同一 runner 并记录最近状态。API 进程不内置常驻 cron daemon。
 - 从旧版本升级前必须同时备份 SQLite 数据库与完整 `uploads` 目录。迁移预检遇到缺失文件或无法解释的非空旧 `mediaJson` 会停止，不会猜测或丢弃数据。
 - 使用 HTTPS API 域名，并在微信小程序后台配置 request 合法域名；上线前用真实小程序复核 `wx.login -> /api/client/auth/wechat -> /api/client/home`。如果真机报 `ERR_CONNECTION_CLOSED`，先确认小程序包内编译进去的 `TARO_APP_API_BASE_URL` 是真实可访问域名，而不是验证或文档里的占位地址。

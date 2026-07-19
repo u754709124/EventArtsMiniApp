@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
 import { createInMemoryRateLimitStore } from "../src/rate-limit";
+import { hashPassword } from "../src/security";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
   clientAuthHeaders,
@@ -96,6 +98,7 @@ beforeEach(async () => {
     weChatLoginCodeVerifier: createTestWeChatLoginCodeVerifier(),
     rateLimit: {
       login: { windowMs, maxFailures: loginMaxFailures },
+      adminPasswordReset: { windowMs, maxRequests: 1 },
       analytics: { windowMs, maxRequests: analyticsMaxRequests }
     },
     rateLimitStore: createInMemoryRateLimitStore()
@@ -209,5 +212,42 @@ describe("anonymous page-view rate limiting", () => {
       forwardedFor: "203.0.113.71"
     });
     expect(otherClient.statusCode).toBe(200);
+  });
+});
+
+describe("admin password reset rate limiting", () => {
+  it("limits reset-link generation by issuer, target, and purpose", async () => {
+    const loginResponse = await loginRequest({
+      password: testAdminCredentials.password,
+      remoteAddress: "203.0.113.80"
+    });
+    const token = String(loginResponse.json().data.token);
+    const user = await prisma.adminUser.create({
+      data: {
+        username: `rate-limit-user-${randomUUID()}`,
+        passwordHash: hashPassword(`RateLimit-${randomUUID()}-Aa1!`),
+        role: "USER",
+        status: "enabled",
+        activatedAt: clockNow
+      }
+    });
+    const request = () => app.inject({
+      method: "POST",
+      url: `/api/admin/users/${user.publicId}/reset-links`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        purpose: "recovery",
+        currentPassword: testAdminCredentials.password,
+        confirmation: true
+      }
+    });
+
+    const first = await request();
+    expect(first.statusCode).toBe(200);
+    expectRateLimited(await request());
+
+    advanceClock(windowMs + 1);
+    const recovered = await request();
+    expect(recovered.statusCode).toBe(200);
   });
 });
