@@ -1557,6 +1557,56 @@ test("案例 BANNER 富文本详情显示案例元数据并用独立 Video 节�
   await expectDetailBackFallback(page, "miniapp-home");
 });
 
+test("详情页多个视频只允许一个播放", async ({ page, request }) => {
+  const { caseBanner } = await resolveDetailFixtures(request);
+  const dto = await clientApi<DetailPageDto>(
+    request,
+    `/api/client/detail-pages/${caseBanner.detailPageId}`
+  );
+  const videoBlock = dto.cards
+    .flatMap((card) => card.blocks)
+    .find((block) => block.type === "video");
+  if (!videoBlock || videoBlock.type !== "video") {
+    throw new Error("详情页种子数据缺少视频");
+  }
+  const multiVideoDto: DetailPageDto = {
+    ...dto,
+    blocks: [videoBlock, { ...videoBlock }],
+    cards: [{ blocks: [videoBlock, { ...videoBlock }] }]
+  };
+  await page.route(`**/api/client/detail-pages/${caseBanner.detailPageId}`, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { success: boolean; data: DetailPageDto };
+    await route.fulfill({ response, json: { ...body, data: multiVideoDto } });
+  });
+
+  await openDetail(page, caseBanner.detailPageId);
+  const videos = page.getByTestId("detail-video").locator("video");
+  await expect(videos).toHaveCount(2);
+  await videos.nth(0).evaluate(async (video: HTMLVideoElement) => {
+    video.muted = true;
+    video.loop = true;
+    video.currentTime = 0;
+    await video.play();
+  });
+  await expect.poll(() => videos.nth(0).evaluate((video: HTMLVideoElement) => video.paused)).toBe(
+    false
+  );
+
+  await videos.nth(1).evaluate(async (video: HTMLVideoElement) => {
+    video.muted = true;
+    video.loop = true;
+    video.currentTime = 0;
+    await video.play();
+  });
+  await expect.poll(() => videos.nth(0).evaluate((video: HTMLVideoElement) => video.paused)).toBe(
+    true
+  );
+  await expect.poll(() => videos.nth(1).evaluate((video: HTMLVideoElement) => video.paused)).toBe(
+    false
+  );
+});
+
 test("案例单富文本详情从导航后正常起始且没有轮播残留", async ({ page, request }) => {
   const { caseRich } = await resolveDetailFixtures(request);
   await openDetail(page, caseRich.detailPageId);

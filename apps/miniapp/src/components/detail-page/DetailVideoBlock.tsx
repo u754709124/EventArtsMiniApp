@@ -28,7 +28,17 @@ function getVideoWrapLayout(block: ExtractDetailPageVideoBlock): { className: st
   };
 }
 
-export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock }) {
+export function DetailVideoBlock({
+  block,
+  videoId,
+  onPlay,
+  onInactive
+}: {
+  block: ExtractDetailPageVideoBlock;
+  videoId: string;
+  onPlay: () => void;
+  onInactive: () => void;
+}) {
   const [failed, setFailed] = useState(false);
   const layout = getVideoWrapLayout(block);
 
@@ -47,6 +57,7 @@ export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock
       data-testid="detail-video"
     >
       <Video
+        id={videoId}
         className="detail-video"
         src={block.url}
         poster={block.posterUrl || undefined}
@@ -55,7 +66,13 @@ export function DetailVideoBlock({ block }: { block: ExtractDetailPageVideoBlock
         loop={false}
         initialTime={0}
         objectFit="contain"
-        onError={() => setFailed(true)}
+        onPlay={onPlay}
+        onPause={onInactive}
+        onEnded={onInactive}
+        onError={() => {
+          onInactive();
+          setFailed(true);
+        }}
       />
     </View>
   );

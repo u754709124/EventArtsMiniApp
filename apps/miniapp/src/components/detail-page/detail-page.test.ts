@@ -41,6 +41,7 @@ import {
   detailNavigationFallbackMetrics
 } from "./navigation-layout";
 import { enhanceDetailRichTextForDisplay } from "./rich-text-display";
+import { createExclusiveVideoPlaybackController } from "./video-playback";
 
 const miniappSourceRoot = resolve(import.meta.dirname, "../..");
 
@@ -335,6 +336,44 @@ describe("detail request race gate", () => {
 });
 
 describe("recoverable detail media", () => {
+  it("keeps only the latest detail video active", () => {
+    const paused: string[] = [];
+    const playback = createExclusiveVideoPlaybackController();
+
+    playback.play("video-a", (videoId) => paused.push(videoId));
+    playback.play("video-a", (videoId) => paused.push(videoId));
+    expect(paused).toEqual([]);
+
+    playback.play("video-b", (videoId) => paused.push(videoId));
+    expect(paused).toEqual(["video-a"]);
+
+    playback.inactive("video-a");
+    playback.play("video-c", (videoId) => paused.push(videoId));
+    expect(paused).toEqual(["video-a", "video-b"]);
+
+    playback.inactive("video-c");
+    playback.play("video-a", (videoId) => paused.push(videoId));
+    expect(paused).toEqual(["video-a", "video-b"]);
+  });
+
+  it("wires every detail video lifecycle into the shared playback controller", () => {
+    const richContentSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailRichContent.tsx"),
+      "utf8"
+    );
+    const videoSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/DetailVideoBlock.tsx"),
+      "utf8"
+    );
+    expect(richContentSource).toContain("createExclusiveVideoPlaybackController");
+    expect(richContentSource).toContain("Taro.createVideoContext(videoId).pause()");
+    expect(richContentSource).toContain("videoId={`detail-video-${cardIndex}-${blockIndex}`}");
+    expect(videoSource).toContain("id={videoId}");
+    expect(videoSource).toContain("onPlay={onPlay}");
+    expect(videoSource).toContain("onPause={onInactive}");
+    expect(videoSource).toContain("onEnded={onInactive}");
+  });
+
   it("lets rich-text own slow image loading without an independent failure preflight", () => {
     const richContentSource = readFileSync(
       resolve(miniappSourceRoot, "components/detail-page/DetailRichContent.tsx"),
