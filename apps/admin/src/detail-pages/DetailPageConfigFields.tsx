@@ -145,19 +145,18 @@ export function DetailPageConfigFields({
       ) : (
         <div className="detail-page-dynamic-fields">
           {configFields.has("heroSubtitle") && (
-              <Form.Item
-                label="BANNER 宣传语"
-                name={["detailPage", "heroSubtitle"]}
-                rules={[{ required: true, whitespace: true, message: "请输入 BANNER 宣传语" }]}
-              >
-                <Input
-                  data-testid="detail-hero-subtitle"
-                  aria-label="BANNER 宣传语"
-                  maxLength={80}
-                  disabled={disabled}
-                  placeholder="请输入显示在 BANNER 上的辅助文案"
-                />
-              </Form.Item>
+            <Form.Item
+              label="BANNER 宣传语（选填）"
+              name={["detailPage", "heroSubtitle"]}
+            >
+              <Input
+                data-testid="detail-hero-subtitle"
+                aria-label="BANNER 宣传语"
+                maxLength={80}
+                disabled={disabled}
+                placeholder="请输入显示在 BANNER 上的辅助文案"
+              />
+            </Form.Item>
           )}
           {configFields.has("banners") && (
               <Form.Item

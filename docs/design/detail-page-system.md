@@ -12,7 +12,7 @@
 
 | 枚举值             | 中文名          | rendererKey      | 字段与约束                                           |
 | ------------------ | --------------- | ---------------- | ---------------------------------------------------- |
-| `banner_rich_text` | BANNER + 富文本 | `bannerRichText` | 宣传语 trim 后非空；1–6 张不重复图片；富文本语义非空 |
+| `banner_rich_text` | BANNER + 富文本 | `bannerRichText` | 宣传语可选且 trim；1–6 张不重复图片；富文本语义非空 |
 | `rich_text`        | 单富文本        | `richText`       | 仅富文本；宣传语为空；`banners` 必须为空             |
 
 `ownerType/ownerId` 仅用于旧数据审计和迁移回填。运行时引用关系是业务表的真实 FK：`announcements.detailPageId`、`banners.detailPageId`、`artists.detailPageId`、`activity_cases.detailPageId`、`articles.detailPageId`，均允许为空并使用 `ON DELETE RESTRICT` 保护被引用详情页。
@@ -132,7 +132,9 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 
 ## 公共 Taro renderer 与 adapters
 
-`DetailPageRenderer` 以共享 `rendererKey` 查找 exhaustively typed registry。`BannerRichTextRenderer` 渲染排序 Swiper、页码、覆盖式导航、Hero 与负重叠内容；单图不 circular。`RichTextRenderer` 只渲染正常导航和内容，完全没有 BANNER、Hero、页码、BANNER skeleton、高度或负 margin DOM。
+`DetailPageRenderer` 以共享 `rendererKey` 查找 exhaustively typed registry。`BannerRichTextRenderer` 先在正常文档流渲染按状态栏和微信胶囊测量的“安全顶部 + 44px 导航栏”，再渲染排序 Swiper、页码、Hero 与负重叠内容；单图不 circular。安全区使用暖白到透明渐变并轻微延伸到 BANNER 顶缘，返回按钮位置与单富文本详情一致。`RichTextRenderer` 只渲染正常导航和内容，完全没有 BANNER、Hero、页码、BANNER skeleton、高度或负 margin DOM。
+
+Hero 可选字段在 trim/过滤后按需创建节点：类型标题、宣传语、主标签、多个标签、地点和元数据为空时均不留占位；地点与元数据同时为空时不创建 meta 容器。加载骨架和 Admin 移动端预览保持“安全导航、BANNER、Hero、首卡”的相同顺序。
 
 公共详情路由直接使用详情页 DTO 内的 Hero；旧人员/案例详情路由只作为兼容跳板，读取业务 `detailPageId` 后 redirect 到 `/pages/detail/index`，无引用时显示“暂无详情”。路由只负责取数、错误分类、ID race gate 和 PV；切换 ID 立即清空旧 state，迟到响应不能覆盖新数据。
 
@@ -188,8 +190,8 @@ parser 深度遍历清洗后的 fragment。连续非视频节点序列化为 `ri
 ## H5 与微信端差异
 
 - H5 视觉证据固定 viewport `427 × 922`、DPR 2；微信端以 `statusBarHeight` 和胶囊矩形计算导航安全区。
-- BANNER 以 `424rpx` 为最小高度而非固定最终高度；Hero 参与正常流并由真实内容自然撑高，顶部复用导航安全区，底部显式预留 `42rpx` 首卡重叠量加 `24rpx` 可见间距。Swiper、遮罩、导航和计数器绝对铺在最终 BANNER 高度内。
-- Admin 的 375px 移动端预览按半比例镜像该流式契约：`212px` 最小高度、`72px 115px 33px 22px` 内容 padding、覆盖导航 `20px + 44px`、首卡负重叠 `21px`；正文为 `15px`，富文本标题为 `17px/1.35/700`。
+- BANNER 以 `424rpx` 为最小高度而非固定最终高度；其上方安全导航独立占据正常流，BANNER 顶边不进入状态栏或胶囊区域。Hero 参与 BANNER 内部流式布局，顶部仅保留相对 BANNER 的小间距，底部显式预留 `42rpx` 首卡重叠量加 `24rpx` 可见间距。Swiper、遮罩和计数器绝对铺在最终 BANNER 高度内。
+- Admin 的 375px 移动端预览镜像该区块顺序：独立 `20px + 44px` 安全导航、`212px` BANNER 最小高度、Hero 顶部 `8px` 小间距、首卡负重叠 `21px`；正文为 `15px`，富文本标题为 `17px/1.35/700`。
 - canonical HTML 与 Admin 继续保留语义 `h1`；微信 WeApp 展示边界则用唯一普通 `div` 根明确写入正文 `15px/1.72`，并把标题转换为普通 `div` 的 `17px/1.35/700`，从最终 `RichText.nodes` 中移除原生 `h1` 与 `rpx` 字号依赖。标题子树历史 inline 字号和字重钳制为继承值，V2 展示输出会升级到带版本标记的 V3 后保持幂等；marker 固定 `3px × 13px`、右距 `5px`。图片继续合并响应式样式，不修改存储 HTML 或 DTO。
 - H5 测试通过 `globalThis.__TARO_DETAIL_E2E_FIXED__ = true` 固定第一张 BANNER 并关闭自动轮播；正式运行多图间隔 6500ms。
 - 微信小程序端公共详情页启用“发送给朋友”分享能力，并在右下角渲染独立悬浮圆形分享按钮；按钮使用 `Button openType="share"`，不绘制自定义分享面板。

@@ -8,6 +8,10 @@ import {
 } from "@event-arts/shared";
 import type { DetailPageFormValue, DetailTemplateAsset, StandaloneDetailPageFormValue } from "./types";
 
+function cleanOptionalText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export const detailFormFieldNameByConfigField = {
   heroTitle: "hero",
   heroTypeLabel: "hero",
@@ -66,7 +70,7 @@ export function normalizeDetailPageFormValue(value: unknown): DetailPageInput {
         hero: {
           title: formValue.hero?.title ?? "",
           typeLabel: formValue.hero?.typeLabel ?? "",
-          subtitle: formValue.hero?.subtitle ?? formValue.heroSubtitle ?? "",
+          subtitle: cleanOptionalText(formValue.hero?.subtitle ?? formValue.heroSubtitle),
           badge: formValue.hero?.badge ?? "",
           tags: formValue.hero?.tags ?? [],
           location: formValue.hero?.location ?? "",
@@ -104,7 +108,7 @@ export function normalizeStandaloneDetailPageFormValue(values: StandaloneDetailP
     hero: {
       title: values.detailPage.hero?.title,
       typeLabel: values.detailPage.hero?.typeLabel ?? "",
-      subtitle: values.detailPage.hero?.subtitle ?? values.detailPage.heroSubtitle,
+      subtitle: cleanOptionalText(values.detailPage.hero?.subtitle ?? values.detailPage.heroSubtitle),
       badge: values.detailPage.hero?.badge ?? "",
       tags: values.detailPage.hero?.tags ?? [],
       location: values.detailPage.hero?.location ?? "",

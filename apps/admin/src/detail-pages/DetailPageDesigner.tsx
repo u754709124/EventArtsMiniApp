@@ -216,7 +216,7 @@ export function DetailPageDesigner() {
                   </Form.Item>
                 )}
                 {configFields.has("heroSubtitle") && (
-                  <Form.Item label="宣传语" name={["detailPage", "hero", "subtitle"]} rules={[{ required: true, whitespace: true, message: "请输入宣传语" }]}>
+                  <Form.Item label="宣传语（选填）" name={["detailPage", "hero", "subtitle"]}>
                     <Input data-testid="detail-hero-subtitle" maxLength={80} showCount />
                   </Form.Item>
                 )}

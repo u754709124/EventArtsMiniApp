@@ -33,7 +33,7 @@ import {
   detailCardOverlapRpx,
   detailHeroBottomSpaceRpx,
   detailHeroVisibleGapRpx,
-  getDetailHeroTop,
+  detailHeroNavigationGapPx,
   detailNavigationFallbackMetrics
 } from "./navigation-layout";
 import { enhanceDetailRichTextForDisplay } from "./rich-text-display";
@@ -132,8 +132,18 @@ describe("detail renderer registry and layout contracts", () => {
     expect(detailHeroVisibleGapRpx).toBeGreaterThan(0);
     expect(detailHeroBottomSpaceRpx).toBe(detailCardOverlapRpx + detailHeroVisibleGapRpx);
     expect(detailHeroBottomSpaceRpx).toBeGreaterThan(detailCardOverlapRpx);
-    expect(getDetailHeroTop(detailNavigationFallbackMetrics)).toBe(72);
-    expect(getDetailHeroTop({ safeTop: 47, headerHeight: 52 })).toBe(107);
+    expect(detailNavigationFallbackMetrics).toEqual({ safeTop: 20, headerHeight: 44 });
+    expect(detailHeroNavigationGapPx).toBe(8);
+    const bannerSource = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/BannerRichTextRenderer.tsx"),
+      "utf8"
+    );
+    expect(bannerSource).toContain('className="detail-navigation--banner-safe"');
+    expect(bannerSource.indexOf("detail-navigation--banner-safe")).toBeLessThan(
+      bannerSource.indexOf('className="detail-banner"')
+    );
+    expect(bannerSource).toContain("detailHeroNavigationGapPx");
+    expect(bannerSource).not.toContain("getDetailHeroTop");
   });
 
   it("registers every shared renderer key exactly once and rejects unknown keys", () => {

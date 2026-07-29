@@ -57,6 +57,27 @@ $detail-body-line-height: 1.72;
     background: transparent;
   }
 
+  &--banner-safe {
+    position: relative;
+    background: linear-gradient(
+      180deg,
+      #fbf7ef 0%,
+      rgba(251, 247, 239, 0.9) 72%,
+      rgba(251, 247, 239, 0.2) 100%
+    );
+
+    &::after {
+      position: absolute;
+      right: 0;
+      bottom: -20rpx;
+      left: 0;
+      height: 20rpx;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(251, 247, 239, 0.2), rgba(251, 247, 239, 0));
+      content: "";
+    }
+  }
+
   &__bar {
     position: relative;
     display: flex;
@@ -519,7 +540,7 @@ $detail-body-line-height: 1.72;
   &--title {
     width: 190rpx;
     height: 48rpx;
-    margin-top: 190rpx;
+    margin-top: 16rpx;
   }
 }
 

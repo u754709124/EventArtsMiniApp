@@ -158,12 +158,12 @@
 
 ## 视觉证据
 
-- `docs/design/actual-artist-banner-rich-text.png`：`854×1844`，SHA-256 `0f2c86d7f67d9ebea9e1451ab0d4c6aedc014663602c4c68ab4d97d5d66455ff`。
-- `docs/design/actual-artist-rich-text.png`：`854×1844`，SHA-256 `74acb9af17d43a559471124d5afb074cc79d6047722bc859465bdff333bb1dd4`。
-- `docs/design/actual-case-banner-rich-text.png`：`854×1844`，SHA-256 `568c530968ca31804a34128e15fc3e3992b209f7e543b744c5e9984ddc26ee17`。
-- `docs/design/actual-case-rich-text.png`：`854×1844`，SHA-256 `d60c0b08d09befa5e03bd6edadb371004e702d2942ae3b7d7447fa74fa1c64f0`。
-- `docs/design/overlay-artist-detail.png`：`854×1665`，SHA-256 `dcd2b9ba5fd97f892a30154964d547ce1f4b5247557d4d290b7af9db6a97a121`。
-- `docs/design/diff-artist-detail.png`：`854×1665`，SHA-256 `ce09fa76ed41067c6b96a7444a95d0b30098ac8737d9a7c2bae405a2d49f50a5`。
+- `docs/design/actual-artist-banner-rich-text.png`：`854×1844`，SHA-256 `5a04dec27eb5f35a55d6ddcba6ebc04375f1d7c094687f48cc1e506aa2ec21a3`。
+- `docs/design/actual-artist-rich-text.png`：`854×1844`，SHA-256 `e2aa5a7788f88a342d6b641189ceb6181cff141867fecce397f8027abbdc1175`。
+- `docs/design/actual-case-banner-rich-text.png`：`854×1844`，SHA-256 `7409b30300df8c6c88e0cd6267f7c54a0e2ea64fc2455bbe369ab4d261a00583`。
+- `docs/design/actual-case-rich-text.png`：`854×1844`，SHA-256 `d7afc217bb75087057846aef514e9806096d365aa66266aafca5ca79d4b4bb26`。
+- `docs/design/overlay-artist-detail.png`：`854×1665`，SHA-256 `c549a33645b0b48e8c2eeef553ee2cb6b651f9c35901839da44efbc2a80882fb`。
+- `docs/design/diff-artist-detail.png`：`854×1665`，SHA-256 `8b9478f63db5768335cb3c2a85c0da08954dcfdbeb567d768d7baf9041e5f19f`。
 - `docs/design/detail-page-visual-evidence.json` 记录 viewport、对齐方式和上述哈希。
 
 ## 迁移覆盖
@@ -186,3 +186,15 @@
 - 旧数据库字段只读保留；新保存不双写，兼容响应从 DetailPageConfig 派生。
 - blocks 始终从已清洗 HTML 派生，不写数据库。
 - SQLite 多态 owner 无真实外键，通过公共服务和孤儿审计保证一致性。
+
+## 2026-07-29 BANNER 安全区与可选展示
+
+- `banner_rich_text` 宣传语改为可选；现代及兼容输入均将缺省、空字符串和纯空白规范化为 `""`，DTO 和数据库结构不变。
+- 空类型标题不再回退为“BANNER + 富文本”；Hero 的可选宣传语、标签、地点和元数据均按有效内容创建节点，空 meta 不保留容器或间距。
+- BANNER 前新增正常流中的状态栏/胶囊安全顶部与 44px 导航栏，暖白渐变轻微延伸到图片顶缘；BANNER 保留 `424rpx` 可见最小高度，Hero 顶部只使用相对 BANNER 的小间距。
+- 加载骨架和 Admin 375px 移动预览使用相同区块顺序；Contact 由菜单 `configJson` 驱动，未绑定详情页的案例卡不显示 CTA。
+- Shared、API、Admin、Miniapp 与 Playwright 已增加宣传语规范化、空节点、布局几何、Contact 状态、案例 CTA 和人员标签宽度覆盖；完整验证结果以本次执行记录为准。
+- `pnpm test` 通过：Shared `56`、Miniapp `70`、API `266`、Admin `166`、deploy `9`、build-script `4`。
+- 最终 `pnpm e2e` 通过 `68/68`；其中覆盖安全导航与 BANNER 净空、空 Hero 可选节点、Contact 部分/全空配置、无详情案例 CTA 和人员标签实际宽度，并刷新详情页与人员列表视觉证据。
+- `pnpm lint`、`pnpm build:weapp` 和 `git diff --check` 均通过；WeApp bundle budget 检查通过。
+- Playwright 临时数据库名加入 UUID，避免操作系统复用 PID 时命中旧 E2E 身份平面而阻塞首管理员 bootstrap。

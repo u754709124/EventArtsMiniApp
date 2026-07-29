@@ -93,6 +93,12 @@ function detailPageMenuId(menu: MenuItemDto | MenuType | string) {
   return Number.isInteger(detailPageId) && Number(detailPageId) > 0 ? Number(detailPageId) : null;
 }
 
+function contactMenuUrl(menu: MenuItemDto | MenuType | string) {
+  return isMenuItemLike(menu) && Number.isInteger(menu.id) && menu.id > 0
+    ? `/pages/contact/index?menuId=${menu.id}`
+    : "/pages/contact/index";
+}
+
 export function consumePendingCaseMenuFilter(): CaseMenuFilter | undefined {
   try {
     const value = Taro.getStorageSync<CaseMenuFilter>(caseMenuFilterStorageKey);
@@ -125,6 +131,10 @@ export function openMenu(menu: MenuItemDto | MenuType | string) {
     }
     if (menuType === "artist") {
       ignoreNavigationError(Taro.navigateTo({ url: artistMenuUrl(menu) }));
+      return;
+    }
+    if (menuType === "contact") {
+      ignoreNavigationError(Taro.navigateTo({ url: contactMenuUrl(menu) }));
       return;
     }
     ignoreNavigationError(Taro.navigateTo({ url }));

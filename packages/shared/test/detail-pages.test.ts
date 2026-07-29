@@ -3,6 +3,7 @@ import {
   ActivityCaseCreateRequestSchema,
   ArtistCreateRequestSchema,
   DetailPageInputSchema,
+  LegacyBannerRichTextDetailPageInputSchema,
   detailPageInputSchemaOptions,
   detailPageInputSchemas,
   detailOwnerTypeValues,
@@ -38,7 +39,7 @@ describe("detail page registry", () => {
     expect(detailPageTypeDefinitions.banner_rich_text).toMatchObject({
       rendererKey: "bannerRichText",
       requiresBanner: true,
-      requiresHeroSubtitle: true,
+      requiresHeroSubtitle: false,
       requiresRichText: true,
       minBannerCount: 1,
       maxBannerCount: 6,
@@ -117,7 +118,7 @@ describe("detail page input union", () => {
     });
   });
 
-  it("requires one to six unique image IDs and a non-empty subtitle", () => {
+  it("accepts an omitted or blank subtitle while requiring one to six unique image IDs", () => {
     const base = {
       name: "详情页",
       type: "banner_rich_text" as const,
@@ -133,12 +134,22 @@ describe("detail page input union", () => {
       bannerAssetIds: [1],
       richTextHtml
     };
-    expect(() => DetailPageInputSchema.parse({ ...base, hero: { ...base.hero, subtitle: "   " } })).toThrow();
+    expect(detailPageInputSchemas.banner_rich_text.parse({ ...base, hero: { ...base.hero, subtitle: "   " } }).hero.subtitle).toBe("");
+    const heroWithoutSubtitle: Partial<typeof base.hero> = { ...base.hero };
+    delete heroWithoutSubtitle.subtitle;
+    expect(detailPageInputSchemas.banner_rich_text.parse({ ...base, hero: heroWithoutSubtitle }).hero.subtitle).toBe("");
     expect(() => DetailPageInputSchema.parse({ ...base, hero: { ...base.hero, subtitle: "甲".repeat(81) } })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [] })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [1, 2, 3, 4, 5, 6, 7] })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [1, 1] })).toThrow();
     expect(() => DetailPageInputSchema.parse({ ...base, bannerAssetIds: [0] })).toThrow();
+    expect(
+      LegacyBannerRichTextDetailPageInputSchema.parse({
+        type: "banner_rich_text",
+        bannerAssetIds: [1],
+        richTextHtml
+      }).heroSubtitle
+    ).toBe("");
   });
 
   it("accepts rich text without banner fields and rejects hidden banner data", () => {
@@ -306,6 +317,15 @@ describe("detail page presentation resolver", () => {
     expect(hasSemanticDetailPageContent([{ type: "richText", html: "<p>&nbsp;<br></p>" }])).toBe(false);
     expect(hasSemanticDetailPageContent([{ type: "video", assetId: 1, url: " ", posterUrl: null, width: null, height: null }])).toBe(false);
     expect(hasSemanticDetailPageContent([{ type: "richText", html: '<p><img src="/valid.jpg"></p>' }])).toBe(true);
+  });
+
+  it("does not expose the page type label when the optional hero type title is blank", () => {
+    expect(
+      resolveDetailPagePresentation({
+        ...dto,
+        hero: { ...dto.hero, typeLabel: "   " }
+      }).hero.typeLabel
+    ).toBe("");
   });
 
   it("adds centered heading structure and responsive images idempotently", () => {

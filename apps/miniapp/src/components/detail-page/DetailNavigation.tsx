@@ -48,18 +48,20 @@ export function DetailNavigation({
   title,
   fallbackTabUrl,
   overlay = false,
-  metrics: providedMetrics
+  metrics: providedMetrics,
+  className = ""
 }: {
   title: string;
   fallbackTabUrl: string;
   overlay?: boolean;
   metrics?: DetailNavigationMetrics;
+  className?: string;
 }) {
   const metrics = useMemo(() => providedMetrics ?? getDetailNavigationMetrics(), [providedMetrics]);
   const clickGuard = useRepeatClickGuard();
   return (
     <View
-      className={`detail-navigation ${overlay ? "detail-navigation--overlay" : ""}`}
+      className={`detail-navigation ${overlay ? "detail-navigation--overlay" : ""} ${className}`.trim()}
       style={{ paddingTop: `${metrics.safeTop}px` }}
       data-testid="detail-navigation"
     >

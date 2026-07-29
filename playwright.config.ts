@@ -6,6 +6,7 @@ const adminBase = "http://127.0.0.1:5173";
 const h5Base = "http://127.0.0.1:10086";
 const e2eAdminUsername = process.env.E2E_ADMIN_USERNAME ?? `e2e-admin-${process.pid}`;
 const e2eAdminPassword = process.env.E2E_ADMIN_PASSWORD ?? `E2e-${randomUUID()}-Aa1!`;
+const e2eDatabaseId = `${process.pid}-${randomUUID()}`;
 
 process.env.E2E_ADMIN_USERNAME = e2eAdminUsername;
 process.env.E2E_ADMIN_PASSWORD = e2eAdminPassword;
@@ -15,7 +16,7 @@ const apiEnv = {
   NODE_ENV: "test",
   API_HOST: "127.0.0.1",
   API_PORT: "3001",
-  DATABASE_URL: `file:../.tmp/e2e-${process.pid}.db`,
+  DATABASE_URL: `file:../.tmp/e2e-${e2eDatabaseId}.db`,
   JWT_SECRET: "dev-secret-change-me",
   CORS_ALLOWED_ORIGINS: [adminBase, h5Base].join(","),
   PUBLIC_BASE_URL: apiBase,

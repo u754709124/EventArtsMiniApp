@@ -18,11 +18,13 @@ export function DetailPageSkeleton({
       data-testid={`detail-skeleton-${layout}`}
     >
       {banner ? (
-        <View className="detail-skeleton__banner" data-testid="detail-banner-skeleton">
-          <DetailNavigation title="" fallbackTabUrl={fallbackTabUrl} overlay />
-          <View className="detail-skeleton__hero-line detail-skeleton__hero-line--title" />
-          <View className="detail-skeleton__hero-line" />
-        </View>
+        <>
+          <DetailNavigation title="" fallbackTabUrl={fallbackTabUrl} className="detail-navigation--banner-safe" />
+          <View className="detail-skeleton__banner" data-testid="detail-banner-skeleton">
+            <View className="detail-skeleton__hero-line detail-skeleton__hero-line--title" />
+            <View className="detail-skeleton__hero-line" />
+          </View>
+        </>
       ) : (
         <DetailNavigation title={title} fallbackTabUrl={fallbackTabUrl} />
       )}

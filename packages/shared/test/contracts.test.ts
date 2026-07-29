@@ -109,6 +109,19 @@ describe("shared contracts", () => {
       defaultSort: "sortOrder",
       pageSize: 10
     });
+    expect(
+      menuConfigSchemaByType.contact.parse({
+        phone: " 13800001111 ",
+        address: "   ",
+        wechat: " eventarts ",
+        description: ""
+      })
+    ).toEqual({
+      phone: "13800001111",
+      address: undefined,
+      wechat: "eventarts",
+      description: undefined
+    });
   });
 
   it("normalizes and validates article contracts", () => {

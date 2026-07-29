@@ -38,7 +38,7 @@ export const detailPageTypeDefinitions = {
     description: "适合人员主页、重点案例等视觉型详情页",
     rendererKey: "bannerRichText",
     requiresBanner: true,
-    requiresHeroSubtitle: true,
+    requiresHeroSubtitle: false,
     requiresRichText: true,
     minBannerCount: 1,
     maxBannerCount: 6,
@@ -85,6 +85,7 @@ const detailPageNameSchema = z.string().trim().min(1, "请输入详情页名称"
 const richTextHtmlSchema = z.string().trim().min(1, "请填写富文本详情");
 const heroTextSchema = z.string().trim().max(80);
 const heroRequiredTextSchema = z.string().trim().min(1).max(80);
+const heroOptionalTextSchema = z.string().trim().max(80).default("");
 const heroTagSchema = z.string().trim().max(12);
 const heroMetaItemSchema = z
   .object({
@@ -97,7 +98,7 @@ export const DetailPageHeroInputSchema = z
   .object({
     title: heroRequiredTextSchema,
     typeLabel: heroTextSchema.default(""),
-    subtitle: z.string().trim().min(1, "请输入 BANNER 宣传语").max(80, "BANNER 宣传语不能超过 80 个字符"),
+    subtitle: heroOptionalTextSchema,
     badge: heroTextSchema.default(""),
     tags: z
       .array(heroTagSchema)
@@ -164,7 +165,7 @@ export type DetailPageInput = z.infer<typeof DetailPageInputSchema>;
 export const LegacyBannerRichTextDetailPageInputSchema = z
   .object({
     type: z.literal("banner_rich_text"),
-    heroSubtitle: z.string().trim().min(1, "请输入 BANNER 宣传语").max(80, "BANNER 宣传语不能超过 80 个字符"),
+    heroSubtitle: heroOptionalTextSchema,
     bannerAssetIds: z
       .array(positiveAssetIdSchema)
       .min(detailPageTypeDefinitions.banner_rich_text.minBannerCount, "请至少选择一张 BANNER")

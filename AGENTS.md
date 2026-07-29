@@ -74,6 +74,8 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Unauthenticated users are redirected to login.
 - All forms use required validation, success/error feedback, loading/error/empty states, paginated tables, and destructive confirmation.
 - Saving CMS content must immediately invalidate/refetch data used by admin and client pages.
+- Optional CMS display fields must be trimmed before persistence/rendering. When an optional field is blank, omit the corresponding client element and spacing instead of rendering fallback copy or an empty container. BANNER detail subtitles are optional; technical optional fields such as filters, pagination, sorting, status, and update payload fields are outside this display rule.
+- Contact menu pages must read `phone/address/wechat/description` from the selected menu's existing `configJson`; do not hardcode contact values. If every contact display field is blank, show the explicit empty state.
 - Backoffice accounts use fixed `SUPER_ADMIN`, `ADMIN`, and `USER` roles. Server-side live role/menu authorization is authoritative; frontend menu filtering is not a security boundary.
 - Only `SUPER_ADMIN` may create `ADMIN`/`USER` and manage other `SUPER_ADMIN`/`ADMIN`/`USER` accounts; self-management stays on the self-service paths. `ADMIN` may create/manage only `USER` and may delegate only its own effective non-sensitive business-menu permissions. At least one enabled `SUPER_ADMIN` must remain.
 - `SUPER_ADMIN` password recovery is server CLI-only and stdin-only. `ADMIN` recovery links are issued only by `SUPER_ADMIN`; `USER` recovery links are issued by `ADMIN` or `SUPER_ADMIN`. No Web reset link may target `SUPER_ADMIN`.

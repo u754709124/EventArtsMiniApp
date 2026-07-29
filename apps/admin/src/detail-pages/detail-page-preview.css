@@ -70,15 +70,22 @@
   text-align: center;
 }
 
-.detail-preview-nav--overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+.detail-preview-nav--banner-safe {
+  position: relative;
   height: 64px;
   padding-top: 20px;
-  color: #fff;
-  background: transparent;
+  background: linear-gradient(180deg, #fbf7ef 0%, rgb(251 247 239 / 90%) 72%, rgb(251 247 239 / 20%) 100%);
+}
+
+.detail-preview-nav--banner-safe::after {
+  position: absolute;
+  right: 0;
+  bottom: -10px;
+  left: 0;
+  height: 10px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(251 247 239 / 20%), rgb(251 247 239 / 0%));
+  content: "";
 }
 
 .detail-preview-nav strong {
@@ -115,7 +122,7 @@
   position: relative;
   box-sizing: border-box;
   min-height: 212px;
-  padding: 72px 115px 33px 22px;
+  padding: 8px 115px 33px 22px;
   overflow: hidden;
   background: #2d2118;
 }

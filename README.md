@@ -204,7 +204,7 @@ pnpm assets:slice:artists
 
 `detailPageId` 为空时入口不可点击，也不会回退旧 `linkType/linkTarget` 或 owner 详情页。旧人员/案例详情路由仅作为兼容跳板。
 
-分类菜单共有 5 种规范类型：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 统一进入人员列表，可在 `configJson.category` 中提交可选人员分类；未配置分类时展示全部启用人员，旧 `host`、`singer`、`actor` 入口仅作为兼容别名映射到中文分类。`detail_page` 的严格配置为：
+分类菜单共有 5 种规范类型：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 统一进入人员列表，可在 `configJson.category` 中提交可选人员分类；未配置分类时展示全部启用人员，旧 `host`、`singer`、`actor` 入口仅作为兼容别名映射到中文分类。`contact` 使用当前菜单 ID 读取既有 `configJson.phone/address/wechat/description`，各字段独立可选；全部留空时前台显示“联系方式待补充”，不使用硬编码联系方式。`detail_page` 的严格配置为：
 
 ```json
 { "detailPageType": "rich_text", "detailPageId": 1 }
@@ -214,8 +214,10 @@ pnpm assets:slice:artists
 
 支持：
 
-- `banner_rich_text`：独立名称、Hero、1–6 张有序图片 BANNER 和富文本。
+- `banner_rich_text`：独立名称、Hero、1–6 张有序图片 BANNER 和富文本；宣传语可选，顶部使用按状态栏/胶囊实测的暖白渐变安全层，BANNER 从导航安全区下方开始。
 - `rich_text`：只有富文本，没有 BANNER DOM、高度、页码或负重叠。
+
+后台已定义为可选的展示字段会先 trim/过滤；空类型标题、宣传语、标签、地点和元数据不会创建前台节点或残留间距。详情 Hero 主标题仍兼容回退详情页名称。未绑定 `detailPageId` 的案例卡片不显示“查看详情”提示。
 
 重新生成详情参考资源：
 

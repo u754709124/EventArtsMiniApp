@@ -1169,6 +1169,8 @@ export const DetailPageMenuConfigSchema = z
 
 export type DetailPageMenuConfig = z.infer<typeof DetailPageMenuConfigSchema>;
 
+const optionalContactConfigTextSchema = z.string().trim().transform((value) => value || undefined).optional();
+
 export const menuConfigSchemaByType = {
   artist: z.object({
     category: artistOptionalCategorySchema,
@@ -1186,9 +1188,9 @@ export const menuConfigSchemaByType = {
   }),
   detail_page: DetailPageMenuConfigSchema,
   contact: z.object({
-    phone: z.string().optional(),
-    address: z.string().optional(),
-    wechat: z.string().optional(),
-    description: z.string().optional()
+    phone: optionalContactConfigTextSchema,
+    address: optionalContactConfigTextSchema,
+    wechat: optionalContactConfigTextSchema,
+    description: optionalContactConfigTextSchema
   })
 } satisfies Record<MenuType, z.ZodType>;

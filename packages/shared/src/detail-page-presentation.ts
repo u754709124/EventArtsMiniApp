@@ -300,7 +300,7 @@ export function resolveDetailPagePresentation(config: DetailPageConfigDto): Deta
   return {
     hero: {
       title: cleanDetailText(hero.title) || cleanDetailText(config.name),
-      typeLabel: cleanDetailText(hero.typeLabel) || cleanDetailText(config.typeLabel),
+      typeLabel: cleanDetailText(hero.typeLabel),
       subtitle: cleanDetailText(hero.subtitle) || cleanDetailText(config.heroSubtitle),
       badge: cleanDetailText(hero.badge),
       tags: hero.tags.map((tag) => cleanDetailText(tag)).filter(Boolean),

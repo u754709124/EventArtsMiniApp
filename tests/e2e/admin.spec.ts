@@ -86,7 +86,7 @@ async function expectLivePreviewContract(
   await expect(preview.locator(".detail-preview-rich-text h1 [data-detail-heading-marker='true']")).toHaveCount(1);
   const geometry = await preview.evaluate((root) => {
     const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
-    const navigation = root.querySelector(".detail-preview-nav--overlay")?.getBoundingClientRect();
+    const navigation = root.querySelector(".detail-preview-nav--banner-safe")?.getBoundingClientRect();
     const heroCopy = root.querySelector(".detail-preview-hero-copy")?.getBoundingClientRect();
     const content = root.querySelector(".detail-preview-content")?.getBoundingClientRect();
     const firstCard = root.querySelector(".detail-preview-card")?.getBoundingClientRect();
@@ -100,10 +100,12 @@ async function expectLivePreviewContract(
     const markerRect = marker.getBoundingClientRect();
     const headingContentRect = headingContent.getBoundingClientRect();
     const richHeadingStyle = getComputedStyle(richHeading);
+    const rootRect = root.getBoundingClientRect();
     return {
       heroHeight: hero.height,
-      navigationTop: navigation.top - hero.top,
+      navigationTop: navigation.top - rootRect.top,
       navigationHeight: navigation.height,
+      bannerNavigationClearance: hero.top - navigation.bottom,
       heroCopyTop: heroCopy.top - hero.top,
       headingClearance: heroHeading.top - navigation.bottom,
       heroInsideBanner: heroCopy.bottom <= hero.bottom,
@@ -122,7 +124,9 @@ async function expectLivePreviewContract(
   expect(geometry.heroHeight).toBeGreaterThanOrEqual(212);
   expect(geometry.navigationTop).toBe(0);
   expect(geometry.navigationHeight).toBe(64);
-  expect(geometry.heroCopyTop).toBe(72);
+  expect(geometry.bannerNavigationClearance).toBeGreaterThanOrEqual(0);
+  expect(geometry.bannerNavigationClearance).toBeLessThanOrEqual(1);
+  expect(geometry.heroCopyTop).toBe(8);
   expect(geometry.headingClearance).toBeGreaterThanOrEqual(7);
   expect(geometry.heroInsideBanner).toBeTruthy();
   expect(geometry.heroCardClearance).toBeGreaterThanOrEqual(11);

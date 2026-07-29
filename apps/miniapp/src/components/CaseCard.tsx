@@ -67,7 +67,7 @@ export function CaseCard({
             <Text className="case-card__meta case-card__meta-location">{city}</Text>
           </View>
         </View>
-        {variant === "compact" && <Text className="case-card__button">查看详情 ›</Text>}
+        {variant === "compact" && clickable && <Text className="case-card__button">查看详情 ›</Text>}
       </View>
     </View>
   );

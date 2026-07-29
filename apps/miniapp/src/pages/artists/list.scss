@@ -202,9 +202,9 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   // remains fully opaque so a legacy source badge can never show through.
   top: 8rpx;
   left: 0;
-  display: flex;
-  max-width: 180rpx;
-  min-width: 116rpx;
+  display: inline-flex;
+  width: auto;
+  max-width: calc(100% - 16rpx);
   height: 40rpx;
   padding: 0 12rpx;
   align-items: center;
@@ -251,6 +251,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 }
 
 .artist-card__badge-text {
+  min-width: 0;
   overflow: hidden;
   color: #63472f;
   font-size: 18rpx;

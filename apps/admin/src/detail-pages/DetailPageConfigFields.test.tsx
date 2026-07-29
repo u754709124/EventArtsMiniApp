@@ -224,7 +224,7 @@ describe("DetailPageConfigFields", () => {
     });
   });
 
-  it("switches rich-to-banner immediately, preserves HTML, and makes subtitle and banners required", async () => {
+  it("switches rich-to-banner immediately, preserves HTML, and requires only banners", async () => {
     const onFinish = vi.fn();
     render(
       <Harness
@@ -239,7 +239,7 @@ describe("DetailPageConfigFields", () => {
     expect(screen.getByTestId("detail-banner-field")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
-    expect(await screen.findByText("请输入 BANNER 宣传语")).toBeTruthy();
+    expect(screen.queryByText("请输入 BANNER 宣传语")).toBeNull();
     expect(await screen.findByText("请至少选择 1 张详情页 BANNER")).toBeTruthy();
     expect(onFinish).not.toHaveBeenCalled();
   });

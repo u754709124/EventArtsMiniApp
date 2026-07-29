@@ -99,19 +99,19 @@ describe("DetailPagePreview", () => {
       <DetailPageMobilePreview dto={dtoWithRichHtml(bannerDto)} />
     );
     const hero = container.querySelector(".detail-preview-hero")!;
-    const navigation = container.querySelector(".detail-preview-nav--overlay")!;
+    const navigation = container.querySelector(".detail-preview-nav--banner-safe")!;
     const heroCopy = container.querySelector(".detail-preview-hero-copy")!;
     const headings = [...container.querySelectorAll(".detail-preview-rich-text h1")];
     const markers = [...container.querySelectorAll("[data-detail-heading-marker='true']")];
     const contents = [...container.querySelectorAll("[data-detail-heading-content='true']")];
     const image = container.querySelector(".detail-preview-rich-text img") as HTMLImageElement;
 
-    expect(navigation.parentElement).toBe(hero);
+    expect(navigation.nextElementSibling).toBe(hero);
     expect(heroCopy).toBeTruthy();
     expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*min-height:\s*212px/su);
-    expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*padding:\s*72px 115px 33px 22px/su);
+    expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*padding:\s*8px 115px 33px 22px/su);
     expect(previewCss).not.toMatch(/\.detail-preview-hero\s*\{[^}]*\n\s*height:\s*212px/su);
-    expect(previewCss).toMatch(/\.detail-preview-nav--overlay\s*\{[^}]*height:\s*64px[^}]*padding-top:\s*20px/su);
+    expect(previewCss).toMatch(/\.detail-preview-nav--banner-safe\s*\{[^}]*height:\s*64px[^}]*padding-top:\s*20px/su);
     expect(previewCss).toMatch(/\.detail-preview-banner\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0/su);
     expect(previewCss).toMatch(/\.detail-preview-hero-copy\s*\{[^}]*position:\s*relative/su);
     expect(previewCss).toMatch(/\.detail-preview-rich-text\s*\{[^}]*font-size:\s*15px/su);

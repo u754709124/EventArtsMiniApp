@@ -4,7 +4,7 @@ import { getDisplayDetailPageBanners } from "@event-arts/shared/detail-page-pres
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../AppImage";
 import { DetailNavigation, getDetailNavigationMetrics } from "./DetailNavigation";
-import { getDetailHeroTop } from "./navigation-layout";
+import { detailHeroNavigationGapPx } from "./navigation-layout";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
@@ -33,10 +33,16 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
 
   return (
     <View className="detail-page detail-page--banner" data-testid="detail-layout-banner">
+      <DetailNavigation
+        title=""
+        fallbackTabUrl={fallbackTabUrl}
+        metrics={navigationMetrics}
+        className="detail-navigation--banner-safe"
+      />
       <View
         className="detail-banner"
         data-testid="detail-banner"
-        style={{ paddingTop: `${getDetailHeroTop(navigationMetrics)}px` }}
+        style={{ paddingTop: `${detailHeroNavigationGapPx}px` }}
       >
         <Swiper
           className="detail-banner__swiper"
@@ -65,12 +71,6 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
           ))}
         </Swiper>
         <View className="detail-banner__shade" aria-hidden />
-        <DetailNavigation
-          title=""
-          fallbackTabUrl={fallbackTabUrl}
-          overlay
-          metrics={navigationMetrics}
-        />
         <DetailHeroBanner hero={hero} />
         <Text className="detail-banner__counter" data-testid="detail-banner-counter">
           {Math.min(current + 1, banners.length)}/{banners.length}

@@ -14,11 +14,3 @@ export const detailNavigationFallbackMetrics: DetailNavigationMetrics = {
   safeTop: 20,
   headerHeight: 44
 };
-
-export function getDetailNavigationClearance(metrics: DetailNavigationMetrics) {
-  return metrics.safeTop + metrics.headerHeight;
-}
-
-export function getDetailHeroTop(metrics: DetailNavigationMetrics) {
-  return getDetailNavigationClearance(metrics) + detailHeroNavigationGapPx;
-}

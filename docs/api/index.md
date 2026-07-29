@@ -454,7 +454,7 @@ cron 统一按 `Asia/Shanghai` 解释；真实 API server 在 Fastify ready 时�
 
 公告、首页 BANNER、人员、案例和文章创建/更新请求只提交 `detailPageId: number | null` 来选择独立详情页。旧 `detail`、`detailMediaAssetIds`、BANNER `linkType/linkTarget` 不再是新表单的详情来源。所有媒体字段仍提交整数资源 ID。分类菜单接口保留 `/api/admin/menu-items`，菜单创建默认 `showOnHome: true`；关闭后仅从首页隐藏，分类页仍展示，`status=disabled` 时前台均不展示。`GET /api/admin/case-categories` 返回已有案例分类的去重字符串数组，供分类菜单和案例表单选择。`GET /api/admin/articles/categories?q=&limit=` 返回 `{ "categories": string[] }`，来源是 `articles.category`，包含启用和停用文章分类，没有文章分类表。
 
-菜单类型共有 5 种：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 可在 `configJson.category` 中提交可选人员分类字符串，省略或提交空值时跳转到全部人员列表；创建或更新 `detail_page` 时提交严格配置：
+菜单类型共有 5 种：`artist`、`activity_case`、`article`、`detail_page`、`contact`。`artist` 可在 `configJson.category` 中提交可选人员分类字符串，省略或提交空值时跳转到全部人员列表。`contact` 继续使用既有 `configJson`，可提交 `phone`、`address`、`wechat`、`description`；各字符串保存前 trim，空白值规范化为空配置，客户端按菜单 `id` 读取并逐项显示。创建或更新 `detail_page` 时提交严格配置：
 
 ```json
 {
@@ -519,7 +519,7 @@ Article admin create body:
 
 `POST /api/admin/detail-pages/preview` body 为 `{ "detailPage": <上述输入> }`，响应为公共 `DetailPageConfigDto`。`POST /api/admin/detail-pages` 与 `PUT /api/admin/detail-pages/:id` 使用同一输入。预览与保存使用同一套服务端媒体查库、HTML 清洗、URL 重写、语义空验证和 blocks parser。
 
-`banner_rich_text` 要求 trim 后非空宣传语、1–6 个唯一图片 ID 和语义非空富文本。`rich_text` 只接受 `richTextHtml`，不接受宣传语或 BANNER。HTML 中图片/视频必须提供正整数 `data-media-asset-id`；API 不信任客户端 `src`，会从 `MediaAsset.url` 重写。允许协议、HTML/CSS 白名单和迁移细节见 `docs/design/detail-page-system.md`。
+`banner_rich_text` 的 `hero.subtitle` 可省略、为空字符串或纯空白，服务端统一 trim 并在 DTO 中输出 string；仍要求 1–6 个唯一图片 ID 和语义非空富文本。兼容输入 `heroSubtitle` 使用相同规则。空 `hero.typeLabel` 不再回退为详情页类型中文名，主标题仍可回退详情页名称。`rich_text` 只接受 `richTextHtml`，不接受宣传语或 BANNER。HTML 中图片/视频必须提供正整数 `data-media-asset-id`；API 不信任客户端 `src`，会从 `MediaAsset.url` 重写。允许协议、HTML/CSS 白名单和迁移细节见 `docs/design/detail-page-system.md`。
 
 ### Admin artist APIs
 

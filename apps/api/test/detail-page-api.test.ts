@@ -231,6 +231,45 @@ describe("standalone detail page API integration", () => {
     expect(await prisma.detailPageConfig.count()).toBe(configCount);
   });
 
+  it("creates, updates and serves a banner detail with an empty optional subtitle and type title", async () => {
+    const auth = await token();
+    const banner = await createAsset(199, "image");
+    const payload = bannerDetailPagePayload("可选文案详情", banner.id);
+    const heroWithoutSubtitle: Partial<typeof payload.hero> = { ...payload.hero };
+    delete heroWithoutSubtitle.subtitle;
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/detail-pages",
+      headers: { authorization: `Bearer ${auth}` },
+      payload: {
+        ...payload,
+        hero: { ...heroWithoutSubtitle, typeLabel: "   " }
+      }
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.hero).toMatchObject({ typeLabel: "", subtitle: "" });
+
+    const detailPage = created.json().data;
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/admin/detail-pages/${detailPage.id}`,
+      headers: { authorization: `Bearer ${auth}` },
+      payload: {
+        ...payload,
+        hero: { ...payload.hero, typeLabel: "", subtitle: "   " }
+      }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data.hero).toMatchObject({ typeLabel: "", subtitle: "" });
+
+    const client = await clientInject({
+      method: "GET",
+      url: `/api/client/detail-pages/${detailPage.id}`
+    });
+    expect(client.statusCode).toBe(200);
+    expect(client.json().data.hero).toMatchObject({ typeLabel: "", subtitle: "" });
+  });
+
   it("stores detail rich text media as relative paths and serves them with the configured public base", async () => {
     const auth = await token();
     const content = await createAsset(190, "image");

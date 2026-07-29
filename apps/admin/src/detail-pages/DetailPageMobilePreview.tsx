@@ -57,10 +57,10 @@ function PreviewBlock({
   );
 }
 
-function PreviewNavigation({ overlay, title }: { overlay?: boolean; title: string }) {
+function PreviewNavigation({ bannerSafe, title }: { bannerSafe?: boolean; title: string }) {
   return (
     <header
-      className={`detail-preview-nav${overlay ? " detail-preview-nav--overlay" : ""}`}
+      className={`detail-preview-nav${bannerSafe ? " detail-preview-nav--banner-safe" : ""}`}
       aria-label="移动端导航预览"
       data-testid="detail-preview-navigation"
     >
@@ -110,7 +110,9 @@ export function DetailPageMobilePreview({
     >
       {!showBanner && <PreviewNavigation title={model.hero.title || "详情页"} />}
       {showBanner && (
-        <section className="detail-preview-hero" data-testid="detail-preview-hero">
+        <>
+          <PreviewNavigation bannerSafe title="" />
+          <section className="detail-preview-hero" data-testid="detail-preview-hero">
           {model.banners.map((banner, index) => (
             <img
               key={banner.id}
@@ -120,7 +122,6 @@ export function DetailPageMobilePreview({
             />
           ))}
           <div className="detail-preview-hero-shade" aria-hidden="true" />
-          <PreviewNavigation overlay title="" />
           <div className="detail-preview-hero-copy" data-testid="detail-preview-hero-copy">
             <div className="detail-preview-hero-heading" data-testid="detail-preview-hero-heading">
               <h2>{model.hero.title}</h2>
@@ -152,7 +153,8 @@ export function DetailPageMobilePreview({
             )}
           </div>
           {model.banners.length > 1 && <span className="detail-preview-counter">1/{model.banners.length}</span>}
-        </section>
+          </section>
+        </>
       )}
       <main className="detail-preview-content">
         {bannerMode && model.hasSemanticContent && model.banners.length === 0 ? (

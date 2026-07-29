@@ -20,7 +20,7 @@ type Menu = { id: number; text: string; iconAssetId: number; type: string; statu
 type CaseItem = { id: number; title: string; status: string; isFeatured: boolean };
 type ArticleItem = { id: number; title: string; category: string; detailPageId: number | null; hasDetailPage: boolean };
 type ArticleListResponse = { items: ArticleItem[]; categories: string[]; total: number; page: number; pageSize: number };
-type ArtistListItem = { id: number; name: string; type: string; location: string; detailPageId: number | null };
+type ArtistListItem = { id: number; name: string; type: string; location: string; badge: string; detailPageId: number | null };
 type CaseListItem = { id: number; title: string; detailPageId: number | null };
 type LinkedArtistListItem = ArtistListItem & { detailPageId: number };
 type LinkedCaseListItem = CaseListItem & { detailPageId: number };
@@ -318,9 +318,13 @@ async function waitForDetailVisuals(page: Page) {
 
 async function expectDetailPageDtoContract(page: Page, dto: DetailPageDto) {
   const expectedHeroTitle = dto.hero.title.trim() || dto.name.trim();
-  const expectedTypeLabel = dto.hero.typeLabel.trim() || dto.typeLabel.trim();
+  const expectedTypeLabel = dto.hero.typeLabel.trim();
   await expect(page.getByTestId("detail-hero")).toContainText(expectedHeroTitle);
-  await expect(page.getByTestId("detail-hero")).toContainText(expectedTypeLabel);
+  if (expectedTypeLabel) {
+    await expect(page.getByTestId("detail-hero")).toContainText(expectedTypeLabel);
+  } else {
+    await expect(page.getByTestId("detail-hero").locator(".detail-hero__type")).toHaveCount(0);
+  }
   if (dto.hero.subtitle.trim()) {
     await expect(page.getByTestId("detail-hero")).toContainText(dto.hero.subtitle.trim());
   }
@@ -502,11 +506,14 @@ async function expectBannerHeroGeometry(page: Page, ownerLabel: "人员" | "活�
     const hero = document.querySelector('[data-testid="detail-hero"]')!.getBoundingClientRect();
     const firstCard = document.querySelector(".detail-rich-card")!.getBoundingClientRect();
     return {
+      bannerNavigationClearance: banner.top - navigation.bottom,
       headingClearance: heading.top - navigation.bottom,
       heroInsideBanner: hero.bottom <= banner.bottom,
       heroCardClearance: firstCard.top - hero.bottom
     };
   });
+  expect(geometry.bannerNavigationClearance, `${ownerLabel} BANNER 应从导航安全层下方开始`).toBeGreaterThanOrEqual(0);
+  expect(geometry.bannerNavigationClearance, `${ownerLabel} 导航与 BANNER 不应留下可见断层`).toBeLessThanOrEqual(1);
   expect(geometry.headingClearance, `${ownerLabel} Hero 首行应保留导航安全间距`).toBeGreaterThanOrEqual(7);
   expect(geometry.heroInsideBanner, `${ownerLabel} Hero 应完整保留在 BANNER 内`).toBeTruthy();
   expect(geometry.heroCardClearance, `${ownerLabel} Hero 底部应与首卡保持可见间距`).toBeGreaterThanOrEqual(8);
@@ -765,8 +772,7 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
         !dateIcon ||
         !locationIcon ||
         !date ||
-        !location ||
-        !button
+        !location
       ) {
         throw new Error("Missing case card layout nodes");
       }
@@ -777,7 +783,7 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
       const metaRect = metaRow.getBoundingClientRect();
       const dateGroupRect = dateGroup.getBoundingClientRect();
       const locationGroupRect = locationGroup.getBoundingClientRect();
-      const buttonRect = button.getBoundingClientRect();
+      const buttonRect = button?.getBoundingClientRect() ?? null;
       const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
       const metaMarginTop = Number.parseFloat(window.getComputedStyle(metaRow).marginTop);
 
@@ -791,8 +797,10 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
         metaText: metaRow.textContent?.trim() ?? "",
         dateText: date.textContent?.trim() ?? "",
         locationText: location.textContent?.trim() ?? "",
-        buttonText: button.textContent?.trim() ?? "",
-        buttonVisibility: window.getComputedStyle(button).visibility,
+        isStatic: card.classList.contains("case-card--static"),
+        hasButton: button !== null,
+        buttonText: button?.textContent?.trim() ?? "",
+        buttonVisibility: button ? window.getComputedStyle(button).visibility : "",
         titleHeight: titleRect.height,
         titleLineHeight: parseLineHeight(title),
         summaryHeight: summaryRect.height,
@@ -806,12 +814,17 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
         dateLeftOffset: dateGroupRect.left - metaRect.left,
         locationRightOffset: metaRect.right - locationGroupRect.right,
         dateLocationGap: locationGroupRect.left - dateGroupRect.right,
-        buttonTop: buttonRect.top,
-        metaButtonGap: buttonRect.top - metaRect.bottom,
-        buttonBottomOffset: cardRect.bottom - buttonRect.bottom
+        buttonTop: buttonRect?.top ?? null,
+        metaButtonGap: buttonRect ? buttonRect.top - metaRect.bottom : null,
+        buttonBottomOffset: buttonRect ? cardRect.bottom - buttonRect.bottom : null
       };
     });
 
+    const buttonTops = rows.flatMap((row) => (row.buttonTop === null ? [] : [row.buttonTop]));
+    const metaButtonGaps = rows.flatMap((row) => (row.metaButtonGap === null ? [] : [row.metaButtonGap]));
+    const buttonBottomOffsets = rows.flatMap((row) =>
+      row.buttonBottomOffset === null ? [] : [row.buttonBottomOffset]
+    );
     return {
       fieldCompleteness: rows.every(
         (row) =>
@@ -823,9 +836,12 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
           !row.metaText.includes("|") &&
           /^\d{4}-\d{2}-\d{2}$/.test(row.dateText) &&
           row.locationText.length > 0 &&
-          row.buttonText === "查看详情 ›" &&
-          row.buttonVisibility !== "hidden"
+          (row.hasButton
+            ? row.buttonText === "查看详情 ›" && row.buttonVisibility !== "hidden" && !row.isStatic
+            : row.isStatic && row.buttonText === "")
       ),
+      clickableButtonCount: rows.filter((row) => row.hasButton).length,
+      staticWithoutButtonCount: rows.filter((row) => row.isStatic && !row.hasButton).length,
       locationTexts: rows.map((row) => row.locationText),
       cardHeightSpread: spread(rows.map((row) => row.cardHeight)),
       maxTitleHeight: Math.max(...rows.map((row) => row.titleHeight)),
@@ -843,14 +859,16 @@ test("首页精选案例字段完整且日期地点靠近按钮底部对齐", as
       maxDateLeftOffset: Math.max(...rows.map((row) => Math.abs(row.dateLeftOffset))),
       maxLocationRightOffset: Math.max(...rows.map((row) => Math.abs(row.locationRightOffset))),
       minDateLocationGap: Math.min(...rows.map((row) => row.dateLocationGap)),
-      buttonTopSpread: spread(rows.map((row) => row.buttonTop)),
-      maxMetaButtonGap: Math.max(...rows.map((row) => row.metaButtonGap)),
-      minMetaButtonGap: Math.min(...rows.map((row) => row.metaButtonGap)),
-      buttonBottomOffsetSpread: spread(rows.map((row) => row.buttonBottomOffset))
+      buttonTopSpread: spread(buttonTops),
+      maxMetaButtonGap: Math.max(...metaButtonGaps),
+      minMetaButtonGap: Math.min(...metaButtonGaps),
+      buttonBottomOffsetSpread: spread(buttonBottomOffsets)
     };
   });
 
   expect(metrics.fieldCompleteness).toBeTruthy();
+  expect(metrics.clickableButtonCount).toBeGreaterThan(0);
+  expect(metrics.staticWithoutButtonCount).toBeGreaterThan(0);
   expect(metrics.locationTexts.slice(0, 3)).toEqual(["杭州", "上海", "宁波"]);
   expect(metrics.locationTexts.every((text) => !/[・·｜|,，\s/／-]/.test(text))).toBeTruthy();
   expect(metrics.cardHeightSpread).toBeLessThanOrEqual(1);
@@ -1043,6 +1061,90 @@ test("人员菜单进入统一列表页，未配置分类时展示全部人员",
   await expect(contactMenu).toBeVisible();
   await tap(page, contactMenu);
   await expect(page.getByTestId("contact-page")).toBeVisible();
+});
+
+test("联系我们只显示已配置内容并为全空配置提供状态提示", async ({ page, request }) => {
+  const menus = await adminApi<AdminList<Menu>>(request, "GET", "/api/admin/menu-items");
+  const contactMenu = menus.items.find((item) => item.type === "contact");
+  if (!contactMenu) throw new Error("联系我们菜单种子数据缺失");
+
+  try {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${contactMenu.id}`, {
+      configJson: {
+        phone: " 400-800-E2E ",
+        address: "   ",
+        wechat: "",
+        description: " E2E 档期咨询 "
+      },
+      status: "enabled",
+      showOnHome: true
+    });
+    await openHome(page);
+    await tap(page, page.getByTestId("home-menu-contact").first());
+    await expect(page).toHaveURL(new RegExp(`/pages/contact/index\\?menuId=${contactMenu.id}$`));
+    await expect(page.getByTestId("contact-content")).toBeVisible();
+    await expect(page.getByTestId("contact-phone")).toContainText("400-800-E2E");
+    await expect(page.getByText("E2E 档期咨询")).toBeVisible();
+    await expect(page.getByTestId("contact-address")).toHaveCount(0);
+    await expect(page.getByTestId("contact-wechat")).toHaveCount(0);
+
+    await adminApi(request, "PUT", `/api/admin/menu-items/${contactMenu.id}`, {
+      configJson: { phone: " ", address: "", wechat: "   ", description: "" },
+      status: "enabled",
+      showOnHome: true
+    });
+    await openHome(page);
+    await tap(page, page.getByTestId("home-menu-contact").first());
+    await expect(page.getByTestId("contact-empty-state")).toHaveText("联系方式待补充");
+    await expect(page.getByTestId("contact-content")).toHaveCount(0);
+  } finally {
+    await adminApi(request, "PUT", `/api/admin/menu-items/${contactMenu.id}`, {
+      configJson: contactMenu.configJson ?? {},
+      status: contactMenu.status,
+      showOnHome: contactMenu.showOnHome
+    });
+  }
+});
+
+test("人员列表左上标签随文字收缩且不越出封面", async ({ page, request }) => {
+  const artists = await adminApi<AdminList<ArtistListItem>>(request, "GET", "/api/admin/artists?pageSize=100");
+  const samples = artists.items.slice(0, 2);
+  if (samples.length < 2) throw new Error("人员标签宽度测试至少需要两条人员数据");
+
+  try {
+    await adminApi(request, "PUT", `/api/admin/artists/${samples[0].id}`, { badge: "金牌" });
+    await adminApi(request, "PUT", `/api/admin/artists/${samples[1].id}`, { badge: "资深金牌主持人" });
+
+    await page.goto("/#/pages/artists/list");
+    const cards = page.getByTestId("artist-card");
+    await expect(cards.first()).toBeVisible();
+    const metrics = await cards.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const cover = node.querySelector(".artist-card__cover-wrap")!.getBoundingClientRect();
+        const badge = node.querySelector(".artist-card__badge")!.getBoundingClientRect();
+        const text = node.querySelector(".artist-card__badge-text")!.textContent?.trim() ?? "";
+        return {
+          text,
+          textLength: Array.from(text).length,
+          width: badge.width,
+          overflow: badge.right - cover.right
+        };
+      })
+    );
+    const ordered = metrics
+      .filter((item) => item.textLength > 0)
+      .sort((left, right) => left.textLength - right.textLength);
+    expect(ordered.length).toBeGreaterThan(1);
+    expect(ordered.at(-1)!.textLength).toBeGreaterThan(ordered[0].textLength);
+    expect(ordered.at(-1)!.width).toBeGreaterThan(ordered[0].width);
+    ordered.forEach((item) => expect(item.overflow).toBeLessThanOrEqual(1));
+  } finally {
+    await Promise.all(
+      samples.map((artist) =>
+        adminApi(request, "PUT", `/api/admin/artists/${artist.id}`, { badge: artist.badge })
+      )
+    );
+  }
 });
 
 test("人员菜单配置任意中文分类后筛选对应列表", async ({ page, request }) => {

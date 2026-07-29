@@ -79,6 +79,14 @@ describe("menu navigation", () => {
     });
   });
 
+  it("opens contact menus with their stable menu id", () => {
+    openMenu(menu("contact"));
+
+    expect(taroMock.navigateTo).toHaveBeenCalledWith({
+      url: "/pages/contact/index?menuId=7"
+    });
+  });
+
   it("falls back to the unfiltered artist list for invalid artist menu config", () => {
     openMenu(menu("artist", { category: 42 }));
 

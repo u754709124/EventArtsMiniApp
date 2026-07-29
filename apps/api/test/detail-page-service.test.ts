@@ -194,7 +194,6 @@ describe("DetailPageService", () => {
       hero: {
         title: "预览标题",
         typeLabel: "",
-        subtitle: "预览",
         badge: "",
         tags: [],
         location: "",
@@ -204,6 +203,7 @@ describe("DetailPageService", () => {
       richTextHtml: "<p>未保存内容</p>"
     });
     expect(dto.banners[0]).toMatchObject({ assetId: 10, url: "/uploads/service-10.png" });
+    expect(dto.hero).toMatchObject({ typeLabel: "", subtitle: "" });
     expect(await prisma.detailPageConfig.count()).toBe(0);
     await prisma.$disconnect();
   });
