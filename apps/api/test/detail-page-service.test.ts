@@ -194,6 +194,7 @@ describe("DetailPageService", () => {
       hero: {
         title: "预览标题",
         typeLabel: "",
+        subtitle: "",
         badge: "",
         tags: [],
         location: "",
