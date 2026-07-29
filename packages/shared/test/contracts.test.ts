@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ArtistCreateRequestSchema,
+  ArtistUpdateRequestSchema,
   ArticleCreateRequestSchema,
   ApiErrorCodeSchema,
   DetailPageMenuConfigSchema,
@@ -554,6 +555,37 @@ describe("shared contracts", () => {
         status: "enabled"
       }).tags
     ).toEqual(["婚礼主持"]);
+    expect(
+      ArtistCreateRequestSchema.parse({
+        name: "可选列表内容",
+        type: "主持人",
+        avatarAssetId: 13,
+        location: "杭州",
+        badge: "主持",
+        detailPageId: null,
+        sortOrder: 2,
+        status: "enabled"
+      })
+    ).toMatchObject({ summary: "", tags: [] });
+    expect(
+      ArtistCreateRequestSchema.parse({
+        name: "空白列表内容",
+        type: "主持人",
+        avatarAssetId: 13,
+        location: "杭州",
+        badge: "主持",
+        tags: ["  ", "婚礼主持", "婚礼主持"],
+        summary: "   ",
+        detailPageId: null,
+        sortOrder: 2,
+        status: "enabled"
+      })
+    ).toMatchObject({ summary: "", tags: ["婚礼主持"] });
+    expect(ArtistUpdateRequestSchema.parse({})).toEqual({});
+    expect(ArtistUpdateRequestSchema.parse({ tags: [], summary: "   " })).toEqual({
+      tags: [],
+      summary: ""
+    });
     expect(() => ArtistCreateRequestSchema.parse({
       name: "林然",
       type: "   ",
@@ -562,6 +594,17 @@ describe("shared contracts", () => {
       badge: "金牌主持",
       tags: ["婚礼主持"],
       summary: "简介",
+      detailPageId: null,
+      sortOrder: 1,
+      status: "enabled"
+    })).toThrow();
+    expect(() => ArtistCreateRequestSchema.parse({
+      name: "林然",
+      type: "主持人",
+      avatarAssetId: 14,
+      location: "杭州",
+      badge: "金牌主持",
+      tags: ["一", "二", "三", "四", "五"],
       detailPageId: null,
       sortOrder: 1,
       status: "enabled"

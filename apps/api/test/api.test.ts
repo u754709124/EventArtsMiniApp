@@ -845,7 +845,7 @@ describe("artist client and admin contracts", () => {
     expect(response.json().data).not.toHaveProperty("tagsJson");
   });
 
-  it("requires all new artist fields on creation and serializes tags without double JSON encoding", async () => {
+  it("requires core artist fields while allowing optional tags and summary", async () => {
     const token = await login();
     const cover = await prisma.mediaAsset.findFirstOrThrow();
     const incomplete = await app.inject({
@@ -887,6 +887,48 @@ describe("artist client and admin contracts", () => {
     expect(updated.statusCode).toBe(200);
     expect(updated.json().data.tags).toEqual(["论坛主持"]);
     expect((await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).tagsJson).toBe('["论坛主持"]');
+
+    const optional = await app.inject({
+      method: "POST",
+      url: "/api/admin/artists",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: "简洁人员卡片",
+        type: "主持人",
+        avatarAssetId: cover.id,
+        location: "杭州",
+        badge: "主持",
+        detailPageId: null,
+        sortOrder: 100,
+        status: "enabled"
+      }
+    });
+    expect(optional.statusCode).toBe(200);
+    expect(optional.json().data).toMatchObject({ summary: "", tags: [] });
+    const optionalRow = await prisma.artist.findUniqueOrThrow({ where: { id: optional.json().data.id } });
+    expect(optionalRow).toMatchObject({ summary: "", tagsJson: "[]" });
+
+    const preserved = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${created.json().data.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sortOrder: 101 }
+    });
+    expect(preserved.statusCode).toBe(200);
+    expect(preserved.json().data).toMatchObject({ summary: "专业稳重的主持人。", tags: ["论坛主持"] });
+
+    const cleared = await app.inject({
+      method: "PUT",
+      url: `/api/admin/artists/${created.json().data.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tags: [], summary: "   " }
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().data).toMatchObject({ summary: "", tags: [] });
+    expect(await prisma.artist.findUniqueOrThrow({ where: { id: created.json().data.id } })).toMatchObject({
+      summary: "",
+      tagsJson: "[]"
+    });
   });
 
   it("requires admin auth for artist category options and returns normalized distinct categories", async () => {

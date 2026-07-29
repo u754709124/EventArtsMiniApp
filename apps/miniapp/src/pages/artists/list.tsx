@@ -10,6 +10,7 @@ import { navigateToDetailPage } from "../../utils/detail-page-navigation";
 import { ignoreNavigationError } from "../../utils/menu-navigation";
 import { usePullDownRefreshState } from "../../utils/pull-down-refresh";
 import { useRepeatClickGuard } from "../../utils/repeat-click-guard";
+import { buildArtistWaterfallColumns } from "./artist-waterfall";
 import "./list.scss";
 
 type ArtistListItem = ArtistListItemDto;
@@ -84,6 +85,7 @@ function getNavigationMetrics() {
 
 function ArtistCard({ item }: { item: ArtistListItem }) {
   const tags = getTags(item).slice(0, 3);
+  const summary = getText(item.summary);
   const clickable = Boolean(item.detailPageId);
   const category = getText(item.type) || "人员";
   return (
@@ -115,14 +117,16 @@ function ArtistCard({ item }: { item: ArtistListItem }) {
             <Text className="artist-card__location">{getText(item.location) || "暂未填写"}</Text>
           </View>
         </View>
-        <View className="artist-card__tags">
-          {tags.map((tag) => (
-            <Text key={tag} className="artist-card__tag">
-              {tag}
-            </Text>
-          ))}
-        </View>
-        <Text className="artist-card__summary">{getText(item.summary) || "暂未填写人员介绍"}</Text>
+        {tags.length > 0 && (
+          <View className="artist-card__tags">
+            {tags.map((tag) => (
+              <Text key={tag} className="artist-card__tag">
+                {tag}
+              </Text>
+            ))}
+          </View>
+        )}
+        {summary && <Text className="artist-card__summary">{summary}</Text>}
       </View>
     </View>
   );
@@ -130,15 +134,37 @@ function ArtistCard({ item }: { item: ArtistListItem }) {
 
 function ArtistListSkeleton() {
   return (
-    <View className="artist-grid" data-testid="artist-list-skeleton">
-      {[0, 1, 2, 3].map((index) => (
-        <View key={index} className="artist-skeleton">
-          <View className="artist-skeleton__cover" />
-          <View className="artist-skeleton__line artist-skeleton__line--title" />
-          <View className="artist-skeleton__line" />
-          <View className="artist-skeleton__line artist-skeleton__line--short" />
+    <View className="artist-waterfall" data-testid="artist-list-skeleton">
+      {[0, 1].map((column) => (
+        <View key={column} className="artist-waterfall__column">
+          {[0, 1].map((index) => (
+            <View key={`${column}-${index}`} className={`artist-skeleton artist-skeleton--${index === 0 ? "full" : "compact"}`}>
+              <View className="artist-skeleton__cover" />
+              <View className="artist-skeleton__line artist-skeleton__line--title" />
+              <View className="artist-skeleton__line" />
+              {index === 0 && <View className="artist-skeleton__line artist-skeleton__line--short" />}
+            </View>
+          ))}
         </View>
       ))}
+    </View>
+  );
+}
+
+function ArtistWaterfall({ items }: { items: ArtistListItem[] }) {
+  const columns = buildArtistWaterfallColumns(items);
+  return (
+    <View className="artist-waterfall">
+      <View className="artist-waterfall__column">
+        {columns.left.map((item) => (
+          <ArtistCard key={item.id} item={item} />
+        ))}
+      </View>
+      <View className="artist-waterfall__column">
+        {columns.right.map((item) => (
+          <ArtistCard key={item.id} item={item} />
+        ))}
+      </View>
     </View>
   );
 }
@@ -362,11 +388,7 @@ export default function ArtistList() {
             <Text className="artist-state__desc">试试修改搜索或筛选条件</Text>
           </View>
         ) : (
-          <View className="artist-grid">
-            {items.map((item: ArtistListItem) => (
-              <ArtistCard key={item.id} item={item} />
-            ))}
-          </View>
+          <ArtistWaterfall items={items} />
         )}
       </View>
 

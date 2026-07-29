@@ -88,13 +88,14 @@ async function expectLivePreviewContract(
     const hero = root.querySelector(".detail-preview-hero")?.getBoundingClientRect();
     const navigation = root.querySelector(".detail-preview-nav--banner-safe")?.getBoundingClientRect();
     const heroCopy = root.querySelector(".detail-preview-hero-copy")?.getBoundingClientRect();
+    const back = root.querySelector(".detail-preview-back")?.getBoundingClientRect();
     const content = root.querySelector(".detail-preview-content")?.getBoundingClientRect();
     const firstCard = root.querySelector(".detail-preview-card")?.getBoundingClientRect();
     const heroHeading = root.querySelector(".detail-preview-hero-heading")?.getBoundingClientRect();
     const richHeading = root.querySelector<HTMLElement>(".detail-preview-rich-text h1");
     const marker = richHeading?.querySelector<HTMLElement>("[data-detail-heading-marker='true']");
     const headingContent = richHeading?.querySelector<HTMLElement>("[data-detail-heading-content='true']");
-    if (!hero || !navigation || !heroCopy || !content || !firstCard || !heroHeading || !richHeading || !marker || !headingContent) {
+    if (!hero || !navigation || !heroCopy || !back || !content || !firstCard || !heroHeading || !richHeading || !marker || !headingContent) {
       throw new Error("后台详情预览结构缺失");
     }
     const markerRect = marker.getBoundingClientRect();
@@ -105,7 +106,7 @@ async function expectLivePreviewContract(
       heroHeight: hero.height,
       navigationTop: navigation.top - rootRect.top,
       navigationHeight: navigation.height,
-      bannerNavigationClearance: hero.top - navigation.bottom,
+      bannerBackTopDelta: hero.top - back.top,
       heroCopyTop: heroCopy.top - hero.top,
       headingClearance: heroHeading.top - navigation.bottom,
       heroInsideBanner: heroCopy.bottom <= hero.bottom,
@@ -124,9 +125,9 @@ async function expectLivePreviewContract(
   expect(geometry.heroHeight).toBeGreaterThanOrEqual(212);
   expect(geometry.navigationTop).toBe(0);
   expect(geometry.navigationHeight).toBe(64);
-  expect(geometry.bannerNavigationClearance).toBeGreaterThanOrEqual(0);
-  expect(geometry.bannerNavigationClearance).toBeLessThanOrEqual(1);
-  expect(geometry.heroCopyTop).toBe(8);
+  expect(geometry.bannerBackTopDelta).toBeGreaterThanOrEqual(-9);
+  expect(geometry.bannerBackTopDelta).toBeLessThanOrEqual(-7);
+  expect(geometry.heroCopyTop).toBe(60);
   expect(geometry.headingClearance).toBeGreaterThanOrEqual(7);
   expect(geometry.heroInsideBanner).toBeTruthy();
   expect(geometry.heroCardClearance).toBeGreaterThanOrEqual(11);
@@ -1165,6 +1166,9 @@ test("人员管理保留列表字段并只选择详情页引用", async ({ page 
   await expect(page.getByTestId("detail-page-empty-hint")).toHaveCount(0);
   await expect(page.getByTestId("detail-page-type")).toHaveCount(0);
   await expect(page.getByTestId("detail-rich-text-editor")).toHaveCount(0);
+  await page.getByTestId("artists-save").click();
+  await expect(page.getByText("请至少填写一个标签")).toHaveCount(0);
+  await expect(page.getByText("请输入演职人员描述")).toHaveCount(0);
 });
 
 test("详情页管理预览可创建 BANNER 富文本并被人员引用", async ({ page, request }) => {

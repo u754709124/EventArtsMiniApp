@@ -216,6 +216,23 @@ describe("人员/案例详情页后台接入", () => {
     });
   });
 
+  it("人员列表标签和描述可留空，并在提交边界规范化", () => {
+    const request = buildCrudSaveRequest(configs.artists, null, {
+      name: "简洁卡片",
+      type: "主持人",
+      avatarAssetId: 7,
+      location: "杭州",
+      badge: "主持",
+      tags: undefined,
+      summary: "   ",
+      detailPageId: null,
+      sortOrder: 3,
+      status: "enabled"
+    });
+
+    expect(request.body).toMatchObject({ tags: [], summary: "" });
+  });
+
   it("旧人员分类 slug 回显和保存时映射为中文分类", () => {
     const values = prepareCrudEditValues({ id: 8, name: "待迁移人员", type: "host", avatarAssetId: 7, detailPage: null });
     const request = buildCrudSaveRequest(configs.artists, { id: 8 }, {

@@ -49,6 +49,7 @@
   --preview-shadow: 0 4px 15px rgb(71 51 31 / 7%);
   --preview-gutter: 12px;
   --preview-overlap: 21px;
+  position: relative;
   width: min(375px, 100%);
   min-height: 620px;
   overflow: hidden;
@@ -71,20 +72,35 @@
 }
 
 .detail-preview-nav--banner-safe {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
   height: 64px;
   padding-top: 20px;
-  background: linear-gradient(180deg, #fbf7ef 0%, rgb(251 247 239 / 90%) 72%, rgb(251 247 239 / 20%) 100%);
+  background: linear-gradient(
+    180deg,
+    #fbf7ef 0%,
+    rgb(251 247 239 / 90%) 72%,
+    rgb(251 247 239 / 62%) 100%
+  );
 }
 
 .detail-preview-nav--banner-safe::after {
   position: absolute;
   right: 0;
-  bottom: -10px;
+  bottom: -36px;
   left: 0;
-  height: 10px;
+  height: 36px;
   pointer-events: none;
-  background: linear-gradient(180deg, rgb(251 247 239 / 20%), rgb(251 247 239 / 0%));
+  background: linear-gradient(
+    180deg,
+    rgb(251 247 239 / 62%) 0%,
+    rgb(251 247 239 / 40%) 35%,
+    rgb(251 247 239 / 16%) 70%,
+    rgb(251 247 239 / 0%) 100%
+  );
   content: "";
 }
 
@@ -122,7 +138,8 @@
   position: relative;
   box-sizing: border-box;
   min-height: 212px;
-  padding: 8px 115px 33px 22px;
+  margin-top: 12px;
+  padding: 60px 115px 33px 22px;
   overflow: hidden;
   background: #2d2118;
 }

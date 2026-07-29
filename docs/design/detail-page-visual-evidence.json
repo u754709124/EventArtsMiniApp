@@ -6,11 +6,11 @@
   },
   "alignment": "Reference resized proportionally to actual width; both images top-aligned and cropped to the shorter height; no region masked.",
   "hashes": {
-    "docs/design/actual-artist-banner-rich-text.png": "5a04dec27eb5f35a55d6ddcba6ebc04375f1d7c094687f48cc1e506aa2ec21a3",
+    "docs/design/actual-artist-banner-rich-text.png": "5bd6c58a10c19bc79ddb50107756cb83566c0218602a87c2c24948c207647cdf",
     "docs/design/actual-artist-rich-text.png": "e2aa5a7788f88a342d6b641189ceb6181cff141867fecce397f8027abbdc1175",
-    "docs/design/actual-case-banner-rich-text.png": "7409b30300df8c6c88e0cd6267f7c54a0e2ea64fc2455bbe369ab4d261a00583",
+    "docs/design/actual-case-banner-rich-text.png": "ab3c1b60bb99cfd02f9778a8ef425e176ba3ac35cb71c1538bf49d1100d2b2ec",
     "docs/design/actual-case-rich-text.png": "d7afc217bb75087057846aef514e9806096d365aa66266aafca5ca79d4b4bb26",
-    "docs/design/overlay-artist-detail.png": "c549a33645b0b48e8c2eeef553ee2cb6b651f9c35901839da44efbc2a80882fb",
-    "docs/design/diff-artist-detail.png": "8b9478f63db5768335cb3c2a85c0da08954dcfdbeb567d768d7baf9041e5f19f"
+    "docs/design/overlay-artist-detail.png": "1e32bcc98be4d7a92446cba19cccc403078f3325a4ab94804a76033a5942f47d",
+    "docs/design/diff-artist-detail.png": "70a99ed3027dd86744ac690723e345cd462ea91379dfd856c4c8d777259968d2"
   }
 }

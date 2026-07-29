@@ -30,10 +30,10 @@
 - 数据表保留 `avatarAssetId`；业务名称为“列表封面图”。新增 `location TEXT NOT NULL DEFAULT ''`、`badge TEXT NOT NULL DEFAULT ''`。
 - 每次启动以 `PRAGMA table_info(artists)` 检查列；缺失时才执行 `ALTER TABLE ... ADD COLUMN`。不得丢失旧行或媒体关联。
 - 客户端人员项只消费 `coverUrl`、`avatarUrl`、`location`、`badge`、`tags` 等序列化字段；`tags` 始终是 `string[]`。
-- 标签在边界统一 trim、去空、去重、限 1–4 个；存库只通过一次标签序列化函数写入 `tagsJson`。
+- 标签在边界统一 trim、去空、去重、限 0–4 个；缺省规范化为 `[]`，存库只通过一次标签序列化函数写入 `tagsJson`。描述缺省或纯空白规范化为 `""`。
 - 单个标签最长 12 个字符；共享层和后台 API 同时拒绝超长标签。
 - 列表固定按 `sortOrder ASC, id ASC`；仅返回 `enabled`。`category` 为空时返回全部人员，非空时按人员分类精确过滤；`q` 搜索姓名、分类、地点、徽章、标签和描述；`location` 与 `tag` 是精确实际值筛选。
-- 设计宽度为 `750rpx`。双列卡片 `345rpx` 宽、`20rpx` 列间距、封面 `345rpx × 240rpx`、固定卡片总高 `436rpx`、行距 `18rpx`。描述固定两行，采用 `-webkit-line-clamp: 2` 加固定高度。
+- 设计宽度为 `750rpx`。双列瀑布每列 `345rpx` 宽、`20rpx` 列间距、封面 `345rpx × 240rpx`、同列间距 `18rpx`。卡片按标签和描述是否存在自适应高度，描述最多两行，正文底部保留 `16rpx` padding。
 - 所有文字都是实时 UI；封面资源仅包含照片。不得以整页或整卡片截图代替组件。
 
 ## 资源执行清单
@@ -106,3 +106,13 @@ pnpm assets:slice:artists
 - H5 E2E 增加短/长标签实际宽度比较及不越出封面边界的几何断言。
 - 聚焦标签宽度 Playwright 用例通过；最终全量 `pnpm e2e` 通过 `68/68`，人员列表设计复核截图与差异图在同次运行中刷新。
 - 最终 `pnpm lint`、`pnpm test`、`pnpm build:weapp` 和 `git diff --check` 均通过。
+
+## 2026-07-29 可选内容与瀑布流补充
+
+- 后台下方标签和人员描述改为可选；创建缺省规范化为 `tags: []`、`summary: ""`，更新省略保持原值、显式空值执行清空，数据库与 DTO 结构不变。
+- 前台仅在有效内容存在时创建标签和描述节点，列表最多展示前三个标签。
+- 固定等高网格改为两个 Taro `View` 纵向列；纯函数根据卡片内容高度权重将数据确定性分配到当前较短列，不依赖 DOM 测量或实验性 CSS masonry。
+- 卡片和正文区取消固定高度，最后一个可见正文元素后保留 `16rpx` 底部 padding；骨架复用相同双列宽度与间距。
+- 聚焦 Shared、API、Admin 和 Miniapp Vitest 分别通过 `18`、`55`、`11`、`2` 项；聚焦 Playwright `4/4` 通过。
+- `pnpm lint`、`pnpm build:weapp` 均退出码 `0`；完整 `pnpm e2e` 通过 `69/69`，并刷新人员列表和详情页视觉证据。
+- 最终完整 `pnpm test` 退出码 `0`：Shared `56`、Miniapp `72`、API `266`、Admin `167`、deploy `9`、build-script `4` 全部通过。提交前一次运行曾遇到 SQLite `database is locked`，API 全量隔离重跑 `266/266` 后，完整命令再次执行通过。

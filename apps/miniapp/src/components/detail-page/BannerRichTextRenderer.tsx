@@ -4,7 +4,7 @@ import { getDisplayDetailPageBanners } from "@event-arts/shared/detail-page-pres
 import { generatedAssets } from "../../assets";
 import { AppImage } from "../AppImage";
 import { DetailNavigation, getDetailNavigationMetrics } from "./DetailNavigation";
-import { detailHeroNavigationGapPx } from "./navigation-layout";
+import { getDetailBannerTopPx, getDetailHeroImageTopPx } from "./navigation-layout";
 import { DetailHeroBanner } from "./DetailHeroBanner";
 import { DetailRichContent } from "./DetailRichContent";
 import { updateFailedMediaIds } from "./media-health";
@@ -15,6 +15,8 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
   const [current, setCurrent] = useState(0);
   const [failedBannerIds, setFailedBannerIds] = useState<number[]>([]);
   const navigationMetrics = useMemo(getDetailNavigationMetrics, []);
+  const bannerTop = getDetailBannerTopPx(navigationMetrics);
+  const heroImageTop = getDetailHeroImageTopPx(navigationMetrics);
   const multiple = banners.length > 1;
   const fixedForE2E =
     process.env.NODE_ENV === "test" ||
@@ -42,7 +44,7 @@ export function BannerRichTextRenderer({ config, hero, fallbackTabUrl, showShare
       <View
         className="detail-banner"
         data-testid="detail-banner"
-        style={{ paddingTop: `${detailHeroNavigationGapPx}px` }}
+        style={{ marginTop: `${bannerTop}px`, paddingTop: `${heroImageTop}px` }}
       >
         <Swiper
           className="detail-banner__swiper"

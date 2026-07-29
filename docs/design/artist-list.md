@@ -25,8 +25,8 @@
 | `avatarUrl`            | 兼容字段，当前与 `coverUrl` 相同 |
 | `location`             | 演绎地点                         |
 | `badge`                | 封面左上角实时渲染的标签         |
-| `tags`                 | 下方标签数组，前台最多展示前四项 |
-| `summary`              | 列表卡片两行描述                 |
+| `tags`                 | 可选下方标签数组，前台最多展示前三项 |
+| `summary`              | 可选列表卡片两行描述                 |
 | `detail`               | 详情内容                         |
 | `sortOrder` / `status` | 排序及启用状态                   |
 
@@ -37,14 +37,14 @@
 - 参考图：`docs/design/reference-artists.png`，`853 × 1844` px。
 - 设计宽度：`750rpx`。
 - 页面左右留白：`20rpx`。
-- 双列卡片：`345rpx` 宽，`20rpx` 列间距；固定总高 `436rpx`，行间距 `18rpx`。
+- 双列瀑布卡片：每列 `345rpx` 宽、列间距 `20rpx`、同列间距 `18rpx`；卡片按标签和描述是否存在自适应高度，并确定性放入当前较短列。
 - 封面：`345rpx × 240rpx`，`aspectFill`，仅卡片顶角使用 `16rpx` 圆角。
-- 卡片：白底、`16rpx` 圆角、浅边框；正文 `196rpx` 固定高度并 `overflow: hidden`。
+- 卡片：白底、`16rpx` 圆角、浅边框；正文高度随有效元素变化，底部保留 `16rpx` padding。空标签和空描述不创建节点或残余间距，描述存在时最多展示两行。
 - 搜索/筛选控件高度：`54rpx`；页面底部只保留安全区留白，不复制原生 tabBar。
 - H5 截图使用 `427 × 922` CSS px、`deviceScaleFactor: 2`，当前人员页输出 `854 × 1844` px；微信端继续以状态栏及胶囊实测值计算顶部安全区。
 - 导航标题为 `32rpx`，卡片名称/角色/地点为 `28rpx`/`20rpx`/`20rpx`，单行标签为 `14rpx`，以避免四个中文标签被截断。
-- 标签只占一行；单个标签省略，旧数据超过四项时截断到前四项。
-- 描述以 `line-height: 30rpx` 和 `height: 60rpx` 固定两行，同时使用 `display: -webkit-box`、`-webkit-box-orient: vertical`、`-webkit-line-clamp: 2`、`overflow: hidden`、`text-overflow: ellipsis`。
+- 标签只占一行；单个标签省略，列表卡片只展示前 3 项，API 仍兼容最多 4 项历史数据。
+- 描述存在时以 `line-height: 34rpx` 和 `height: 68rpx` 限制为两行，同时使用 `display: -webkit-box`、`-webkit-box-orient: vertical`、`-webkit-line-clamp: 2`、`overflow: hidden`、`text-overflow: ellipsis`；未填写时不创建描述节点。
 
 参考图采样并归一化为下列页面 SCSS 令牌（文字抗锯齿像素不作为取样源）：
 
@@ -92,6 +92,8 @@ SQLite 初始化需先用 `PRAGMA table_info` 检查 `location`、`badge`，缺�
 以下文件由 `pnpm e2e --grep '人员列表设计复核截图与参考差异图'` 实际生成：
 
 - `docs/design/actual-artists-host.png`
+
+左上角人员标签使用内容收缩宽度，并在封面内保留 `12rpx` 左侧、至少 `16rpx` 右侧安全间距；短标签自然收窄，长标签到达安全边界后单行省略。
 - `docs/design/actual-artists-singer.png`
 - `docs/design/actual-artists-actor.png`
 - `docs/design/diff-artists-host.png`

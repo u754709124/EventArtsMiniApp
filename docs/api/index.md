@@ -523,7 +523,7 @@ Article admin create body:
 
 ### Admin artist APIs
 
-`POST /api/admin/artists` 创建人员时必须提交以下字段：
+`POST /api/admin/artists` 创建人员时提交以下字段；其中 `tags`、`summary` 可省略：
 
 ```json
 {
@@ -540,7 +540,7 @@ Article admin create body:
 }
 ```
 
-`name`、`type`、`location`、`badge`、`summary` 均会 trim 后校验非空；`type` 是人员分类字符串，不再限制为固定枚举，旧 `host`、`singer`、`actor` 会兼容归一为中文分类。`location` 最长 30 字，`badge` 和单个标签最长 12 字，`tags` 为去空、去重后的 1 至 4 项。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。`detailPageId` 可为 `null`，非空时必须引用已存在详情页；`PUT /api/admin/artists/:id` 支持基础字段和 `detailPageId` 局部更新。
+`name`、`type`、`location`、`badge` 会 trim 后校验非空；`type` 是人员分类字符串，不再限制为固定枚举，旧 `host`、`singer`、`actor` 会兼容归一为中文分类。`location` 最长 30 字，`badge` 和单个标签最长 12 字。`tags` 为去空、去重后的 0 至 4 项，创建缺省时规范化为 `[]`；`summary` 最长 120 字，创建缺省或纯空白时规范化为 `""`。`avatarAssetId` 是有效的图片资源 ID，并在后台文案中称为“列表封面图”。`detailPageId` 可为 `null`，非空时必须引用已存在详情页；`PUT /api/admin/artists/:id` 支持基础字段和 `detailPageId` 局部更新。更新时省略 `tags`/`summary` 保持原值，显式提交 `[]`/空白字符串则清空。
 
 后台人员列表和创建/更新响应都会返回安全的 `tags: string[]`，同时保留已解析为数组的兼容 `tagsJson`；服务端只通过统一的标签序列化方法写入一次 JSON，避免双重编码。
 

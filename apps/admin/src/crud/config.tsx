@@ -400,6 +400,7 @@ function normalizeArtistPayload(values: AnyRecord) {
     ...omitBusinessDetailFields(values),
     type: normalizeLegacyArtistCategory(String(values.type ?? "")),
     tags: normalizeArtistFormTags(values.tags),
+    summary: typeof values.summary === "string" ? values.summary.trim() : "",
     detailPageId: values.detailPageId ?? null
   };
 }
@@ -601,22 +602,30 @@ function ArtistListFields() {
       </Form.Item>
       <Form.Item
         className="form-grid-full"
-        label="下方多个标签"
+        label="下方标签（选填）"
         name="tags"
+        extra="最多 4 个；不填写时前台不展示标签区域。"
         getValueFromEvent={(value) => normalizeArtistFormTags(value).slice(0, 4)}
         rules={[
-          { required: true, message: "请至少填写一个标签" },
           {
             validator: (_, value) => {
               const tags = normalizeArtistFormTags(value);
-              return tags.length >= 1 && tags.length <= 4 ? Promise.resolve() : Promise.reject(new Error("请填写 1 至 4 个标签"));
+              if (tags.length > 4) return Promise.reject(new Error("最多填写 4 个标签"));
+              if (tags.some((item) => item.length > 12)) return Promise.reject(new Error("单个标签不能超过 12 个字符"));
+              return Promise.resolve();
             }
           }
         ]}
       >
         <Select data-testid="artist-tags" mode="tags" tokenSeparators={[",", "，"]} />
       </Form.Item>
-      <Form.Item className="form-grid-full" label="演职人员描述" name="summary" rules={[{ required: true, message: "请输入演职人员描述" }, { max: 120 }]}>
+      <Form.Item
+        className="form-grid-full"
+        label="演职人员描述（选填）"
+        name="summary"
+        extra="不填写时前台不展示描述。"
+        rules={[{ max: 120 }]}
+      >
         <Input.TextArea data-testid="artist-summary" maxLength={120} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
       </Form.Item>
     </>
@@ -885,7 +894,7 @@ export const configs: Record<string, CrudConfig> = {
     fields: () => <ArtistCrudFields />,
     sections: [
       { title: "基础信息", fields: () => <ArtistBasicFields /> },
-      { title: "列表展示", description: "下方标签最多 4 个；列表描述会在前台列表中显示两行。", fields: () => <ArtistListFields /> },
+      { title: "列表展示", description: "下方标签和描述均可不填；不填写时前台不占位展示。", fields: () => <ArtistListFields /> },
       { title: "详情内容", description: "当前版本使用独立详情页引用，不再内嵌完整详情配置。", fields: () => <ArtistDetailFields /> },
       { title: "发布设置", fields: () => <ArtistPublishFields /> }
     ]

@@ -225,17 +225,17 @@ const nullableDetailPageIdSchema = DetailPageReferenceIdSchema.default(null);
 const artistNameSchema = z.string().trim().min(1).max(60);
 const artistLocationSchema = z.string().trim().min(1).max(30);
 const artistBadgeSchema = z.string().trim().min(1).max(12);
-const artistSummarySchema = z.string().trim().min(1).max(120);
+const artistSummarySchema = z.string().trim().max(120);
 const artistTagsSchema = z
   .array(z.string())
   .transform((values) => normalizeArtistTags(values))
   .refine((values) => values.every((value) => value.length <= 12), "单个标签不能超过 12 个字符")
-  .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
+  .refine((values) => values.length <= 4, "标签数量不能超过 4 个");
 const legacyArtistTagsSchema = z
   .union([z.array(z.string()), z.string()])
   .transform((values) => normalizeArtistTags(values))
   .refine((values) => values.every((value) => value.length <= 12), "单个标签不能超过 12 个字符")
-  .refine((values) => values.length >= 1 && values.length <= 4, "标签数量应为 1 至 4 个");
+  .refine((values) => values.length <= 4, "标签数量不能超过 4 个");
 const artistQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
 const optionalQueryTextSchema = z.string().trim().transform((value) => value || undefined).optional();
 const optionalBooleanQuerySchema = z
@@ -281,10 +281,9 @@ function normalizeArtistRequestTags<T extends { tags?: string[]; tagsJson?: stri
   return { ...artist, ...(tags !== undefined || tagsJson !== undefined ? { tags: tags ?? tagsJson ?? [] } : {}) };
 }
 
-function requireArtistTags(value: { tags?: string[]; tagsJson?: string[] }, context: z.RefinementCtx) {
-  if (value.tags === undefined && value.tagsJson === undefined) {
-    context.addIssue({ code: "custom", path: ["tags"], message: "请至少填写一个标签" });
-  }
+function normalizeArtistCreateTags<T extends { tags?: string[]; tagsJson?: string[] }>(input: T) {
+  const { tags, tagsJson, ...artist } = input;
+  return { ...artist, tags: tags ?? tagsJson ?? [] };
 }
 
 export const ArtistCreateRequestSchema = z
@@ -295,14 +294,13 @@ export const ArtistCreateRequestSchema = z
     location: artistLocationSchema,
     badge: artistBadgeSchema,
     ...artistTagInput,
-    summary: artistSummarySchema,
+    summary: artistSummarySchema.default(""),
     detailPageId: nullableDetailPageIdSchema,
     sortOrder: z.coerce.number().int().min(0),
     status: StatusSchema
   })
   .strict()
-  .superRefine(requireArtistTags)
-  .transform(normalizeArtistRequestTags);
+  .transform(normalizeArtistCreateTags);
 
 export const ArtistUpdateRequestSchema = z
   .object({

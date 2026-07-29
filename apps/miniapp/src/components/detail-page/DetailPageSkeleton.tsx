@@ -1,6 +1,8 @@
 import { View } from "@tarojs/components";
 import type { DetailPageRendererKey } from "@event-arts/shared";
-import { DetailNavigation } from "./DetailNavigation";
+import { useMemo } from "react";
+import { DetailNavigation, getDetailNavigationMetrics } from "./DetailNavigation";
+import { getDetailBannerTopPx, getDetailHeroImageTopPx } from "./navigation-layout";
 
 export function DetailPageSkeleton({
   layout,
@@ -12,6 +14,9 @@ export function DetailPageSkeleton({
   title: string;
 }) {
   const banner = layout === "bannerRichText";
+  const navigationMetrics = useMemo(getDetailNavigationMetrics, []);
+  const bannerTop = getDetailBannerTopPx(navigationMetrics);
+  const heroImageTop = getDetailHeroImageTopPx(navigationMetrics);
   return (
     <View
       className={`detail-page detail-page--skeleton ${banner ? "detail-page--banner" : "detail-page--rich-only"}`}
@@ -19,8 +24,17 @@ export function DetailPageSkeleton({
     >
       {banner ? (
         <>
-          <DetailNavigation title="" fallbackTabUrl={fallbackTabUrl} className="detail-navigation--banner-safe" />
-          <View className="detail-skeleton__banner" data-testid="detail-banner-skeleton">
+          <DetailNavigation
+            title=""
+            fallbackTabUrl={fallbackTabUrl}
+            metrics={navigationMetrics}
+            className="detail-navigation--banner-safe"
+          />
+          <View
+            className="detail-skeleton__banner"
+            data-testid="detail-banner-skeleton"
+            style={{ marginTop: `${bannerTop}px`, paddingTop: `${heroImageTop}px` }}
+          >
             <View className="detail-skeleton__hero-line detail-skeleton__hero-line--title" />
             <View className="detail-skeleton__hero-line" />
           </View>

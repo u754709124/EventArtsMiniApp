@@ -74,6 +74,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Unauthenticated users are redirected to login.
 - All forms use required validation, success/error feedback, loading/error/empty states, paginated tables, and destructive confirmation.
 - Saving CMS content must immediately invalidate/refetch data used by admin and client pages.
+- Artist list tags and summary are optional display fields. Normalize omitted values to `[]`/`""`, do not render empty card elements, and keep the two-column list in a Taro-compatible adaptive-height waterfall layout with bottom card padding.
 - Optional CMS display fields must be trimmed before persistence/rendering. When an optional field is blank, omit the corresponding client element and spacing instead of rendering fallback copy or an empty container. BANNER detail subtitles are optional; technical optional fields such as filters, pagination, sorting, status, and update payload fields are outside this display rule.
 - Contact menu pages must read `phone/address/wechat/description` from the selected menu's existing `configJson`; do not hardcode contact values. If every contact display field is blank, show the explicit empty state.
 - Backoffice accounts use fixed `SUPER_ADMIN`, `ADMIN`, and `USER` roles. Server-side live role/menu authorization is authoritative; frontend menu filtering is not a security boundary.

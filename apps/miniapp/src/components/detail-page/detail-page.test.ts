@@ -30,10 +30,14 @@ import {
 import { getVideoAspectRatioPadding } from "./video-layout";
 import {
   detailBannerMinHeightRpx,
+  detailBannerBackOverlapPx,
   detailCardOverlapRpx,
   detailHeroBottomSpaceRpx,
-  detailHeroVisibleGapRpx,
+  detailHeroMinimumImageTopPx,
   detailHeroNavigationGapPx,
+  detailHeroVisibleGapRpx,
+  getDetailBannerTopPx,
+  getDetailHeroImageTopPx,
   detailNavigationFallbackMetrics
 } from "./navigation-layout";
 import { enhanceDetailRichTextForDisplay } from "./rich-text-display";
@@ -133,17 +137,31 @@ describe("detail renderer registry and layout contracts", () => {
     expect(detailHeroBottomSpaceRpx).toBe(detailCardOverlapRpx + detailHeroVisibleGapRpx);
     expect(detailHeroBottomSpaceRpx).toBeGreaterThan(detailCardOverlapRpx);
     expect(detailNavigationFallbackMetrics).toEqual({ safeTop: 20, headerHeight: 44 });
+    expect(detailHeroMinimumImageTopPx).toBe(48);
     expect(detailHeroNavigationGapPx).toBe(8);
+    expect(detailBannerBackOverlapPx).toBe(8);
+    expect(getDetailBannerTopPx(detailNavigationFallbackMetrics)).toBe(12);
+    expect(getDetailHeroImageTopPx(detailNavigationFallbackMetrics)).toBe(60);
     const bannerSource = readFileSync(
       resolve(miniappSourceRoot, "components/detail-page/BannerRichTextRenderer.tsx"),
+      "utf8"
+    );
+    const detailStyles = readFileSync(
+      resolve(miniappSourceRoot, "components/detail-page/detail-page.scss"),
       "utf8"
     );
     expect(bannerSource).toContain('className="detail-navigation--banner-safe"');
     expect(bannerSource.indexOf("detail-navigation--banner-safe")).toBeLessThan(
       bannerSource.indexOf('className="detail-banner"')
     );
-    expect(bannerSource).toContain("detailHeroNavigationGapPx");
-    expect(bannerSource).not.toContain("getDetailHeroTop");
+    expect(bannerSource).toContain("getDetailHeroImageTopPx");
+    expect(bannerSource).toContain("getDetailBannerTopPx");
+    expect(detailStyles).toMatch(
+      /&--banner-safe\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*z-index:\s*30[^}]*linear-gradient/su
+    );
+    expect(detailStyles).toMatch(
+      /&::after\s*\{[^}]*bottom:\s*-72rpx[^}]*height:\s*72rpx[^}]*linear-gradient/su
+    );
   });
 
   it("registers every shared renderer key exactly once and rejects unknown keys", () => {

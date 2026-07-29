@@ -159,24 +159,36 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   padding: 0 20rpx;
 }
 
+.artist-waterfall,
 .artist-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: 18rpx 20rpx;
+  align-items: flex-start;
+  gap: 20rpx;
+}
+
+.artist-waterfall__column {
+  display: flex;
+  width: 345rpx;
+  flex: 0 0 345rpx;
+  flex-direction: column;
+  gap: 18rpx;
 }
 
 .artist-card,
 .artist-skeleton {
-  width: 345rpx;
-  height: 452rpx;
+  width: 100%;
   overflow: hidden;
-  flex: 0 0 345rpx;
+  flex: 0 0 auto;
   border: 1rpx solid $card-border;
   border-radius: 16rpx;
   background: #fff;
   box-shadow: $card-shadow;
   box-sizing: border-box;
   letter-spacing: 0;
+}
+
+.artist-skeleton {
+  height: 452rpx;
 }
 
 .artist-card--clickable {
@@ -201,10 +213,10 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   // Covers the badge pixels in the reference-derived photo crops. The fill
   // remains fully opaque so a legacy source badge can never show through.
   top: 8rpx;
-  left: 0;
+  left: 12rpx;
   display: inline-flex;
   width: auto;
-  max-width: calc(100% - 16rpx);
+  max-width: calc(100% - 28rpx);
   height: 40rpx;
   padding: 0 12rpx;
   align-items: center;
@@ -262,8 +274,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 }
 
 .artist-card__body {
-  height: 212rpx;
-  padding: 16rpx 16rpx 12rpx;
+  padding: 16rpx 16rpx 16rpx;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -407,6 +418,10 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
 .artist-skeleton {
   padding: 0 16rpx;
   box-shadow: none;
+}
+
+.artist-skeleton--compact {
+  height: 396rpx;
 }
 
 .artist-skeleton__cover {

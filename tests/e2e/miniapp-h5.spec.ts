@@ -503,18 +503,59 @@ async function expectBannerHeroGeometry(page: Page, ownerLabel: "人员" | "活�
     const heading = document
       .querySelector('[data-testid="detail-hero-heading"]')!
       .getBoundingClientRect();
-    const hero = document.querySelector('[data-testid="detail-hero"]')!.getBoundingClientRect();
+    const back = document
+      .querySelector('[data-testid="detail-back-button"]')!
+      .getBoundingClientRect();
+    const heroElement = document.querySelector('[data-testid="detail-hero"]')!;
+    const hero = heroElement.getBoundingClientRect();
+    const heroChildren = Array.from(heroElement.children)
+      .map((child) => child.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+    const counter = document
+      .querySelector('[data-testid="detail-banner-counter"]')!
+      .getBoundingClientRect();
     const firstCard = document.querySelector(".detail-rich-card")!.getBoundingClientRect();
     return {
-      bannerNavigationClearance: banner.top - navigation.bottom,
-      headingClearance: heading.top - navigation.bottom,
+      bannerBackTopDelta: banner.top - back.top,
+      headingNavigationClearance: heading.top - navigation.bottom,
+      headingBannerOffset: heading.top - banner.top,
+      bannerHeight: banner.height,
+      heroChildrenLeftAligned: heroChildren.every((rect) => Math.abs(rect.left - hero.left) <= 1),
+      heroChildrenInFlow: heroChildren.every(
+        (rect, index) => index === 0 || rect.top >= heroChildren[index - 1].bottom
+      ),
+      heroCounterClearance: counter.left - hero.right,
       heroInsideBanner: hero.bottom <= banner.bottom,
       heroCardClearance: firstCard.top - hero.bottom
     };
   });
-  expect(geometry.bannerNavigationClearance, `${ownerLabel} BANNER 应从导航安全层下方开始`).toBeGreaterThanOrEqual(0);
-  expect(geometry.bannerNavigationClearance, `${ownerLabel} 导航与 BANNER 不应留下可见断层`).toBeLessThanOrEqual(1);
-  expect(geometry.headingClearance, `${ownerLabel} Hero 首行应保留导航安全间距`).toBeGreaterThanOrEqual(7);
+  expect(
+    geometry.bannerBackTopDelta,
+    `${ownerLabel} BANNER 顶部不应过度延伸到状态栏`
+  ).toBeGreaterThanOrEqual(-9);
+  expect(
+    geometry.bannerBackTopDelta,
+    `${ownerLabel} BANNER 顶部应略高于返回按钮`
+  ).toBeLessThanOrEqual(-4);
+  expect(
+    geometry.headingNavigationClearance,
+    `${ownerLabel} Hero 首行应避开导航栏`
+  ).toBeGreaterThanOrEqual(7);
+  expect(
+    geometry.headingBannerOffset,
+    `${ownerLabel} Hero 首行应位于 BANNER 图片上半部分且避开顶部导航`
+  ).toBeGreaterThanOrEqual(59);
+  expect(
+    geometry.headingBannerOffset,
+    `${ownerLabel} Hero 首行应保持导航底部 8px 的图片内偏移`
+  ).toBeLessThanOrEqual(61);
+  expect(
+    geometry.headingBannerOffset,
+    `${ownerLabel} Hero 首行应位于 BANNER 图片上半部分`
+  ).toBeLessThan(geometry.bannerHeight / 2);
+  expect(geometry.heroChildrenLeftAligned, `${ownerLabel} Hero 全部文字区块应共用左侧基线`).toBeTruthy();
+  expect(geometry.heroChildrenInFlow, `${ownerLabel} Hero 全部文字区块应按正常流顺序排布`).toBeTruthy();
+  expect(geometry.heroCounterClearance, `${ownerLabel} Hero 文字组不应侵占右下计数器`).toBeGreaterThanOrEqual(8);
   expect(geometry.heroInsideBanner, `${ownerLabel} Hero 应完整保留在 BANNER 内`).toBeTruthy();
   expect(geometry.heroCardClearance, `${ownerLabel} Hero 底部应与首卡保持可见间距`).toBeGreaterThanOrEqual(8);
 }
@@ -1127,7 +1168,8 @@ test("人员列表左上标签随文字收缩且不越出封面", async ({ page,
           text,
           textLength: Array.from(text).length,
           width: badge.width,
-          overflow: badge.right - cover.right
+          leftInset: badge.left - cover.left,
+          rightInset: cover.right - badge.right
         };
       })
     );
@@ -1137,11 +1179,83 @@ test("人员列表左上标签随文字收缩且不越出封面", async ({ page,
     expect(ordered.length).toBeGreaterThan(1);
     expect(ordered.at(-1)!.textLength).toBeGreaterThan(ordered[0].textLength);
     expect(ordered.at(-1)!.width).toBeGreaterThan(ordered[0].width);
-    ordered.forEach((item) => expect(item.overflow).toBeLessThanOrEqual(1));
+    ordered.forEach((item) => {
+      expect(item.leftInset).toBeGreaterThanOrEqual(5.5);
+      expect(item.rightInset).toBeGreaterThanOrEqual(7);
+    });
   } finally {
     await Promise.all(
       samples.map((artist) =>
         adminApi(request, "PUT", `/api/admin/artists/${artist.id}`, { badge: artist.badge })
+      )
+    );
+  }
+});
+
+test("人员列表空标签和描述不占位并使用双列瀑布流", async ({ page, request }) => {
+  const artists = await adminApi<AdminList<ArtistListItem>>(request, "GET", "/api/admin/artists?pageSize=100");
+  const samples = artists.items.slice(0, 4);
+  if (samples.length < 4) throw new Error("人员瀑布流测试至少需要四条人员数据");
+
+  try {
+    await Promise.all([
+      adminApi(request, "PUT", `/api/admin/artists/${samples[0].id}`, { tags: [], summary: "" }),
+      adminApi(request, "PUT", `/api/admin/artists/${samples[1].id}`, { tags: ["单标签"], summary: "" }),
+      adminApi(request, "PUT", `/api/admin/artists/${samples[2].id}`, { tags: [], summary: "仅显示人员描述" }),
+      adminApi(request, "PUT", `/api/admin/artists/${samples[3].id}`, {
+        tags: ["标签一", "标签二", "标签三"],
+        summary: "同时显示标签和人员描述"
+      })
+    ]);
+
+    await page.goto("/#/pages/artists/list");
+    const waterfall = page.locator(".artist-waterfall");
+    const columns = waterfall.locator(".artist-waterfall__column");
+    await expect(columns).toHaveCount(2);
+    await expect(page.getByTestId("artist-card")).toHaveCount(artists.items.length);
+
+    const emptyCard = page.getByTestId("artist-card").filter({ hasText: samples[0].name });
+    await expect(emptyCard.locator(".artist-card__tags")).toHaveCount(0);
+    await expect(emptyCard.locator(".artist-card__summary")).toHaveCount(0);
+    await expect(page.getByText("暂未填写人员介绍")).toHaveCount(0);
+
+    const geometry = await waterfall.evaluate((root) => {
+      const columnNodes = Array.from(root.querySelectorAll(".artist-waterfall__column"));
+      const cardRects = columnNodes.flatMap((column) =>
+        Array.from(column.querySelectorAll(".artist-card")).map((card) => card.getBoundingClientRect())
+      );
+      const columnGaps = columnNodes.flatMap((column) => {
+        const rects = Array.from(column.querySelectorAll(".artist-card")).map((card) => card.getBoundingClientRect());
+        return rects.slice(1).map((rect, index) => rect.top - rects[index].bottom);
+      });
+      const empty = Array.from(root.querySelectorAll(".artist-card")).find(
+        (card) => !card.querySelector(".artist-card__tags") && !card.querySelector(".artist-card__summary")
+      )!;
+      const body = empty.querySelector(".artist-card__body")!.getBoundingClientRect();
+      const meta = empty.querySelector(".artist-card__meta")!.getBoundingClientRect();
+      return {
+        columnWidths: columnNodes.map((column) => column.getBoundingClientRect().width),
+        cardWidths: cardRects.map((rect) => rect.width),
+        cardHeights: cardRects.map((rect) => Math.round(rect.height)),
+        columnGaps,
+        emptyBottomPadding: body.bottom - meta.bottom
+      };
+    });
+    expect(geometry.columnWidths[0]).toBeCloseTo(geometry.columnWidths[1], 1);
+    geometry.cardWidths.forEach((width) => expect(width).toBeCloseTo(geometry.columnWidths[0], 1));
+    expect(new Set(geometry.cardHeights).size).toBeGreaterThan(1);
+    geometry.columnGaps.forEach((gap) => {
+      expect(gap).toBeGreaterThanOrEqual(8);
+      expect(gap).toBeLessThanOrEqual(12);
+    });
+    expect(geometry.emptyBottomPadding).toBeGreaterThanOrEqual(7);
+  } finally {
+    await Promise.all(
+      samples.map((artist) =>
+        adminApi(request, "PUT", `/api/admin/artists/${artist.id}`, {
+          tags: artist.tags,
+          summary: artist.summary
+        })
       )
     );
   }
