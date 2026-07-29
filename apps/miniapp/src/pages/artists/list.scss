@@ -212,7 +212,7 @@ $card-shadow: 0 8rpx 18rpx rgba(53, 42, 30, 0.08);
   position: absolute;
   // Covers the badge pixels in the reference-derived photo crops. The fill
   // remains fully opaque so a legacy source badge can never show through.
-  top: 8rpx;
+  top: 12rpx;
   left: 12rpx;
   display: inline-flex;
   width: auto;
