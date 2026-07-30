@@ -163,8 +163,10 @@ describe("detail renderer registry and layout contracts", () => {
     expect(detailStyles).toMatch(
       /&::after\s*\{[^}]*bottom:\s*-25rpx[^}]*height:\s*25rpx[^}]*linear-gradient/su
     );
-    expect(detailStyles).toContain("rgba(251, 247, 239, 0.46) 0%");
-    expect(detailStyles).toContain("rgba(251, 247, 239, 0.08) 78%");
+    expect(detailStyles).toContain("rgba(251, 247, 239, 0.94) 38%");
+    expect(detailStyles).toContain("rgba(251, 247, 239, 0.28) 100%");
+    expect(detailStyles).toContain("rgba(251, 247, 239, 0.28) 0%");
+    expect(detailStyles).toContain("rgba(251, 247, 239, 0.06) 72%");
   });
 
   it("registers every shared renderer key exactly once and rejects unknown keys", () => {
