@@ -90,9 +90,9 @@
 .detail-preview-nav--banner-safe::after {
   position: absolute;
   right: 0;
-  bottom: -20px;
+  bottom: -12.5px;
   left: 0;
-  height: 20px;
+  height: 12.5px;
   pointer-events: none;
   background: linear-gradient(
     180deg,

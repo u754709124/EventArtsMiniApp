@@ -161,7 +161,7 @@ describe("detail renderer registry and layout contracts", () => {
       /&--banner-safe\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*z-index:\s*30[^}]*linear-gradient/su
     );
     expect(detailStyles).toMatch(
-      /&::after\s*\{[^}]*bottom:\s*-40rpx[^}]*height:\s*40rpx[^}]*linear-gradient/su
+      /&::after\s*\{[^}]*bottom:\s*-25rpx[^}]*height:\s*25rpx[^}]*linear-gradient/su
     );
     expect(detailStyles).toContain("rgba(251, 247, 239, 0.46) 0%");
     expect(detailStyles).toContain("rgba(251, 247, 239, 0.08) 78%");
