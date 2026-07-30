@@ -420,7 +420,7 @@ describe("admin backup restore", () => {
       payload: { backupId: targetBackup.id, confirmation: "RESTORE_FULL_BACKUP" }
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode, response.body).toBe(200);
     const restore = response.json().data as { backupId: string; restoreId: string; snapshotBackupId: string; revokedSessionCount: number };
     expect(restore.backupId).toBe(targetBackup.id);
     expect(restore.snapshotBackupId).toMatch(/^backup-/);

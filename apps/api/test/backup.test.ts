@@ -7,7 +7,7 @@ import { backupManifestSchema, type BackupManifest } from "@event-arts/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createPrismaClient, type AppPrismaClient } from "../src/db";
-import { createBackupService, type BackupServiceHooks } from "../src/backup";
+import { backupImpactTables, createBackupService, type BackupServiceHooks } from "../src/backup";
 import { createApiLoggerOptions } from "../src/logging";
 import { ensureDatabaseSchema } from "../src/sqlite-schema";
 import {
@@ -145,6 +145,10 @@ afterEach(async () => {
 });
 
 describe("admin backup API", () => {
+  it("includes recent activities in backup impact accounting", () => {
+    expect(backupImpactTables).toContain("recent_activities");
+  });
+
   it("requires administrator authentication for backup management routes", async () => {
     await startApp();
 

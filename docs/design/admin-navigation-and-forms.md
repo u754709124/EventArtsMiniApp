@@ -8,7 +8,7 @@ breadcrumbs, page titles, and sidebar `data-testid` values.
 
 - 数据看板
 - 首页运营: 首页配置, 公告管理, 首页轮播, 分类菜单
-- 内容管理: 人员管理, 案例管理, 详情页管理
+- 内容管理: 人员管理, 案例管理, 近日活动管理, 文章管理, 详情页管理
 - 素材管理: 素材库
 
 The sidebar persists collapse state in `event-arts-admin-sider-collapsed` and
@@ -18,10 +18,16 @@ own list menu item.
 
 ## Forms
 
-Short operational records stay in drawers. Artists and cases use independent
+Short operational records stay in drawers. Artists, cases, recent activities, and articles use independent
 create/edit pages with grouped fields, a sticky action bar, dirty navigation
 protection, and complete-record edit hydration via authenticated `GET /:id`
 admin endpoints.
+
+Recent activity management is mounted at `/recent-activities` and uses the
+`recent-activities` menu permission. The form reuses the media library for
+`recentActivity.cover` and the shared detail-page reference selector; listing,
+search, status filtering, drag sorting, pagination, and delete confirmation
+come from the common CRUD page.
 
 Status fields show Chinese enabled/disabled labels. Duration fields are entered
 in seconds in the admin UI while API payloads continue to use milliseconds.

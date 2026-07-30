@@ -24,6 +24,7 @@ export const adminMenuKeyValues = [
   "menu-items",
   "artists",
   "cases",
+  "recent-activities",
   "articles",
   "detail-pages",
   "media-assets",
@@ -44,6 +45,7 @@ export const adminGrantableMenuKeyValues = [
   "menu-items",
   "artists",
   "cases",
+  "recent-activities",
   "articles",
   "detail-pages",
   "media-assets",
@@ -62,6 +64,7 @@ export const adminDelegableMenuKeyValues = [
   "menu-items",
   "artists",
   "cases",
+  "recent-activities",
   "articles",
   "detail-pages",
   "media-assets"
@@ -156,10 +159,19 @@ export const adminMenuCatalog = [
     delegable: true
   },
   {
+    key: "recent-activities",
+    label: "近日活动管理",
+    parentKey: "content",
+    order: 80,
+    access: "grantable",
+    sensitivity: "standard",
+    delegable: true
+  },
+  {
     key: "articles",
     label: "文章管理",
     parentKey: "content",
-    order: 80,
+    order: 90,
     access: "grantable",
     sensitivity: "standard",
     delegable: true
@@ -168,7 +180,7 @@ export const adminMenuCatalog = [
     key: "detail-pages",
     label: "详情页管理",
     parentKey: "content",
-    order: 90,
+    order: 100,
     access: "grantable",
     sensitivity: "standard",
     delegable: true
@@ -177,7 +189,7 @@ export const adminMenuCatalog = [
     key: "media-assets",
     label: "素材库",
     parentKey: "assets",
-    order: 100,
+    order: 110,
     access: "grantable",
     sensitivity: "sensitive",
     delegable: true
@@ -186,7 +198,7 @@ export const adminMenuCatalog = [
     key: "user-management",
     label: "用户管理",
     parentKey: "account",
-    order: 110,
+    order: 120,
     access: "role_capability",
     sensitivity: "critical",
     delegable: false
@@ -195,7 +207,7 @@ export const adminMenuCatalog = [
     key: "backups",
     label: "备份与恢复",
     parentKey: "account",
-    order: 120,
+    order: 130,
     access: "grantable",
     sensitivity: "critical",
     delegable: false
@@ -204,7 +216,7 @@ export const adminMenuCatalog = [
     key: "change-password",
     label: "修改密码",
     parentKey: "account",
-    order: 130,
+    order: 140,
     access: "authenticated",
     sensitivity: "standard",
     delegable: false
@@ -213,7 +225,7 @@ export const adminMenuCatalog = [
     key: "scheduled-tasks",
     label: "定时任务",
     parentKey: null,
-    order: 140,
+    order: 150,
     access: "grantable",
     sensitivity: "critical",
     delegable: false
@@ -222,7 +234,7 @@ export const adminMenuCatalog = [
     key: "system-config",
     label: "系统配置",
     parentKey: null,
-    order: 150,
+    order: 160,
     access: "grantable",
     sensitivity: "critical",
     delegable: false

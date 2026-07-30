@@ -39,6 +39,7 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
       "menu-items",
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "media-assets",
@@ -56,6 +57,7 @@ function identity(overrides: Partial<AdminIdentity> = {}): AdminIdentity {
       "menu-items",
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "media-assets"

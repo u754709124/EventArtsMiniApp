@@ -57,6 +57,7 @@ describe("admin RBAC shared contracts", () => {
     expect(expandAdminMenuSelection(["content", "backups", "artists", "missing"])).toEqual([
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "backups"

@@ -69,22 +69,22 @@ $detail-body-line-height: 1.72;
     background: linear-gradient(
       180deg,
       #fbf7ef 0%,
-      rgba(251, 247, 239, 0.9) 72%,
-      rgba(251, 247, 239, 0.62) 100%
+      rgba(251, 247, 239, 0.78) 72%,
+      rgba(251, 247, 239, 0.46) 100%
     );
 
     &::after {
       position: absolute;
       right: 0;
-      bottom: -72rpx;
+      bottom: -40rpx;
       left: 0;
-      height: 72rpx;
+      height: 40rpx;
       pointer-events: none;
       background: linear-gradient(
         180deg,
-        rgba(251, 247, 239, 0.62) 0%,
-        rgba(251, 247, 239, 0.4) 35%,
-        rgba(251, 247, 239, 0.16) 70%,
+        rgba(251, 247, 239, 0.46) 0%,
+        rgba(251, 247, 239, 0.26) 42%,
+        rgba(251, 247, 239, 0.08) 78%,
         rgba(251, 247, 239, 0) 100%
       );
       content: "";

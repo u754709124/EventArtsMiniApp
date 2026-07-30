@@ -82,23 +82,23 @@
   background: linear-gradient(
     180deg,
     #fbf7ef 0%,
-    rgb(251 247 239 / 90%) 72%,
-    rgb(251 247 239 / 62%) 100%
+    rgb(251 247 239 / 78%) 72%,
+    rgb(251 247 239 / 46%) 100%
   );
 }
 
 .detail-preview-nav--banner-safe::after {
   position: absolute;
   right: 0;
-  bottom: -36px;
+  bottom: -20px;
   left: 0;
-  height: 36px;
+  height: 20px;
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgb(251 247 239 / 62%) 0%,
-    rgb(251 247 239 / 40%) 35%,
-    rgb(251 247 239 / 16%) 70%,
+    rgb(251 247 239 / 46%) 0%,
+    rgb(251 247 239 / 26%) 42%,
+    rgb(251 247 239 / 8%) 78%,
     rgb(251 247 239 / 0%) 100%
   );
   content: "";

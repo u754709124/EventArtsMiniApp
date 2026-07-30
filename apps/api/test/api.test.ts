@@ -225,6 +225,7 @@ describe("client home aggregation", () => {
       "announcements",
       "banners",
       "menus",
+      "recentActivities",
       "featuredCases",
       "featuredArticles"
     ]);
@@ -303,6 +304,93 @@ describe("client home aggregation", () => {
     expect(await prisma.activityCase.count()).toBeGreaterThanOrEqual(3);
   });
 
+  it("returns enabled recent activities on home without date filtering", async () => {
+    await prisma.recentActivity.updateMany({ data: { status: "disabled" } });
+    const enabled = await prisma.recentActivity.create({
+      data: {
+        title: "接口近日活动",
+        tag: "方案",
+        coverAssetId: (await prisma.mediaAsset.findFirstOrThrow({ where: { mediaType: "image" } })).id,
+        summary: "接口近日活动摘要",
+        eventDate: new Date("2020-01-01T00:00:00.000Z"),
+        location: "杭州",
+        sortOrder: 1,
+        status: "enabled"
+      }
+    });
+
+    const response = await clientInject({ method: "GET", url: "/api/client/home" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.recentActivities).toEqual([
+      expect.objectContaining({ id: enabled.id, title: "接口近日活动", eventDate: "2020-01-01", hasDetailPage: false })
+    ]);
+  });
+
+  it("creates, searches, updates, and deletes recent activities through admin APIs", async () => {
+    const token = await login();
+    const cover = await uploadMedia(token, await pngBuffer(460, 320), {
+      resourceName: "近日活动接口封面",
+      fieldKey: "recentActivity.cover"
+    });
+    const detailPage = await prisma.detailPageConfig.findFirstOrThrow();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/recent-activities",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "  夏日品牌活动 ",
+        tag: " 发布会 ",
+        coverAssetId: cover.json().data.asset.id,
+        summary: " 近日活动接口摘要 ",
+        eventDate: "2020-01-01T00:00:00.000Z",
+        location: " 上海 ",
+        detailPageId: detailPage.id,
+        sortOrder: 7,
+        status: "enabled"
+      }
+    });
+    const id = created.json().data.id as number;
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/admin/recent-activities?q=夏日品牌活动&page=1&pageSize=10",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/admin/recent-activities/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: "夏日品牌活动更新", detailPageId: null, status: "disabled" }
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/recent-activities/${id}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data).toMatchObject({
+      title: "夏日品牌活动",
+      tag: "发布会",
+      location: "上海",
+      detailPageId: detailPage.id,
+      hasDetailPage: true
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().data.items).toEqual([
+      expect.objectContaining({ id, title: "夏日品牌活动" })
+    ]);
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data).toMatchObject({
+      title: "夏日品牌活动更新",
+      detailPageId: null,
+      hasDetailPage: false,
+      status: "disabled"
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(await prisma.recentActivity.findUnique({ where: { id } })).toBeNull();
+  });
+
   it("lists client articles by category and always returns enabled categories", async () => {
     await prisma.article.updateMany({ where: { title: "品牌发布会现场节奏设计" }, data: { status: "disabled" } });
 
@@ -375,9 +463,23 @@ describe("client home aggregation", () => {
     expect(logs.map((log) => log.action)).toEqual(["CREATE_ARTICLE", "UPDATE_ARTICLE"]);
   });
 
-  it("includes articles in detail page reference protection", async () => {
+  it("includes articles and recent activities in detail page reference protection", async () => {
     const token = await login();
     const article = await prisma.article.findFirstOrThrow({ where: { detailPageId: { not: null } } });
+    const cover = await prisma.mediaAsset.findFirstOrThrow({ where: { mediaType: "image" } });
+    const recentActivity = await prisma.recentActivity.create({
+      data: {
+        title: "详情引用近日活动",
+        tag: "方案",
+        coverAssetId: cover.id,
+        summary: "引用保护",
+        eventDate: new Date("2026-07-01T00:00:00.000Z"),
+        location: "杭州",
+        detailPageId: article.detailPageId,
+        sortOrder: 9,
+        status: "enabled"
+      }
+    });
     const refs = await app.inject({
       method: "GET",
       url: `/api/admin/detail-pages/${article.detailPageId}/references`,
@@ -392,7 +494,8 @@ describe("client home aggregation", () => {
     expect(refs.statusCode).toBe(200);
     expect(refs.json().data.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ sourceType: "article", sourceId: article.id, sourceName: article.title })
+        expect.objectContaining({ sourceType: "article", sourceId: article.id, sourceName: article.title }),
+        expect.objectContaining({ sourceType: "recent_activity", sourceId: recentActivity.id, sourceName: recentActivity.title })
       ])
     );
     expect(deleted.statusCode).toBe(409);
@@ -1564,6 +1667,33 @@ describe("media upload and references", () => {
     );
     expect(deleteResponse.json().error.message).toContain(`${article.title}（ID ${article.id}）`);
     expect(deleteResponse.statusCode).toBe(409);
+  });
+
+  it("reports recent activity cover media as used", async () => {
+    const token = await login();
+    const recentActivity = await prisma.recentActivity.findFirstOrThrow();
+    const assetResponse = await app.inject({
+      method: "GET",
+      url: `/api/admin/media-assets/${recentActivity.coverAssetId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/media-assets/${recentActivity.coverAssetId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(assetResponse.statusCode).toBe(200);
+    expect(assetResponse.json().data.referenceSources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "recent_activity_cover",
+          label: expect.stringContaining(`${recentActivity.title}（ID ${recentActivity.id}）`)
+        })
+      ])
+    );
+    expect(deleteResponse.statusCode).toBe(409);
+    expect(deleteResponse.json().error.message).toContain(recentActivity.title);
   });
 });
 

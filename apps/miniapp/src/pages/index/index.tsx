@@ -475,14 +475,32 @@ export default function HomePage() {
       <AnnouncementBar announcements={data.announcements} />
       <BannerSection banners={data.banners} mediaRefreshVersion={bannerMediaRefreshVersion} site={data.site} />
       <MenuSection menus={data.menus} site={data.site} />
+      <View className="section-heading section-heading--recent-activities">
+        <Text className="section-heading__title">近日活动</Text>
+      </View>
+      {data.recentActivities.length === 0 ? (
+        <View className="case-empty card">暂无近日活动</View>
+      ) : (
+        <View className="home-case-list" data-testid="home-recent-activities">
+          {data.recentActivities.map((item: ClientHomeResponse["recentActivities"][number]) => (
+            <CaseCard
+              key={item.id}
+              item={item}
+              variant="compact"
+              testidPrefix="home-recent-activity"
+              sitePlaceholderCaseUrl={data.site.placeholderCaseUrl}
+            />
+          ))}
+        </View>
+      )}
       <View className="section-heading section-heading--cases">
-        <Text className="section-heading__title">精选案例</Text>
+        <Text className="section-heading__title">活动方案</Text>
         <Text className="section-heading__more" onClick={() => clickGuard("home:more:activity_case", () => openMenu("activity_case"))}>
-          更多案例 ›
+          更多方案 ›
         </Text>
       </View>
       {data.featuredCases.length === 0 ? (
-        <View className="case-empty card">暂无精选案例</View>
+        <View className="case-empty card">暂无活动方案</View>
       ) : (
         <View className="home-case-list" data-testid="home-featured-cases">
           {data.featuredCases.map((item: ClientHomeResponse["featuredCases"][number]) => (

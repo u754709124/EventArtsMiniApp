@@ -84,6 +84,13 @@ function formatArticleCoverReferenceLabel(items: Array<{ id: number; title: stri
   return `文章封面：${visible.join("、")}${suffix}`;
 }
 
+function formatRecentActivityCoverReferenceLabel(items: Array<{ id: number; title: string }>) {
+  if (!items.length) return "近日活动封面";
+  const visible = items.slice(0, 3).map((item) => `${item.title}（ID ${item.id}）`);
+  const suffix = items.length > visible.length ? ` 等 ${items.length} 条` : "";
+  return `近日活动封面：${visible.join("、")}${suffix}`;
+}
+
 export async function mediaReferenceSources(prisma: AppPrismaClient, id: number): Promise<MediaReferenceSourceDto[]> {
   const legacyCaseDetailCount = prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
     `SELECT COUNT(*) AS count
@@ -100,6 +107,11 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     select: { id: true, title: true },
     orderBy: { id: "asc" }
   });
+  const recentActivityCoverReferences = prisma.recentActivity.findMany({
+    where: { coverAssetId: id },
+    select: { id: true, title: true },
+    orderBy: { id: "asc" }
+  });
   const [
     siteDefaultBannerCount,
     sitePlaceholderBannerCount,
@@ -109,6 +121,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     menuCount,
     caseCoverCount,
     articleCoverItems,
+    recentActivityCoverItems,
     artistCoverCount,
     legacyCaseDetailReferenceCount,
     detailPageBannerCount,
@@ -122,6 +135,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     prisma.menuItem.count({ where: { iconAssetId: id } }),
     prisma.activityCase.count({ where: { coverAssetId: id } }),
     articleCoverReferences,
+    recentActivityCoverReferences,
     prisma.artist.count({ where: { avatarAssetId: id } }),
     legacyCaseDetailCount,
     prisma.detailPageBannerMedia.count({ where: { mediaAssetId: id } }),
@@ -136,6 +150,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     menuCount,
     caseCoverCount,
     articleCoverItems.length,
+    recentActivityCoverItems.length,
     artistCoverCount,
     legacyCaseDetailReferenceCount,
     detailPageBannerCount,
@@ -150,6 +165,7 @@ export async function mediaReferenceSources(prisma: AppPrismaClient, id: number)
     { type: "menu", label: "菜单图标" },
     { type: "case_cover", label: "案例封面" },
     { type: "article_cover", label: formatArticleCoverReferenceLabel(articleCoverItems) },
+    { type: "recent_activity_cover", label: formatRecentActivityCoverReferenceLabel(recentActivityCoverItems) },
     { type: "artist_cover", label: "人员列表封面" },
     { type: "legacy_case_detail", label: "旧案例详情媒体" },
     { type: "detail_page_banner", label: "详情页 BANNER" },
@@ -204,6 +220,7 @@ const mediaReferenceSql = `
   (SELECT COUNT(*) FROM menu_items mi WHERE mi.iconAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_cases ac WHERE ac.coverAssetId = m.id) +
   (SELECT COUNT(*) FROM articles ar WHERE ar.coverAssetId = m.id) +
+  (SELECT COUNT(*) FROM recent_activities ra WHERE ra.coverAssetId = m.id) +
   (SELECT COUNT(*) FROM artists a WHERE a.avatarAssetId = m.id) +
   (SELECT COUNT(*) FROM activity_case_media cm
    WHERE cm.mediaAssetId = m.id

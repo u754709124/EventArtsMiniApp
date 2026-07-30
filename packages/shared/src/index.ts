@@ -20,6 +20,7 @@ export const mediaFieldKeyValues = [
   "menu.icon",
   "case.cover",
   "article.cover",
+  "recentActivity.cover",
   "artist.avatar",
   "case.detail",
   "detail.banner",
@@ -135,6 +136,7 @@ export const mediaFieldRules: Record<MediaFieldKey, MediaFieldRule> = {
   "menu.icon": { label: "菜单图标", allowedTypes: ["image"], width: 176, height: 176 },
   "case.cover": { label: "案例封面", allowedTypes: ["image"], width: 460, height: 320 },
   "article.cover": { label: "文章封面", allowedTypes: ["image"], width: null, height: null },
+  "recentActivity.cover": { label: "近日活动封面", allowedTypes: ["image"], width: null, height: null },
   "artist.avatar": { label: "列表封面图", allowedTypes: ["image"], width: null, height: null },
   "case.detail": { label: "案例详情媒体", allowedTypes: ["image", "video"], width: null, height: null },
   "detail.banner": { label: "详情页 BANNER", allowedTypes: ["image"], width: null, height: null },
@@ -360,11 +362,33 @@ const articleFields = {
 export const ArticleCreateRequestSchema = z.object(articleFields).strict();
 export const ArticleUpdateRequestSchema = z.object(articleFields).partial().strict();
 
+const recentActivityFields = {
+  title: z.string().trim().min(1).max(100),
+  tag: z.string().trim().min(1).max(20),
+  coverAssetId: positiveIntFromInput,
+  summary: z.string().trim().min(1).max(240),
+  eventDate: isoDateInputSchema,
+  location: z.string().trim().min(1).max(60),
+  detailPageId: nullableDetailPageIdSchema,
+  sortOrder: z.coerce.number().int().min(0),
+  status: StatusSchema
+};
+
+export const RecentActivityCreateRequestSchema = z.object(recentActivityFields).strict();
+export const RecentActivityUpdateRequestSchema = z.object(recentActivityFields).partial().strict();
+
 export const adminArticleListQuerySchema = z.object({
   q: optionalQueryTextSchema,
   category: articleOptionalCategorySchema,
   status: StatusSchema.optional(),
   isFeatured: optionalBooleanQuerySchema,
+  page: positiveIntFromInput.default(1),
+  pageSize: positiveIntFromInput.max(100).default(20)
+});
+
+export const adminRecentActivityListQuerySchema = z.object({
+  q: optionalQueryTextSchema,
+  status: StatusSchema.optional(),
   page: positiveIntFromInput.default(1),
   pageSize: positiveIntFromInput.max(100).default(20)
 });
@@ -576,6 +600,7 @@ export type MediaReferenceSourceDto = {
     | "menu"
     | "case_cover"
     | "article_cover"
+    | "recent_activity_cover"
     | "artist_cover"
     | "legacy_case_detail"
     | "detail_page_banner"
@@ -680,6 +705,20 @@ export type ArticleListItemDto = {
   status: Status;
 };
 
+export type RecentActivityListItemDto = {
+  id: number;
+  title: string;
+  tag: string;
+  coverUrl: string;
+  summary: string;
+  eventDate: string;
+  location: string;
+  detailPageId: number | null;
+  hasDetailPage: boolean;
+  sortOrder: number;
+  status: Status;
+};
+
 export type ArticleListResponse = {
   items: ArticleListItemDto[];
   total: number;
@@ -728,6 +767,7 @@ export type ClientHomeResponse = {
   announcements: AnnouncementDto[];
   banners: BannerDto[];
   menus: MenuItemDto[];
+  recentActivities: RecentActivityListItemDto[];
   featuredCases: ActivityCaseListItemDto[];
   featuredArticles: ArticleListItemDto[];
 };

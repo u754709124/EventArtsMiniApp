@@ -169,6 +169,7 @@ model MediaAsset {
   artists                  Artist[]
   activityCases            ActivityCase[]
   articles                 Article[]
+  recentActivities         RecentActivity[]
   defaultBannerConfigs     SiteConfig[]              @relation("defaultBanner")
   placeholderBannerConfigs SiteConfig[]              @relation("placeholderBanner")
   placeholderIconConfigs   SiteConfig[]              @relation("placeholderIcon")
@@ -364,6 +365,28 @@ model Article {
   @@map("articles")
 }
 
+model RecentActivity {
+  id           Int               @id @default(autoincrement())
+  title        String
+  tag          String
+  coverAssetId Int
+  coverAsset   MediaAsset        @relation(fields: [coverAssetId], references: [id])
+  summary      String
+  eventDate    DateTime
+  location     String
+  detailPageId Int?
+  detailPage   DetailPageConfig? @relation(fields: [detailPageId], references: [id], onDelete: Restrict)
+  sortOrder    Int               @default(0)
+  status       String            @default("enabled")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([coverAssetId])
+  @@index([detailPageId])
+  @@index([status, sortOrder])
+  @@map("recent_activities")
+}
+
 model ActivityCaseMedia {
   id             Int          @id @default(autoincrement())
   activityCaseId Int
@@ -395,13 +418,14 @@ model DetailPageConfig {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  banners       DetailPageBannerMedia[]
-  contentMedia  DetailPageContentMedia[]
-  announcements Announcement[]
-  homeBanners   Banner[]
-  artists       Artist[]
-  activityCases ActivityCase[]
-  articles      Article[]
+  banners          DetailPageBannerMedia[]
+  contentMedia     DetailPageContentMedia[]
+  announcements    Announcement[]
+  homeBanners      Banner[]
+  artists          Artist[]
+  activityCases    ActivityCase[]
+  articles         Article[]
+  recentActivities RecentActivity[]
 
   @@unique([ownerType, ownerId])
   @@index([name])

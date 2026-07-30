@@ -7,8 +7,11 @@ import {
   DetailPageMenuConfigSchema,
   MenuItemCreateRequestSchema,
   MenuItemUpdateRequestSchema,
+  RecentActivityCreateRequestSchema,
+  RecentActivityUpdateRequestSchema,
   adminChangePasswordRequestSchema,
   adminArticleListQuerySchema,
+  adminRecentActivityListQuerySchema,
   adminSessionDtoSchema,
   analyticsFieldLimits,
   artistListQuerySchema,
@@ -183,6 +186,49 @@ describe("shared contracts", () => {
       sortOrder: 0,
       status: "enabled",
       detailPageId: null
+    })).toThrow();
+  });
+
+  it("normalizes and validates recent activity contracts", () => {
+    expect(
+      RecentActivityCreateRequestSchema.parse({
+        title: " 夏日品牌活动 ",
+        tag: " 发布会 ",
+        coverAssetId: "3",
+        summary: " 活动摘要 ",
+        eventDate: "2020-01-01T00:00:00.000Z",
+        location: " 上海 ",
+        detailPageId: null,
+        sortOrder: "2",
+        status: "enabled"
+      })
+    ).toMatchObject({
+      title: "夏日品牌活动",
+      tag: "发布会",
+      coverAssetId: 3,
+      summary: "活动摘要",
+      location: "上海",
+      detailPageId: null,
+      sortOrder: 2,
+      status: "enabled"
+    });
+    expect(adminRecentActivityListQuerySchema.parse({ q: " 品牌 ", status: "disabled" })).toMatchObject({
+      q: "品牌",
+      status: "disabled",
+      page: 1,
+      pageSize: 20
+    });
+    expect(RecentActivityUpdateRequestSchema.parse({ detailPageId: null })).toEqual({ detailPageId: null });
+    expect(() => RecentActivityCreateRequestSchema.parse({
+      title: "活动",
+      tag: "活动",
+      coverAssetId: 1,
+      summary: "摘要",
+      eventDate: "2026/07/12",
+      location: "杭州",
+      detailPageId: null,
+      sortOrder: 0,
+      status: "enabled"
     })).toThrow();
   });
 
@@ -501,11 +547,12 @@ describe("shared contracts", () => {
       announcements: [],
       banners: [],
       menus: [],
+      recentActivities: [],
       featuredCases: [],
       featuredArticles: []
     };
 
-    expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "featuredCases", "featuredArticles"]);
+    expect(Object.keys(home)).toEqual(["site", "announcements", "banners", "menus", "recentActivities", "featuredCases", "featuredArticles"]);
   });
 
   it("separates list summaries from required detail-page DTOs", () => {

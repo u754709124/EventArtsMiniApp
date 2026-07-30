@@ -119,7 +119,25 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 
 案例详情的兼容 `media` 从独立详情页派生；小程序以公共 `/api/client/detail-pages/:id` 返回的 `blocks` 为准，不直接渲染兼容列表。
 
-`GET /api/client/home` 只返回 `status=enabled` 且 `showOnHome=true` 的菜单，并额外返回 `featuredArticles`，最多 2 条启用且精选的文章，排序为 `featuredSortOrder ASC, publishedAt DESC, id ASC`。`GET /api/client/menu-items` 返回全部启用菜单，供分类页展示。菜单字段包含 `showOnHome`，后台仍使用 `/api/admin/menu-items` 管理。`GET /api/client/cases?q=&category=` 的 `q` 会 trim，空白等同未传，并在标题、分类、标签、简介和地点中做大小写不敏感匹配；`category` 会按案例分类精确筛选。
+`GET /api/client/home` 只返回 `status=enabled` 且 `showOnHome=true` 的菜单，并额外返回 `recentActivities` 和 `featuredArticles`。`recentActivities` 来自独立 `recent_activities` 表，返回全部启用记录，按 `sortOrder ASC, id ASC` 排序；服务端只做人工启停和排序，不按活动日期过滤，也不提供客户端列表接口。`featuredArticles` 最多 2 条启用且精选的文章，排序为 `featuredSortOrder ASC, publishedAt DESC, id ASC`。`GET /api/client/menu-items` 返回全部启用菜单，供分类页展示。菜单字段包含 `showOnHome`，后台仍使用 `/api/admin/menu-items` 管理。`GET /api/client/cases?q=&category=` 的 `q` 会 trim，空白等同未传，并在标题、分类、标签、简介和地点中做大小写不敏感匹配；`category` 会按案例分类精确筛选。
+
+`recentActivities` 单条字段：
+
+```json
+{
+  "id": 1,
+  "title": "春日草坪婚礼执行",
+  "tag": "婚礼方案",
+  "coverUrl": "http://127.0.0.1:3001/uploads/seed/example.png",
+  "summary": "户外仪式、晚宴串联与暖场演出成套执行...",
+  "eventDate": "2026-04-18T09:00:00.000Z",
+  "location": "杭州・西湖区",
+  "detailPageId": 1,
+  "hasDetailPage": true,
+  "sortOrder": 1,
+  "status": "enabled"
+}
+```
 
 `GET /api/client/articles?q=&category=&page=&pageSize=` 只返回启用文章，排序为 `sortOrder ASC, publishedAt DESC, id ASC`。`category` 按规范化分类精确筛选；`pageSize` 默认 10，最大 50。响应：
 
@@ -243,6 +261,8 @@ GET 只返回当前管理员最近滚动 7×24 小时的消息，按 `occurredAt
 默认允许 JPG、PNG、WebP（10MB）和 MP4（100MB），可用 `MAX_IMAGE_UPLOAD_BYTES`、`MAX_VIDEO_UPLOAD_BYTES` 覆盖。服务端重新计算 MD5，并从真实内容提取 MIME、宽高；物理文件使用随机 32 位十六进制名称。
 
 资源引用统计包含站点配置、首页 BANNER、菜单图标、案例封面、文章封面、人员列表封面、旧案例详情媒体和公共详情页 BANNER/富文本媒体。文章封面来源类型为 `article_cover`。EdgeOne 预热记录不属于业务资源占用；删除零业务引用资源时会一并清理其预热记录。
+
+近日活动管理接口使用 `/api/admin/recent-activities`，需要 `recent-activities` 菜单权限。支持 `GET ?q=&status=&page=&pageSize=`、`GET /:id`、`POST`、`PUT /:id`、`DELETE /:id` 和 `POST /reorder`。创建/更新字段为 `title`、`tag`、`coverAssetId`、`summary`、`eventDate`、`location`、可空 `detailPageId`、`sortOrder`、`status`。封面保存使用 `recentActivity.cover` 媒体规则，删除保护来源类型为 `recent_activity_cover`；详情页反向引用来源类型为 `recent_activity`。
 
 ## Admin Backups
 

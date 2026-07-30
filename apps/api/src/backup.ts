@@ -1037,6 +1037,7 @@ export const backupImpactTables = [
   "artists",
   "activity_cases",
   "activity_case_media",
+  "recent_activities",
   "articles",
   "detail_page_configs",
   "detail_page_banner_media",

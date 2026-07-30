@@ -112,7 +112,9 @@ describe("DetailPagePreview", () => {
     expect(previewCss).toMatch(/\.detail-preview-hero\s*\{[^}]*margin-top:\s*12px[^}]*padding:\s*60px 115px 33px 22px/su);
     expect(previewCss).not.toMatch(/\.detail-preview-hero\s*\{[^}]*\n\s*height:\s*212px/su);
     expect(previewCss).toMatch(/\.detail-preview-nav--banner-safe\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*height:\s*64px[^}]*padding-top:\s*20px/su);
-    expect(previewCss).toMatch(/\.detail-preview-nav--banner-safe::after\s*\{[^}]*bottom:\s*-36px[^}]*height:\s*36px[^}]*linear-gradient/su);
+    expect(previewCss).toMatch(/\.detail-preview-nav--banner-safe::after\s*\{[^}]*bottom:\s*-20px[^}]*height:\s*20px[^}]*linear-gradient/su);
+    expect(previewCss).toContain("rgb(251 247 239 / 46%) 0%");
+    expect(previewCss).toContain("rgb(251 247 239 / 8%) 78%");
     expect(previewCss).toMatch(/\.detail-preview-banner\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0/su);
     expect(previewCss).toMatch(/\.detail-preview-hero-copy\s*\{[^}]*position:\s*relative/su);
     expect(previewCss).toMatch(/\.detail-preview-rich-text\s*\{[^}]*font-size:\s*15px/su);

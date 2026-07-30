@@ -269,7 +269,7 @@ export type DetailPageOptionDto = {
 };
 
 export type DetailPageReferenceDto = {
-  sourceType: "announcement" | "banner" | "artist" | "activity_case" | "article" | "menu";
+  sourceType: "announcement" | "banner" | "artist" | "activity_case" | "article" | "recent_activity" | "menu";
   sourceId: number;
   sourceName: string;
 };

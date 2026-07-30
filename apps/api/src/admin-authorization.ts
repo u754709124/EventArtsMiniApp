@@ -121,6 +121,13 @@ export const adminRoutePolicies = [
   { method: "PUT", path: "/api/admin/cases/:id", policy: menuPolicy("cases") },
   { method: "DELETE", path: "/api/admin/cases/:id", policy: menuPolicy("cases") },
 
+  { method: "GET", path: "/api/admin/recent-activities", policy: menuPolicy("recent-activities") },
+  { method: "POST", path: "/api/admin/recent-activities/reorder", policy: menuPolicy("recent-activities") },
+  { method: "GET", path: "/api/admin/recent-activities/:id", policy: menuPolicy("recent-activities") },
+  { method: "POST", path: "/api/admin/recent-activities", policy: menuPolicy("recent-activities") },
+  { method: "PUT", path: "/api/admin/recent-activities/:id", policy: menuPolicy("recent-activities") },
+  { method: "DELETE", path: "/api/admin/recent-activities/:id", policy: menuPolicy("recent-activities") },
+
   { method: "GET", path: "/api/admin/artist-categories", policy: menuPolicy("artists") },
   { method: "GET", path: "/api/admin/artists", policy: menuPolicy("artists") },
   { method: "POST", path: "/api/admin/artists/reorder", policy: menuPolicy("artists") },

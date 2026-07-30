@@ -312,6 +312,9 @@ async function ensureBusinessDetailColumns(prisma: AppPrismaClient) {
   if (await tableExists(prisma, "articles")) {
     await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS articles_detailPageId_idx ON articles(detailPageId)");
   }
+  if (await tableExists(prisma, "recent_activities")) {
+    await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS recent_activities_detailPageId_idx ON recent_activities(detailPageId)");
+  }
 }
 
 async function backfillBusinessReferences(prisma: AppPrismaClient) {

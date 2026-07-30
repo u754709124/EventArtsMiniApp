@@ -34,6 +34,7 @@ async function resetDatabase(prisma: AppPrismaClient) {
   await prisma.pageViewEvent.deleteMany();
   await prisma.activityCaseMedia.deleteMany();
   await prisma.article.deleteMany();
+  await prisma.recentActivity.deleteMany();
   await prisma.activityCase.deleteMany();
   await prisma.artist.deleteMany();
   await prisma.menuItem.deleteMany();
@@ -424,6 +425,64 @@ export async function seedDatabase(prisma: AppPrismaClient, options: SeedOptions
       findLegacy: () => prisma.article.findFirst({ where: { title: article.title } }),
       create: () => prisma.article.create({ data }),
       update: (id) => prisma.article.update({ where: { id }, data })
+    });
+  }
+
+  const recentActivities = [
+    {
+      key: "recentActivity.wedding.season",
+      title: "春日草坪婚礼执行",
+      tag: "婚礼方案",
+      cover: "case-1.png",
+      summary: "户外仪式、晚宴串联与暖场演出成套执行，适合 80-150 人婚礼。",
+      eventDate: "2026-04-18T09:00:00.000Z",
+      location: "杭州・西湖区",
+      detailPageId: bannerCaseDetailPage.id,
+      sortOrder: 1
+    },
+    {
+      key: "recentActivity.brand.launch",
+      title: "品牌发布会主持方案",
+      tag: "商演方案",
+      cover: "case-2.png",
+      summary: "发布节奏、嘉宾访谈和互动抽奖一体编排，提升现场信息传达效率。",
+      eventDate: "2026-05-12T09:00:00.000Z",
+      location: "上海・浦东",
+      detailPageId: eventLaunchDetailPage.id,
+      sortOrder: 2
+    },
+    {
+      key: "recentActivity.gala.singer",
+      title: "企业年会演艺组合",
+      tag: "年会方案",
+      cover: "case-3.png",
+      summary: "主持、歌手与特色表演组合排期，适配企业年会和客户答谢晚宴。",
+      eventDate: "2026-06-06T09:00:00.000Z",
+      location: "宁波・鄞州",
+      detailPageId: null,
+      sortOrder: 3
+    }
+  ];
+
+  for (const activity of recentActivities) {
+    const data = {
+      title: activity.title,
+      tag: activity.tag,
+      coverAssetId: assets.get(activity.cover)!.id,
+      summary: activity.summary,
+      eventDate: new Date(activity.eventDate),
+      location: activity.location,
+      detailPageId: activity.detailPageId,
+      sortOrder: activity.sortOrder,
+      status: "enabled"
+    };
+    await upsertSeedEntity(prisma, {
+      key: activity.key,
+      entityType: "recentActivity",
+      findById: (id) => prisma.recentActivity.findUnique({ where: { id } }),
+      findLegacy: () => prisma.recentActivity.findFirst({ where: { title: activity.title } }),
+      create: () => prisma.recentActivity.create({ data }),
+      update: (id) => prisma.recentActivity.update({ where: { id }, data })
     });
   }
 

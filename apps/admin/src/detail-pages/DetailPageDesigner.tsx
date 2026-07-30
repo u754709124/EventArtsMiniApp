@@ -43,6 +43,7 @@ export function referencePath(reference: DetailPageReferenceDto) {
   if (reference.sourceType === "banner") return "/banners";
   if (reference.sourceType === "artist") return "/artists";
   if (reference.sourceType === "article") return "/articles";
+  if (reference.sourceType === "recent_activity") return "/recent-activities";
   if (reference.sourceType === "menu") return "/menu-items";
   return "/cases";
 }

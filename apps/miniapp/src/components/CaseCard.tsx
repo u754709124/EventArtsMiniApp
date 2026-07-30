@@ -1,5 +1,5 @@
 import { Image, Text, View } from "@tarojs/components";
-import type { ActivityCaseListItemDto } from "@event-arts/shared";
+import type { ActivityCaseListItemDto, RecentActivityListItemDto } from "@event-arts/shared";
 import { generatedAssets } from "../assets";
 import { navigateToDetailPage } from "../utils/detail-page-navigation";
 import { AppImage } from "./AppImage";
@@ -20,14 +20,16 @@ function prefixForVariant(variant: Variant) {
 export function CaseCard({
   item,
   variant,
+  testidPrefix,
   sitePlaceholderCaseUrl
 }: {
-  item: ActivityCaseListItemDto;
+  item: ActivityCaseListItemDto | RecentActivityListItemDto;
   variant: Variant;
+  testidPrefix?: string;
   sitePlaceholderCaseUrl?: string;
 }) {
   const clickable = Boolean(item.detailPageId);
-  const prefix = prefixForVariant(variant);
+  const prefix = testidPrefix ?? prefixForVariant(variant);
   const city = getCaseCity(item.location);
   return (
     <View

@@ -28,5 +28,6 @@ describe("DetailPageDesigner layout", () => {
   it("routes menu references back to menu management", () => {
     expect(referencePath({ sourceType: "menu", sourceId: 7, sourceName: "品牌故事" })).toBe("/menu-items");
     expect(referencePath({ sourceType: "activity_case", sourceId: 8, sourceName: "活动案例" })).toBe("/cases");
+    expect(referencePath({ sourceType: "recent_activity", sourceId: 9, sourceName: "近日活动" })).toBe("/recent-activities");
   });
 });

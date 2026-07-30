@@ -39,7 +39,7 @@ export default defineAppConfig({
       },
       {
         pagePath: "pages/cases/list",
-        text: "案例",
+        text: "方案",
         iconPath: "assets/generated/tab-case.png",
         selectedIconPath: "assets/generated/tab-case-active.png"
       },

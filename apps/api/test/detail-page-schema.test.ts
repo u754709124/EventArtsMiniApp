@@ -25,6 +25,7 @@ describe("detail page SQLite schema", () => {
       expect.arrayContaining([
         "schema_migrations",
         "articles",
+        "recent_activities",
         "detail_page_configs",
         "detail_page_banner_media",
         "detail_page_content_media"
@@ -73,7 +74,7 @@ describe("detail page SQLite schema", () => {
       ])
     );
 
-    for (const table of ["announcements", "banners", "artists", "activity_cases", "articles"]) {
+    for (const table of ["announcements", "banners", "artists", "activity_cases", "articles", "recent_activities"]) {
       const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info(${table})`);
       const foreignKeys = await prisma.$queryRawUnsafe<Array<{ table: string; from: string; on_delete: string }>>(
         `PRAGMA foreign_key_list(${table})`
@@ -110,6 +111,30 @@ describe("detail page SQLite schema", () => {
         "articles_category_idx",
         "articles_status_sortOrder_idx",
         "articles_status_isFeatured_featuredSortOrder_idx"
+      ])
+    );
+
+    const recentActivityColumns = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA table_info(recent_activities)");
+    expect(recentActivityColumns.map((column) => column.name)).toEqual([
+      "id",
+      "title",
+      "tag",
+      "coverAssetId",
+      "summary",
+      "eventDate",
+      "location",
+      "detailPageId",
+      "sortOrder",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ]);
+    const recentActivityIndexes = await prisma.$queryRawUnsafe<Array<{ name: string }>>("PRAGMA index_list(recent_activities)");
+    expect(recentActivityIndexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining([
+        "recent_activities_coverAssetId_idx",
+        "recent_activities_detailPageId_idx",
+        "recent_activities_status_sortOrder_idx"
       ])
     );
 

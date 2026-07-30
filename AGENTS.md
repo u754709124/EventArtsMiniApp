@@ -36,7 +36,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Use the attached reference as a visual guide for the home page.
 - Keep miniapp layout at `750rpx` design width, `20rpx` page gutters, `710rpx` primary cards, and `710rpx x 290rpx` banner ratio.
 - Use warm white background, dark primary text, brown-gold accents, red announcement summary, and restrained card shadows.
-- Avoid adding phase-one features beyond top title, announcement bar, banner, 5 menu items, featured cases, and fixed TabBar.
+- Avoid adding phase-one features beyond top title, announcement bar, banner, 5 menu items, recent activities, featured activity plans, and fixed TabBar.
 
 ## Taro Compatibility Rules
 
@@ -76,6 +76,7 @@ Deliver phase one of a WeChat mini program stack for event host and performance 
 - Saving CMS content must immediately invalidate/refetch data used by admin and client pages.
 - Artist list tags and summary are optional display fields. Normalize omitted values to `[]`/`""`, do not render empty card elements, and keep the two-column list in a Taro-compatible adaptive-height waterfall layout with bottom card padding.
 - Optional CMS display fields must be trimmed before persistence/rendering. When an optional field is blank, omit the corresponding client element and spacing instead of rendering fallback copy or an empty container. BANNER detail subtitles are optional; technical optional fields such as filters, pagination, sorting, status, and update payload fields are outside this display rule.
+- Recent activities are independent content records for the miniapp home page. They use the `recent_activities` table and `/api/admin/recent-activities`; they do not rename `activity_case`, `/cases`, or admin case management.
 - Contact menu pages must read `phone/address/wechat/description` from the selected menu's existing `configJson`; do not hardcode contact values. If every contact display field is blank, show the explicit empty state.
 - Backoffice accounts use fixed `SUPER_ADMIN`, `ADMIN`, and `USER` roles. Server-side live role/menu authorization is authoritative; frontend menu filtering is not a security boundary.
 - Only `SUPER_ADMIN` may create `ADMIN`/`USER` and manage other `SUPER_ADMIN`/`ADMIN`/`USER` accounts; self-management stays on the self-service paths. `ADMIN` may create/manage only `USER` and may delegate only its own effective non-sensitive business-menu permissions. At least one enabled `SUPER_ADMIN` must remain.

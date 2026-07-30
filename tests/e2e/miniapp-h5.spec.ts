@@ -711,6 +711,7 @@ test("首页精选内容为空时卡片不产生横向滚动", async ({ page }) 
         ...body,
         data: {
           ...body.data,
+          recentActivities: [],
           featuredCases: [],
           featuredArticles: []
         }
@@ -719,7 +720,8 @@ test("首页精选内容为空时卡片不产生横向滚动", async ({ page }) 
   });
 
   await openHome(page);
-  await expect(page.getByText("暂无精选案例")).toBeVisible();
+  await expect(page.getByText("暂无近日活动")).toBeVisible();
+  await expect(page.getByText("暂无活动方案")).toBeVisible();
   await expect(page.getByText("暂无精选文章")).toBeVisible();
 
   const metrics = await page.evaluate(() => ({
@@ -732,7 +734,7 @@ test("首页精选内容为空时卡片不产生横向滚动", async ({ page }) 
   }));
 
   expect(metrics.pageScrollWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-  expect(metrics.emptyCards).toHaveLength(2);
+  expect(metrics.emptyCards).toHaveLength(3);
   for (const card of metrics.emptyCards) {
     expect(card.left).toBeGreaterThanOrEqual(0);
     expect(card.right).toBeLessThanOrEqual(metrics.viewportWidth);
@@ -762,7 +764,7 @@ test("首页精选标题与更多入口样式统一", async ({ page }) => {
       };
     };
     return {
-      cases: heading("精选案例"),
+      cases: heading("活动方案"),
       articles: heading("精选文章")
     };
   });
@@ -773,7 +775,7 @@ test("首页精选标题与更多入口样式统一", async ({ page }) => {
   expect(metrics.cases.moreColor).toBe(metrics.articles.moreColor);
   expect(metrics.cases.moreFontSize).toBe(metrics.articles.moreFontSize);
   expect(metrics.cases.moreLineHeight).toBe(metrics.articles.moreLineHeight);
-  expect(metrics.cases.moreText).toBe("更多案例 ›");
+  expect(metrics.cases.moreText).toBe("更多方案 ›");
   expect(metrics.articles.moreText).toBe("更多文章 ›");
 });
 
@@ -1911,10 +1913,23 @@ test("首页精选文章、文章菜单筛选、公共详情和无详情静态�
   }
 });
 
-test("精选案例展示并可进入详情页", async ({ page }) => {
+test("近日活动显示在活动方案上方并可进入详情页", async ({ page }) => {
+  await openHome(page);
+  const recentHeading = page.locator(".section-heading__title").filter({ hasText: "近日活动" });
+  const plansHeading = page.locator(".section-heading__title").filter({ hasText: "活动方案" });
+  await expect(recentHeading).toBeVisible();
+  await expect(page.getByTestId("home-recent-activities")).toBeVisible();
+  await expect(page.getByTestId("home-recent-activity-card").first()).toBeVisible();
+  const [recentBox, plansBox] = await Promise.all([recentHeading.boundingBox(), plansHeading.boundingBox()]);
+  expect(recentBox?.y).toBeLessThan(plansBox?.y ?? 0);
+  await tap(page, page.getByTestId("home-recent-activity-card").first());
+  await expect(page.getByTestId("standalone-detail-page")).toBeVisible();
+});
+
+test("活动方案展示并可进入详情页", async ({ page }) => {
   await openHome(page);
   await expect(
-    page.locator(".section-heading__title").filter({ hasText: "精选案例" })
+    page.locator(".section-heading__title").filter({ hasText: "活动方案" })
   ).toBeVisible();
   await expect(page.getByTestId("home-featured-cases")).toBeVisible();
   await expect(page.getByTestId("home-case-card").first()).toBeVisible();

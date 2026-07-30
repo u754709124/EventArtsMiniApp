@@ -114,6 +114,15 @@ export const adminMenuConfig: AdminMenuItem[] = [
         testid: "sidebar-cases"
       },
       {
+        key: "recent-activities",
+        label: "近日活动管理",
+        icon: <FileImageOutlined />,
+        path: "/recent-activities",
+        matchPaths: ["/recent-activities", "/recent-activities/new", "/recent-activities/:id/edit"],
+        breadcrumb: "近日活动管理",
+        testid: "sidebar-recent-activities"
+      },
+      {
         key: "articles",
         label: "文章管理",
         icon: <FileTextOutlined />,

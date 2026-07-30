@@ -12,7 +12,7 @@ import {
 describe("admin RBAC catalog", () => {
   it("keeps all menu leaves in the shared catalog and separates grant scopes", () => {
     expect(adminMenuCatalog.map((item) => item.key)).toEqual(adminMenuKeyValues);
-    expect(new Set(adminMenuCatalog.map((item) => item.key)).size).toBe(15);
+    expect(new Set(adminMenuCatalog.map((item) => item.key)).size).toBe(16);
     expect(adminGrantableMenuKeyValues).toEqual([
       "dashboard",
       "site-config",
@@ -21,6 +21,7 @@ describe("admin RBAC catalog", () => {
       "menu-items",
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "media-assets",
@@ -36,6 +37,7 @@ describe("admin RBAC catalog", () => {
       "menu-items",
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "media-assets"

@@ -1354,6 +1354,54 @@ test("案例表单可引用单富文本详情页并保留业务字段", async ({
   expect(updated?.detailPageSummary).toBeNull();
 });
 
+test("近日活动管理支持独立创建、详情引用、编辑和删除", async ({ page, request }) => {
+  const existing = await adminApi<{ items: Array<{ id: number; title: string }> }>(
+    request,
+    "GET",
+    "/api/admin/recent-activities?pageSize=100"
+  );
+  for (const item of existing.items.filter((record) => record.title.startsWith("E2E 近日活动"))) {
+    await adminApi(request, "DELETE", `/api/admin/recent-activities/${item.id}`);
+  }
+  const detail = await createRichTextDetailPage(request, "E2E 近日活动详情页", "<p>E2E 近日活动正文</p>");
+
+  await loginAdminUi(page);
+  await page.getByTestId("sidebar-recent-activities").click();
+  await page.getByTestId("recent-activities-create").click();
+  await page.getByTestId("recent-activity-title").fill("E2E 近日活动");
+  await page.getByTestId("recent-activity-tag").fill("发布会");
+  await chooseMediaFromLibrary(page, "recent-activity-cover-select", /case-1\.png/);
+  await page.getByTestId("recent-activity-summary").fill("后台自动化创建的近日活动");
+  await fillControl(page.getByTestId("recent-activity-event-date"), "2020-01-01 09:30:00");
+  await page.keyboard.press("Enter");
+  await page.getByTestId("recent-activity-location").fill("杭州 E2E");
+  await selectDetailPageReference(page, "E2E 近日活动详情页");
+  await fillNumber(page, "sort-order", 88);
+  await selectOption(page, "status-select", "启用");
+  await page.getByTestId("recent-activities-save").click();
+  await waitForToast(page, "保存成功");
+
+  const records = await adminApi<{ items: Array<{ id: number; title: string; eventDate: string; detailPageId: number | null; status: string }> }>(
+    request,
+    "GET",
+    "/api/admin/recent-activities?q=E2E&pageSize=100"
+  );
+  const created = records.items.find((item) => item.title === "E2E 近日活动");
+  expect(created).toMatchObject({ detailPageId: detail.id, status: "enabled" });
+  expect(created?.eventDate).toContain("2020-01-01");
+  if (!created) throw new Error("新建近日活动未出现在后台列表接口");
+
+  const row = page.getByTestId(`recent-activities-row-${created.id}`);
+  await expect(row).toContainText("E2E 近日活动");
+  await row.getByTestId("recent-activities-edit").click();
+  await page.getByTestId("recent-activity-title").fill("E2E 近日活动更新");
+  await page.getByTestId("recent-activities-save").click();
+  await waitForToast(page, "保存成功");
+  await expect(page.getByTestId(`recent-activities-row-${created.id}`)).toContainText("E2E 近日活动更新");
+
+  await adminApi(request, "DELETE", `/api/admin/recent-activities/${created.id}`);
+});
+
 test("文章管理支持分类输入、详情页引用、筛选、删除和菜单文章配置", async ({ page, request }) => {
   const existingArticles = await adminApi<{ items: Array<{ id: number; title: string }> }>(
     request,

@@ -14,12 +14,14 @@ function routeActionTitle(pathname: string, leaf: AdminMenuLeaf) {
   if (pathname.endsWith("/new")) {
     if (leaf.key === "artists") return "新增人员";
     if (leaf.key === "cases") return "新增案例";
+    if (leaf.key === "recent-activities") return "新增近日活动";
     if (leaf.key === "detail-pages") return "新增详情页";
     return "新增";
   }
   if (/\/[^/]+\/edit$/.test(pathname)) {
     if (leaf.key === "artists") return "编辑人员";
     if (leaf.key === "cases") return "编辑案例";
+    if (leaf.key === "recent-activities") return "编辑近日活动";
     if (leaf.key === "detail-pages") return "编辑详情页";
     return "编辑";
   }

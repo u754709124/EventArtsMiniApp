@@ -25,6 +25,7 @@ import {
   MenuItemUpdateRequestSchema,
   adminArticleListQuerySchema,
   adminChangePasswordRequestSchema,
+  adminRecentActivityListQuerySchema,
   adminReorderRequestSchema,
   artistListQuerySchema,
   backupCreateRequestSchema,
@@ -56,6 +57,8 @@ import {
   normalizeResourceName,
   ok,
   pageViewRequestSchema,
+  RecentActivityCreateRequestSchema,
+  RecentActivityUpdateRequestSchema,
   serializeArtistTags,
   updateMediaMetadataSchema,
   type ArtistType,
@@ -905,6 +908,43 @@ function serializeArticleListItem(item: Prisma.ArticleGetPayload<{ include: { co
   };
 }
 
+function serializeRecentActivityListItem(item: Prisma.RecentActivityGetPayload<{ include: { coverAsset: true } }>, publicBaseUrl: string) {
+  const detailPageId = item.detailPageId ?? null;
+  return {
+    id: item.id,
+    title: item.title,
+    tag: item.tag,
+    coverUrl: mediaUrl(publicBaseUrl, item.coverAsset),
+    summary: item.summary,
+    eventDate: toIsoDate(item.eventDate),
+    location: item.location,
+    detailPageId,
+    hasDetailPage: detailPageId !== null,
+    sortOrder: item.sortOrder,
+    status: item.status as "enabled" | "disabled"
+  };
+}
+
+async function serializeAdminRecentActivity(
+  prisma: AppPrismaClient,
+  item: Prisma.RecentActivityGetPayload<{ include: { coverAsset: true } }>,
+  publicBaseUrl: string
+) {
+  const detailPage = item.detailPageId ? await getDetailPageById(prisma, item.detailPageId, false, publicBaseUrl) : null;
+  return {
+    ...serializeRecentActivityListItem(item, publicBaseUrl),
+    eventDate: toIsoDateTime(item.eventDate),
+    coverAssetId: item.coverAssetId,
+    coverAsset: publicMediaAsset(publicBaseUrl, item.coverAsset),
+    detailPageSummary: detailPage ? { id: detailPage.id, name: detailPage.name, type: detailPage.type, typeLabel: detailPage.typeLabel } : null,
+    detailPageType: detailPage?.type ?? null,
+    detailPageTypeLabel: detailPage?.typeLabel ?? "详情待补充",
+    bannerCount: detailPage?.banners.length ?? 0,
+    detailMediaCount: detailPage ? extractRichTextMedia(detailPage.richTextHtml).length : 0,
+    hasRichText: Boolean(detailPage?.richTextHtml)
+  };
+}
+
 async function serializeAdminArticle(
   prisma: AppPrismaClient,
   item: Prisma.ArticleGetPayload<{ include: { coverAsset: true } }>,
@@ -929,6 +969,27 @@ function articleDataFromBody<T extends { publishedAt?: string | Date }>(body: T)
     ...body,
     ...(body.publishedAt !== undefined ? { publishedAt: new Date(body.publishedAt) } : {})
   };
+}
+
+function recentActivityDataFromBody<T extends { eventDate?: string | Date }>(body: T) {
+  return {
+    ...body,
+    ...(body.eventDate !== undefined ? { eventDate: new Date(body.eventDate) } : {})
+  };
+}
+
+function recentActivityWhere(query: { q?: string; status?: "enabled" | "disabled" }) {
+  const where: Prisma.RecentActivityWhereInput = {};
+  if (query.status) where.status = query.status;
+  if (query.q) {
+    where.OR = [
+      { title: { contains: query.q } },
+      { tag: { contains: query.q } },
+      { summary: { contains: query.q } },
+      { location: { contains: query.q } }
+    ];
+  }
+  return where;
 }
 
 function serializeCaseListItem(item: Prisma.ActivityCaseGetPayload<{
@@ -2745,7 +2806,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
 
   app.get("/api/client/home", async (_request, reply) => {
     const site = await prisma.siteConfig.findFirst({ where: { id: 1 } });
-    const [announcements, banners, menus, featuredCases, featuredArticles] = await Promise.all([
+    const [announcements, banners, menus, recentActivities, featuredCases, featuredArticles] = await Promise.all([
       prisma.announcement.findMany({ where: { status: "enabled" }, orderBy: { sortOrder: "asc" } }),
       prisma.banner.findMany({
         where: { status: "enabled" },
@@ -2755,6 +2816,11 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
       prisma.menuItem.findMany({
         where: { status: "enabled", showOnHome: true },
         include: { iconAsset: true },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
+      prisma.recentActivity.findMany({
+        where: { status: "enabled" },
+        include: { coverAsset: true },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
       }),
       prisma.activityCase.findMany({
@@ -2783,6 +2849,7 @@ export async function buildApp(options: BuildOptions): Promise<FastifyInstance> 
         announcements: announcements.map(serializeAnnouncement),
         banners: banners.map((item) => serializeBanner(item, options.publicBaseUrl)),
         menus: menus.map((item) => serializeMenuItem(item, options.publicBaseUrl)),
+        recentActivities: recentActivities.map((item) => serializeRecentActivityListItem(item, options.publicBaseUrl)),
         featuredCases: featuredCases.map((item) => serializeCaseListItem(item, options.publicBaseUrl)),
         featuredArticles: featuredArticles.map((item) => serializeArticleListItem(item, options.publicBaseUrl))
       })
@@ -3724,6 +3791,93 @@ function registerCrud(
       if (!exists) throw new DetailPageDomainError("NOT_FOUND", "案例不存在", 404);
       await tx.activityCase.delete({ where: { id } });
       await tx.operationLog.create({ data: { action: "DELETE_ACTIVITY_CASE", detail: String(id) } });
+    });
+    return reply.send(ok({}));
+  });
+
+  app.get("/api/admin/recent-activities", { preHandler: requireAdmin }, async (request, reply) => {
+    const parsed = adminRecentActivityListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", "近日活动筛选参数错误");
+    const { page, pageSize, ...query } = parsed.data;
+    const where = recentActivityWhere(query);
+    const [items, total] = await Promise.all([
+      prisma.recentActivity.findMany({
+        where,
+        include: { coverAsset: true },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      prisma.recentActivity.count({ where })
+    ]);
+    const serialized = await Promise.all(items.map((item) => serializeAdminRecentActivity(prisma, item, publicBaseUrl)));
+    return reply.send(ok({ items: serialized, total, page, pageSize }));
+  });
+
+  app.post("/api/admin/recent-activities/reorder", { preHandler: requireAdmin }, async (request, reply) => handleReorder(request, reply, {
+    findAllIds: (tx) => tx.recentActivity.findMany({ select: { id: true } }),
+    updateOrder: (tx, id, sortOrder) => tx.recentActivity.update({ where: { id }, data: { sortOrder } })
+  }));
+
+  app.get("/api/admin/recent-activities/:id", { preHandler: requireAdmin }, async (request, reply) => {
+    const id = parseRouteId(request.params);
+    if (!id) return sendError(reply, 400, "VALIDATION_ERROR", "近日活动 ID 错误");
+    const item = await prisma.recentActivity.findUnique({ where: { id }, include: { coverAsset: true } });
+    if (!item) return sendError(reply, 404, "NOT_FOUND", "近日活动不存在");
+    return reply.send(ok(await serializeAdminRecentActivity(prisma, item, publicBaseUrl)));
+  });
+
+  app.post("/api/admin/recent-activities", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = RecentActivityCreateRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "近日活动参数错误");
+    const body = parsed.data;
+    const coverProblem = await mediaProblemForId(prisma, body.coverAssetId, "recentActivity.cover");
+    if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
+    await validateDetailPageReference(prisma, body.detailPageId);
+    const created = await prisma.$transaction(async (tx) => {
+      const recentActivity = await tx.recentActivity.create({
+        data: recentActivityDataFromBody(body),
+        include: { coverAsset: true }
+      });
+      await tx.operationLog.create({
+        data: { action: "CREATE_RECENT_ACTIVITY", detail: String(recentActivity.id), createdBy: request.admin?.id }
+      });
+      return recentActivity;
+    });
+    return reply.send(ok(await serializeAdminRecentActivity(prisma, created, publicBaseUrl)));
+  });
+
+  app.put("/api/admin/recent-activities/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const parsed = RecentActivityUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "近日活动参数错误");
+    const id = Number((request.params as { id: string }).id);
+    const existing = await prisma.recentActivity.findUnique({ where: { id } });
+    if (!existing) return sendError(reply, 404, "NOT_FOUND", "近日活动不存在");
+    const body = parsed.data;
+    const coverProblem = await mediaProblemForId(prisma, body.coverAssetId ?? existing.coverAssetId, "recentActivity.cover");
+    if (coverProblem) return sendError(reply, coverProblem.code === "NOT_FOUND" ? 404 : 400, coverProblem.code, coverProblem.message);
+    if (Object.hasOwn(body, "detailPageId")) await validateDetailPageReference(prisma, body.detailPageId);
+    const updated = await prisma.$transaction(async (tx) => {
+      const recentActivity = await tx.recentActivity.update({
+        where: { id },
+        data: recentActivityDataFromBody(body),
+        include: { coverAsset: true }
+      });
+      await tx.operationLog.create({
+        data: { action: "UPDATE_RECENT_ACTIVITY", detail: String(id), createdBy: request.admin?.id }
+      });
+      return recentActivity;
+    });
+    return reply.send(ok(await serializeAdminRecentActivity(prisma, updated, publicBaseUrl)));
+  });
+
+  app.delete("/api/admin/recent-activities/:id", { preHandler: requireAdmin }, async (request: AdminRequest, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    await prisma.$transaction(async (tx) => {
+      const exists = await tx.recentActivity.count({ where: { id } });
+      if (!exists) throw new DetailPageDomainError("NOT_FOUND", "近日活动不存在", 404);
+      await tx.recentActivity.delete({ where: { id } });
+      await tx.operationLog.create({ data: { action: "DELETE_RECENT_ACTIVITY", detail: String(id), createdBy: request.admin?.id } });
     });
     return reply.send(ok({}));
   });

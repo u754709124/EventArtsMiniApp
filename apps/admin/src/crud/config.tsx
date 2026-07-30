@@ -422,6 +422,14 @@ function normalizeArticlePayload(values: AnyRecord) {
   };
 }
 
+function normalizeRecentActivityPayload(values: AnyRecord) {
+  return {
+    ...omitBusinessDetailFields(values),
+    eventDate: values.eventDate ? dayjs(values.eventDate as string).toISOString() : new Date().toISOString(),
+    detailPageId: values.detailPageId ?? null
+  };
+}
+
 function isMenuType(value: unknown): value is MenuType {
   return typeof value === "string" && value in menuConfigSchemaByType;
 }
@@ -571,6 +579,66 @@ function ArticleCrudFields() {
       <ArticleListFields />
       <ArticleDetailFields />
       <ArticlePublishFields />
+    </>
+  );
+}
+
+function RecentActivityBasicFields() {
+  return (
+    <>
+      <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }, { max: 100 }]}>
+        <Input data-testid="recent-activity-title" maxLength={100} showCount />
+      </Form.Item>
+      <Form.Item label="标签" name="tag" rules={[{ required: true, message: "请输入标签" }, { max: 20 }]}>
+        <Input data-testid="recent-activity-tag" maxLength={20} showCount />
+      </Form.Item>
+      <Form.Item label="活动日期" name="eventDate" rules={[{ required: true, message: "请选择活动日期" }]}>
+        <DatePicker data-testid="recent-activity-event-date" showTime />
+      </Form.Item>
+      <Form.Item label="地点" name="location" rules={[{ required: true, message: "请输入地点" }, { max: 60 }]}>
+        <Input data-testid="recent-activity-location" maxLength={60} showCount />
+      </Form.Item>
+    </>
+  );
+}
+
+function RecentActivityListFields() {
+  return (
+    <>
+      <Form.Item className="form-grid-full" label="封面图" name="coverAssetId" rules={[{ required: true, message: "请选择封面图" }]}>
+        <MediaField testid="recent-activity-cover-select" fieldKey="recentActivity.cover" />
+      </Form.Item>
+      <Form.Item className="form-grid-full" label="摘要" name="summary" rules={[{ required: true, message: "请输入摘要" }, { max: 240 }]}>
+        <Input.TextArea data-testid="recent-activity-summary" maxLength={240} showCount autoSize={{ minRows: 3, maxRows: 5 }} />
+      </Form.Item>
+    </>
+  );
+}
+
+function RecentActivityDetailFields() {
+  return (
+    <Form.Item className="form-grid-full" label="详情页" name="detailPageId">
+      <DetailPageReferenceField />
+    </Form.Item>
+  );
+}
+
+function RecentActivityPublishFields() {
+  return (
+    <>
+      <SortField />
+      <StatusSwitchField />
+    </>
+  );
+}
+
+function RecentActivityCrudFields() {
+  return (
+    <>
+      <RecentActivityBasicFields />
+      <RecentActivityListFields />
+      <RecentActivityDetailFields />
+      <RecentActivityPublishFields />
     </>
   );
 }
@@ -804,6 +872,39 @@ export const configs: Record<string, CrudConfig> = {
       { title: "列表展示", description: "封面和简介会用于前台案例列表；精选开关决定是否进入首页精选区域。", fields: () => <CaseListFields /> },
       { title: "详情内容", description: "当前版本使用独立详情页引用，详情页可在内容管理中统一维护。", fields: () => <CaseDetailFields /> },
       { title: "发布设置", fields: () => <CasePublishFields /> }
+    ]
+  },
+  "recent-activities": {
+    title: "近日活动管理",
+    path: "/api/admin/recent-activities",
+    routePath: "/recent-activities",
+    testid: "recent-activities",
+    searchPlaceholder: "搜索标题、标签、地点、摘要",
+    searchFields: ["title", "tag", "location", "summary"],
+    formMode: "page",
+    sortable: true,
+    defaultValues: () => ({ eventDate: dayjs() }),
+    columns: [
+      {
+        title: "封面",
+        dataIndex: "coverAsset",
+        width: 94,
+        render: (asset) => asset && typeof asset === "object" && "url" in asset ? <img className="artist-cover-thumb" src={String(asset.url)} alt="近日活动封面" /> : "—"
+      },
+      { title: "标题", dataIndex: "title", ellipsis: true },
+      { title: "标签", dataIndex: "tag" },
+      { title: "活动日期", dataIndex: "eventDate", render: (value) => value ? dayjs(String(value)).format("YYYY-MM-DD HH:mm") : "—" },
+      { title: "地点", dataIndex: "location", ellipsis: true },
+      { title: "排序", dataIndex: "sortOrder" },
+      { title: "详情页", dataIndex: "detailPageId", render: (value) => value ? `#${value}` : "未绑定" }
+    ],
+    normalize: normalizeRecentActivityPayload,
+    fields: () => <RecentActivityCrudFields />,
+    sections: [
+      { title: "基础信息", fields: () => <RecentActivityBasicFields /> },
+      { title: "列表展示", description: "封面、标签、摘要、日期和地点会用于小程序首页近日活动区域。", fields: () => <RecentActivityListFields /> },
+      { title: "详情内容", description: "近日活动可选绑定独立详情页；未绑定时前台卡片不可点击。", fields: () => <RecentActivityDetailFields /> },
+      { title: "发布设置", fields: () => <RecentActivityPublishFields /> }
     ]
   },
   articles: {

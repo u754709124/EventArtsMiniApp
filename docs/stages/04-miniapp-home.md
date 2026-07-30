@@ -26,15 +26,15 @@
 ## 已完成事项
 - 已实现 Taro 4 + React + TypeScript + SCSS miniapp 包。
 - 已配置首页、公告详情、案例列表/详情、人员列表/详情、联系我们、分类、我的页面。
-- 已实现固定四项 TabBar：首页、分类、案例、我的。
+- 已实现固定四项 TabBar：首页、分类、方案、我的；内部路由仍使用 `pages/cases/list`。
 - 首页调用 `GET /api/client/home`，成功后上报 `POST /api/client/track/page-view`。
-- 首页实现顶部标题区、公告栏、Banner、菜单卡片、精选案例、失败提示状态、空状态和图片 fallback；恢复入口统一为下拉刷新。
+- 首页实现顶部标题区、公告栏、Banner、菜单卡片、近日活动、活动方案、失败提示状态、空状态和图片 fallback；恢复入口统一为下拉刷新。
 - 首页菜单只展示 `showOnHome=true` 的启用菜单；分类页调用 `GET /api/client/menu-items` 展示全部启用菜单。
 - 菜单跳转规则对应 `artist`、`activity_case`、`article`、`detail_page`、`contact`；`artist` 使用 `navigateTo` 打开统一人员列表并可携带 `configJson.category`，未配置分类时展示全部人员，旧 `host/singer/actor` 仅作兼容映射；文章菜单携带分类/pageSize query，`detail_page` 从配置读取正整数 ID 并直接进入 `/pages/detail/index?id=<id>`。
 - 首页和分类页共用 `openMenu`；直达详情配置缺失或损坏时不发起导航。本能力不创建默认 seed 菜单，因此不改变首页默认菜单数量或视觉布局。
 - 案例页支持顶部关键词搜索，按单列 710rpx 案例卡片展示，并复用首页精选案例的信息结构。
 - 已完成首页视觉校准：H5 顶部安全区为 36px，微信端仍使用胶囊按钮位置；标题/副标题采用 36rpx/24rpx 明确行高，公告栏与 Banner 纵向节奏对齐参考图。
-- 已将精选案例卡片的文字区固定为 224rpx，标题与简介限制为两行，封面改为块级元素以消除 H5 行内基线空隙；首卡 H5 实测高度为 219px。
+- 已将首页紧凑活动卡片的文字区固定为 224rpx，标题与简介限制为两行，封面改为块级元素以消除 H5 行内基线空隙；近日活动与活动方案共用该视觉体系。
 - H5 和 weapp 构建均已成功。
 - 验证通过：`pnpm --filter miniapp build:h5`、`pnpm build:weapp`、`pnpm lint`、`pnpm test`。
 

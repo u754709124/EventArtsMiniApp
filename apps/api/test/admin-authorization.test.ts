@@ -170,6 +170,7 @@ describe("admin authorization", () => {
       "menu-items",
       "artists",
       "cases",
+      "recent-activities",
       "articles",
       "detail-pages",
       "media-assets",

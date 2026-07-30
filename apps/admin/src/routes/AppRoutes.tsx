@@ -8,7 +8,7 @@ import { canAccessRouteMenu, firstAccessibleAdminPath } from "../navigation/perm
 import { ADMIN_BASENAME, isAdminLoginPathname } from "./admin-paths";
 import { notify } from "../notifications/notification";
 
-type CrudConfigKey = "announcements" | "banners" | "menu-items" | "artists" | "cases" | "articles";
+type CrudConfigKey = "announcements" | "banners" | "menu-items" | "artists" | "cases" | "recent-activities" | "articles";
 
 function lazyNamed<TModule extends Record<string, unknown>, TKey extends keyof TModule>(
   loader: () => Promise<TModule>,
@@ -93,6 +93,8 @@ const ArtistListPage = lazyCrudPage("artists");
 const ArtistFormPage = lazyRecordFormPage("artists");
 const CaseListPage = lazyCrudPage("cases");
 const CaseFormPage = lazyRecordFormPage("cases");
+const RecentActivityListPage = lazyCrudPage("recent-activities");
+const RecentActivityFormPage = lazyRecordFormPage("recent-activities");
 const ArticleListPage = lazyCrudPage("articles");
 const ArticleFormPage = lazyRecordFormPage("articles");
 
@@ -158,6 +160,9 @@ export const router = createBrowserRouter(
         { path: "cases", element: protectedElement("cases", <CaseListPage />) },
         { path: "cases/new", element: protectedElement("cases", <CaseFormPage />) },
         { path: "cases/:id/edit", element: protectedElement("cases", <CaseFormPage />) },
+        { path: "recent-activities", element: protectedElement("recent-activities", <RecentActivityListPage />) },
+        { path: "recent-activities/new", element: protectedElement("recent-activities", <RecentActivityFormPage />) },
+        { path: "recent-activities/:id/edit", element: protectedElement("recent-activities", <RecentActivityFormPage />) },
         { path: "articles", element: protectedElement("articles", <ArticleListPage />) },
         { path: "articles/new", element: protectedElement("articles", <ArticleFormPage />) },
         { path: "articles/:id/edit", element: protectedElement("articles", <ArticleFormPage />) },

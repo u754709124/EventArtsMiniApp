@@ -351,6 +351,25 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS articles_category_idx ON articles(category)`,
   `CREATE INDEX IF NOT EXISTS articles_status_sortOrder_idx ON articles(status, sortOrder)`,
   `CREATE INDEX IF NOT EXISTS articles_status_isFeatured_featuredSortOrder_idx ON articles(status, isFeatured, featuredSortOrder)`,
+  `CREATE TABLE IF NOT EXISTS recent_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    coverAssetId INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    eventDate DATETIME NOT NULL,
+    location TEXT NOT NULL,
+    detailPageId INTEGER,
+    sortOrder INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'enabled',
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(coverAssetId) REFERENCES media_assets(id),
+    FOREIGN KEY(detailPageId) REFERENCES detail_page_configs(id) ON DELETE RESTRICT
+  )`,
+  `CREATE INDEX IF NOT EXISTS recent_activities_coverAssetId_idx ON recent_activities(coverAssetId)`,
+  `CREATE INDEX IF NOT EXISTS recent_activities_detailPageId_idx ON recent_activities(detailPageId)`,
+  `CREATE INDEX IF NOT EXISTS recent_activities_status_sortOrder_idx ON recent_activities(status, sortOrder)`,
   `CREATE TABLE IF NOT EXISTS detail_page_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL DEFAULT '',
@@ -634,7 +653,7 @@ async function ensurePageViewEventColumns(prisma: AppPrismaClient) {
 
 function isDeferredDetailPageIndex(statement: string) {
   return (
-    /CREATE INDEX IF NOT EXISTS (announcements|banners|artists|activity_cases|articles)_detailPageId_idx/.test(statement) ||
+    /CREATE INDEX IF NOT EXISTS (announcements|banners|artists|activity_cases|articles|recent_activities)_detailPageId_idx/.test(statement) ||
     /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS detail_page_configs_/.test(statement)
   );
 }
