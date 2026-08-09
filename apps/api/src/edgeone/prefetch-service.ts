@@ -814,20 +814,45 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
   }
 
   async function list(query: EdgeOnePrefetchListQuery): Promise<EdgeOnePrefetchListResponse> {
-    const where = {
-      ...(query.assetIds ? { mediaAssetId: { in: query.assetIds } } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.mediaType ? { mediaAsset: { mediaType: query.mediaType } } : {})
-    };
-    const [items, total] = await Promise.all([
-      options.prisma.edgeOnePrefetchResource.findMany({
-        where,
-        orderBy: { updatedAt: "desc" },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize
-      }),
-      options.prisma.edgeOnePrefetchResource.count({ where })
-    ]);
+    const configured = await options.prisma.systemConfig.findUnique({
+      where: { id: 1 },
+      select: { zoneId: true }
+    });
+    if (!configured) {
+      return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
+    }
+
+    const candidates = await options.prisma.edgeOnePrefetchResource.findMany({
+      where: {
+        zoneId: configured.zoneId,
+        ...(query.assetIds ? { mediaAssetId: { in: query.assetIds } } : {}),
+        ...(query.mediaType ? { mediaAsset: { mediaType: query.mediaType } } : {})
+      },
+      include: {
+        mediaAsset: {
+          select: {
+            id: true,
+            md5: true,
+            filename: true,
+            url: true,
+            storageType: true
+          }
+        }
+      }
+    });
+    const currentItems = candidates
+      .filter((item) => {
+        if (item.mode !== EDGEONE_PREFETCH_MODE || item.contentVersion !== item.mediaAsset.md5) {
+          return false;
+        }
+        const target = canonicalPrefetchTarget(item.mediaAsset, options.publicBaseUrl);
+        return target.eligible && item.targetHash === target.targetHash;
+      })
+      .filter((item) => !query.status || item.status === query.status)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+    const total = currentItems.length;
+    const offset = (query.page - 1) * query.pageSize;
+    const items = currentItems.slice(offset, offset + query.pageSize);
     return {
       items: items.map((item) => ({
         id: item.id,

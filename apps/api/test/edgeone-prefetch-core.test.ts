@@ -142,6 +142,49 @@ describe("EdgeOne prefetch idempotency", () => {
     expect(await prisma.edgeOnePrefetchResource.count()).toBe(2);
   });
 
+  it("lists only the current identity when a newer historical failure exists", async () => {
+    const service = createEdgeOnePrefetchService({
+      prisma,
+      publicBaseUrl: "https://media.example.com",
+      credentialEncryptionKey: encryptionKey,
+      config: runtimeConfig,
+      clientFactory
+    });
+    await service.trigger({}, adminId);
+    const asset = await prisma.mediaAsset.findFirstOrThrow();
+    await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { md5: "fedcba9876543210fedcba9876543210" }
+    });
+    await service.trigger({}, adminId);
+    const resources = await prisma.edgeOnePrefetchResource.findMany({
+      orderBy: { id: "asc" }
+    });
+    await prisma.edgeOnePrefetchResource.update({
+      where: { id: resources[0].id },
+      data: {
+        status: "failed",
+        currentJobId: null,
+        safeErrorCode: "originPullFailed",
+        safeErrorMessage: "EdgeOne 预热任务未成功完成"
+      }
+    });
+
+    const listed = await service.list({ page: 1, pageSize: 20 });
+    expect(listed).toMatchObject({ total: 1, page: 1, pageSize: 20 });
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0]).toMatchObject({
+      id: resources[1].id,
+      mediaAssetId: asset.id,
+      status: "processing",
+      attemptCount: 1,
+      safeErrorCode: null
+    });
+
+    const repeated = await service.trigger({ assetIds: [asset.id] }, adminId);
+    expect(repeated).toMatchObject({ submitted: 0, skipped: 1 });
+  });
+
   it.each(["failed", "timeout", "canceled", "invalid"] as const)(
     "manual trigger retriggers %s resources regardless of old retry guards",
     async (status) => {

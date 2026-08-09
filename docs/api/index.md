@@ -401,7 +401,7 @@ CAM 最小策略：
 
 `POST /api/admin/edgeone/prefetch` 请求体为 `{ "assetIds": [1, 2] }`；省略 `assetIds` 时服务端按素材 ID 扫描，直到达到实际提交上限。显式 ID 最多 100 个且仍受 `EDGEONE_PREFETCH_MAX_BATCH_SIZE` 限制。手动 POST 提交未开始资源，并会重新提交 `failed/timeout/canceled/invalid` 资源；`reserved/submitting/processing/success` 直接跳过。旧 `currentJobId`、未来 `nextRetryAt` 和已达到自动 `maxAttempts` 不会阻止管理员显式重试，但数据库租约仍防止并发重复提交。响应按素材给出 `submitted/skipped/ineligible/failed` 汇总和安全错误码，不返回 CAM 凭证、上游原始错误或可由浏览器直接提交的目标参数。
 
-`GET /api/admin/edgeone/prefetch` 支持 `assetIds=1,2`、`mediaType`、`status`、`page`、`pageSize`。状态为 `reserved | submitting | processing | success | failed | timeout | canceled | invalid`。列表是安全投影，仅展示素材级状态、尝试次数、时间戳和安全错误码/信息；不得返回 `targetUrl`、`contentVersion`、`currentJobId/jobId`、租约、凭证、SDK 原始数据或上游请求 ID。
+`GET /api/admin/edgeone/prefetch` 支持 `assetIds=1,2`、`mediaType`、`status`、`page`、`pageSize`。状态为 `reserved | submitting | processing | success | failed | timeout | canceled | invalid`。列表只投影当前 Zone、素材 MD5 和可信目标 URL 对应的当前身份；历史身份继续保留用于审计，但不作为素材当前状态展示或筛选。列表是安全投影，仅展示素材级状态、尝试次数、时间戳和安全错误码/信息；不得返回 `targetUrl`、`contentVersion`、`currentJobId/jobId`、租约、凭证、SDK 原始数据或上游请求 ID。
 
 `POST /api/admin/edgeone/prefetch/reconcile` 立即执行一次对账；生产调度器应运行：
 

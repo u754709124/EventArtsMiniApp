@@ -134,7 +134,7 @@ ADMIN_HOST=127.0.0.1 ADMIN_PORT=4173 pnpm start:admin
 
 素材管理页提供显式“提交未预热和失败资源”操作。服务端只接收媒体 ID，并由 `MediaAsset + PUBLIC_BASE_URL` 重新生成目标；目标必须是与公开域名同主机的 HTTPS URL，且不能包含用户信息、查询串或片段。固定使用 `Mode=default`、`PrefetchMediaSegments=off`。
 
-幂等身份由 `ZoneId + mediaAssetId + MD5 + targetHash + mode` 组成。手动 POST 会跳过 `reserved/submitting/processing/success`，但会对 `failed/timeout/canceled/invalid` 重新认领并创建新尝试；旧 JobId、退避时间和最大自动尝试次数不会阻止管理员显式重试，尝试次数保持递增且历史保留。自动对账路径独立：只会在最大次数、指数退避和租约边界内重试 `failed/timeout`，不会自动重试 `canceled/invalid`。素材内容 MD5 或可信目标变化后会形成新身份，可重新预热。这里的 `success` 表示 EdgeOne 任务历史成功，不等价于永久缓存命中。
+幂等身份由 `ZoneId + mediaAssetId + MD5 + targetHash + mode` 组成。手动 POST 会跳过 `reserved/submitting/processing/success`，但会对 `failed/timeout/canceled/invalid` 重新认领并创建新尝试；旧 JobId、退避时间和最大自动尝试次数不会阻止管理员显式重试，尝试次数保持递增且历史保留。Admin 状态列表只展示当前 Zone、素材 MD5 和可信目标对应的当前身份，避免历史失败记录被误认为当前失败；历史身份仍保留用于审计。自动对账路径独立：只会在最大次数、指数退避和租约边界内重试 `failed/timeout`，不会自动重试 `canceled/invalid`。素材内容 MD5 或可信目标变化后会形成新身份，可重新预热。这里的 `success` 表示 EdgeOne 任务历史成功，不等价于永久缓存命中。
 
 部署顺序：
 
