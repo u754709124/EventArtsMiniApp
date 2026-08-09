@@ -11,6 +11,7 @@ import {
   edgeOnePrefetchErrorMessage,
   edgeOnePrefetchSafeFailureReason,
   edgeOnePrefetchStatusMeta,
+  isEdgeOnePrefetchFailureStatus,
   listEdgeOnePrefetch,
   reconcileEdgeOnePrefetch,
   triggerEdgeOnePrefetch,
@@ -182,10 +183,10 @@ export function MediaPage() {
 
   function confirmPrefetch() {
     Modal.confirm({
-      title: "预热尚未预热的资源？",
+      title: "提交未预热和失败的资源？",
       content: (
         <Space orientation="vertical" size={8}>
-          <Typography.Text>系统只会提交符合条件且没有成功或执行中记录的资源，已提交和已成功版本不会重复预热。</Typography.Text>
+          <Typography.Text>系统会提交符合条件的未预热资源，以及失败、超时、取消或无效的历史资源；执行中和已成功版本会跳过。</Typography.Text>
           <Typography.Text type="secondary">“预热成功”仅表示 EdgeOne 历史任务成功，不代表资源会永久驻留所有边缘节点。</Typography.Text>
         </Space>
       ),
@@ -318,7 +319,7 @@ export function MediaPage() {
         const row = prefetchRows.get(asset.id);
         if (!row) return <Tag>未预热</Tag>;
         const meta = edgeOnePrefetchStatusMeta[row.status];
-        if (row.status !== "failed") return <Tag color={meta.color}>{meta.label}</Tag>;
+        if (!isEdgeOnePrefetchFailureStatus(row.status)) return <Tag color={meta.color}>{meta.label}</Tag>;
         const reason = edgeOnePrefetchSafeFailureReason(row);
         return (
           <div className="media-prefetch-status-cell" aria-label={`${meta.label}：${reason}`}>
@@ -369,12 +370,12 @@ export function MediaPage() {
             type="primary"
             className="media-prefetch-action"
             data-testid="media-edgeone-prefetch"
-            aria-label="预热尚未预热的 EdgeOne 资源"
+            aria-label="预热未预热和失败的 EdgeOne 资源"
             loading={prefetchPending}
             disabled={prefetchPending}
             onClick={() => clickGuard("media:edgeone-prefetch:confirm", confirmPrefetch)}
           >
-            预热未预热资源
+            提交未预热和失败资源
           </Button>
           <MediaUploadAction testid="media-upload-button" label="上传资源" onAsset={() => void load(1)} />
           <Button data-testid="media-clean-unused" onClick={() => clickGuard("media:scan-unused", scanUnused)}>清理未使用资源</Button>

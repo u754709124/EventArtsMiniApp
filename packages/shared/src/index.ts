@@ -53,6 +53,30 @@ export const edgeOnePrefetchStatusValues = [
 ] as const;
 export type EdgeOnePrefetchStatus = (typeof edgeOnePrefetchStatusValues)[number];
 export const EdgeOnePrefetchStatusSchema = z.enum(edgeOnePrefetchStatusValues);
+export const edgeOnePrefetchFailureStatusValues = [
+  "failed",
+  "timeout",
+  "canceled",
+  "invalid"
+] as const satisfies readonly EdgeOnePrefetchStatus[];
+export type EdgeOnePrefetchFailureStatus = (typeof edgeOnePrefetchFailureStatusValues)[number];
+export const edgeOnePrefetchAutomaticRetryStatusValues = [
+  "failed",
+  "timeout"
+] as const satisfies readonly EdgeOnePrefetchStatus[];
+export type EdgeOnePrefetchAutomaticRetryStatus = (typeof edgeOnePrefetchAutomaticRetryStatusValues)[number];
+
+export function isEdgeOnePrefetchFailureStatus(
+  status: EdgeOnePrefetchStatus
+): status is EdgeOnePrefetchFailureStatus {
+  return (edgeOnePrefetchFailureStatusValues as readonly EdgeOnePrefetchStatus[]).includes(status);
+}
+
+export function isEdgeOnePrefetchAutomaticRetryStatus(
+  status: EdgeOnePrefetchStatus
+): status is EdgeOnePrefetchAutomaticRetryStatus {
+  return (edgeOnePrefetchAutomaticRetryStatusValues as readonly EdgeOnePrefetchStatus[]).includes(status);
+}
 
 export const edgeOnePrefetchTriggerRequestSchema = z.object({
   assetIds: z.array(z.number().int().positive()).max(100).transform((ids) => [...new Set(ids)]).optional()

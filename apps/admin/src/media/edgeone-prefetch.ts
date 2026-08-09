@@ -1,7 +1,8 @@
-import type {
-  EdgeOnePrefetchListResponse,
-  EdgeOnePrefetchStatus,
-  EdgeOnePrefetchTriggerResponse
+import {
+  isEdgeOnePrefetchFailureStatus,
+  type EdgeOnePrefetchListResponse,
+  type EdgeOnePrefetchStatus,
+  type EdgeOnePrefetchTriggerResponse
 } from "@event-arts/shared";
 import { ApiError, request } from "../api";
 
@@ -39,8 +40,20 @@ export function edgeOnePrefetchSafeFailureReason(row: SafeEdgeOnePrefetchResourc
   if (code && message) return `${code}：${message}`;
   if (message) return message;
   if (code) return code;
-  return "预热失败，暂无可展示原因";
+  const fallback: Record<EdgeOnePrefetchStatus, string> = {
+    reserved: "预热尚未提交",
+    submitting: "预热正在提交",
+    processing: "预热正在处理中",
+    success: "预热已成功",
+    failed: "预热失败，暂无可展示原因",
+    timeout: "预热超时，暂无可展示原因",
+    canceled: "预热已取消，暂无可展示原因",
+    invalid: "资源无效，暂无可展示原因"
+  };
+  return fallback[row.status];
 }
+
+export { isEdgeOnePrefetchFailureStatus };
 
 export function triggerEdgeOnePrefetch() {
   return request<EdgeOnePrefetchTriggerResponse>("/api/admin/edgeone/prefetch", {

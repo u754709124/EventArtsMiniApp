@@ -399,9 +399,9 @@ CAM 最小策略：
 
 ### Admin EdgeOne Prefetch
 
-`POST /api/admin/edgeone/prefetch` 请求体为 `{ "assetIds": [1, 2] }`；省略 `assetIds` 时服务端按素材 ID 扫描，直到达到实际提交上限。显式 ID 最多 100 个且仍受 `EDGEONE_PREFETCH_MAX_BATCH_SIZE` 限制。响应按素材给出 `submitted/skipped/ineligible/failed` 汇总和安全错误码，不返回 CAM 凭证、上游原始错误或可由浏览器直接提交的目标参数。
+`POST /api/admin/edgeone/prefetch` 请求体为 `{ "assetIds": [1, 2] }`；省略 `assetIds` 时服务端按素材 ID 扫描，直到达到实际提交上限。显式 ID 最多 100 个且仍受 `EDGEONE_PREFETCH_MAX_BATCH_SIZE` 限制。手动 POST 提交未开始资源，并会重新提交 `failed/timeout/canceled/invalid` 资源；`reserved/submitting/processing/success` 直接跳过。旧 `currentJobId`、未来 `nextRetryAt` 和已达到自动 `maxAttempts` 不会阻止管理员显式重试，但数据库租约仍防止并发重复提交。响应按素材给出 `submitted/skipped/ineligible/failed` 汇总和安全错误码，不返回 CAM 凭证、上游原始错误或可由浏览器直接提交的目标参数。
 
-`GET /api/admin/edgeone/prefetch` 支持 `assetIds=1,2`、`mediaType`、`status`、`page`、`pageSize`。状态为 `reserved | submitting | processing | success | failed | timeout | canceled | invalid`。Admin 会丢弃列表中的目标 URL 和内容版本，仅展示素材级状态、更新时间和安全错误。
+`GET /api/admin/edgeone/prefetch` 支持 `assetIds=1,2`、`mediaType`、`status`、`page`、`pageSize`。状态为 `reserved | submitting | processing | success | failed | timeout | canceled | invalid`。列表是安全投影，仅展示素材级状态、尝试次数、时间戳和安全错误码/信息；不得返回 `targetUrl`、`contentVersion`、`currentJobId/jobId`、租约、凭证、SDK 原始数据或上游请求 ID。
 
 `POST /api/admin/edgeone/prefetch/reconcile` 立即执行一次对账；生产调度器应运行：
 
@@ -409,7 +409,7 @@ CAM 最小策略：
 pnpm --filter api edgeone:prefetch:reconcile
 ```
 
-幂等键由 Zone、素材 ID、MD5、可信目标哈希和固定模式组成。`reserved/submitting/processing/success` 不重复提交；`failed/timeout` 在最大次数和退避窗口内重试；`canceled/invalid` 为终态。服务端使用数据库唯一约束、租约和条件更新处理并发，不以 EdgeOne 的当前缓存驻留状态作为判定依据。目标只由服务端可信数据构造，要求 HTTPS、同主机且无 userinfo/query/fragment。
+幂等键由 Zone、素材 ID、MD5、可信目标哈希和固定模式组成。自动对账只会为 `failed/timeout` 创建下一次自动尝试，并继续遵守最大次数、退避窗口和租约；`canceled/invalid` 不自动重试。已有 `processing/currentJobId` 的手动超额尝试仍会被对账到最终状态，尝试上限只限制自动创建下一次尝试。服务端使用数据库唯一约束、租约和条件更新处理并发，不以 EdgeOne 的当前缓存驻留状态作为判定依据。目标只由服务端可信数据构造，要求 HTTPS、同主机且无 userinfo/query/fragment。
 
 预热开关默认关闭。接口在 `EDGEONE_PREFETCH_ENABLED=false` 时拒绝写入；回滚应关闭开关并停止调度器，保留历史表供恢复后继续对账。真实腾讯云联调必须在 production-like 环境使用受限 CAM 和少量公开素材完成。
 

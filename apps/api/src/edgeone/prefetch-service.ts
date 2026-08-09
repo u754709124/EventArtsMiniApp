@@ -15,7 +15,10 @@ import {
   EDGEONE_PREFETCH_MODE
 } from "./prefetch-identity";
 import {
+  edgeOnePrefetchAutomaticRetryStatuses,
+  edgeOnePrefetchFailureStatuses,
   assertPrefetchStatusTransition,
+  isPrefetchFailureStatus,
   isPrefetchRetryableStatus,
   parseEdgeOnePrefetchStatus,
   shouldSkipPrefetchStatus
@@ -62,6 +65,8 @@ type StoredResource = {
   leaseExpiresAt: Date | null;
   nextRetryAt: Date | null;
 };
+
+type TriggerMode = "manual" | "automatic";
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && (error as { code?: string }).code === "P2002");
@@ -200,7 +205,8 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
       storageType: string;
     },
     createdBy: number,
-    now: Date
+    now: Date,
+    mode: TriggerMode
   ): Promise<{ submission?: Submission; item?: EdgeOnePrefetchTriggerResponse["items"][number] }> {
     const target = canonicalPrefetchTarget(asset, options.publicBaseUrl);
     if (!target.eligible) {
@@ -257,11 +263,37 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
       const submission = await prepareSubmission(resource.id, leaseToken, now);
       return submission ? { submission } : { item: skippedItem(resource) };
     }
-    if (shouldSkipPrefetchStatus(status) || resource.currentJobId) {
+    if (shouldSkipPrefetchStatus(status)) {
       return { item: skippedItem(resource) };
     }
+
+    if (mode === "manual") {
+      if (!isPrefetchFailureStatus(status)) {
+        return { item: skippedItem(resource) };
+      }
+      const manualLeaseToken = leaseTokenFactory();
+      const claimed = await options.prisma.edgeOnePrefetchResource.updateMany({
+        where: {
+          id: resource.id,
+          status: { in: [...edgeOnePrefetchFailureStatuses] },
+          OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }]
+        },
+        data: {
+          status: "reserved",
+          currentJobId: null,
+          nextRetryAt: null,
+          leaseToken: manualLeaseToken,
+          leaseExpiresAt: leaseExpiry(now, options.config.leaseSeconds)
+        }
+      });
+      if (claimed.count !== 1) return { item: skippedItem(resource) };
+      const submission = await prepareSubmission(resource.id, manualLeaseToken, now);
+      return submission ? { submission } : { item: skippedItem(resource) };
+    }
+
     if (
       !isPrefetchRetryableStatus(status)
+      || resource.currentJobId
       || resource.attemptCount >= options.config.maxAttempts
       || (resource.nextRetryAt && resource.nextRetryAt > now)
     ) {
@@ -272,7 +304,7 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
     const claimed = await options.prisma.edgeOnePrefetchResource.updateMany({
       where: {
         id: resource.id,
-        status: { in: ["failed", "timeout"] },
+        status: { in: [...edgeOnePrefetchAutomaticRetryStatuses] },
         currentJobId: null,
         attemptCount: { lt: options.config.maxAttempts },
         AND: [
@@ -423,9 +455,10 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
     return outcomes;
   }
 
-  async function trigger(
+  async function submitEligibleResources(
     input: EdgeOnePrefetchTriggerRequest,
-    createdBy: number
+    createdBy: number,
+    mode: TriggerMode
   ): Promise<EdgeOnePrefetchTriggerResponse> {
     requireEnabled(options.config);
     if (input.assetIds && input.assetIds.length > options.config.maxBatchSize) {
@@ -462,7 +495,7 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
       url: string;
       storageType: string;
     }) {
-      const result = await acquireResource(zoneId, asset, createdBy, now);
+      const result = await acquireResource(zoneId, asset, createdBy, now, mode);
       if (result.submission) submissions.push(result.submission);
       if (result.item) recordNonSubmission(result.item);
     }
@@ -523,6 +556,13 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
       failed,
       items
     };
+  }
+
+  async function trigger(
+    input: EdgeOnePrefetchTriggerRequest,
+    createdBy: number
+  ): Promise<EdgeOnePrefetchTriggerResponse> {
+    return submitEligibleResources(input, createdBy, "manual");
   }
 
   async function updateFromRemoteTask(
@@ -651,7 +691,6 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
     const candidates = await options.prisma.edgeOnePrefetchResource.findMany({
       where: {
         zoneId,
-        attemptCount: { lte: options.config.maxAttempts },
         OR: [
           {
             currentJobId: { not: null },
@@ -668,7 +707,7 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
           },
           {
             currentJobId: null,
-            status: { in: ["failed", "timeout"] },
+            status: { in: [...edgeOnePrefetchAutomaticRetryStatuses] },
             attemptCount: { lt: options.config.maxAttempts },
             nextRetryAt: { lte: now },
             OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }]
@@ -754,9 +793,10 @@ export function createEdgeOnePrefetchService(options: PrefetchServiceOptions) {
 
     let retried = 0;
     for (const [index, retry] of retryAssets.entries()) {
-      const retryResult = await trigger(
+      const retryResult = await submitEligibleResources(
         { assetIds: [retry.mediaAssetId] },
-        retry.createdBy
+        retry.createdBy,
+        "automatic"
       );
       retried += retryResult.submitted;
       failed += retryResult.failed;

@@ -1,5 +1,9 @@
 import {
+  edgeOnePrefetchAutomaticRetryStatusValues,
+  edgeOnePrefetchFailureStatusValues,
   edgeOnePrefetchStatusValues,
+  isEdgeOnePrefetchAutomaticRetryStatus,
+  isEdgeOnePrefetchFailureStatus,
   type EdgeOnePrefetchStatus
 } from "@event-arts/shared";
 
@@ -10,8 +14,8 @@ const transitions = {
   success: [],
   failed: ["reserved"],
   timeout: ["reserved"],
-  canceled: [],
-  invalid: []
+  canceled: ["reserved"],
+  invalid: ["reserved"]
 } as const satisfies Record<EdgeOnePrefetchStatus, readonly EdgeOnePrefetchStatus[]>;
 
 export const edgeOnePrefetchTransitionTable: Readonly<
@@ -48,7 +52,11 @@ export function isPrefetchTerminalStatus(status: EdgeOnePrefetchStatus) {
 }
 
 export function isPrefetchRetryableStatus(status: EdgeOnePrefetchStatus) {
-  return status === "failed" || status === "timeout";
+  return isEdgeOnePrefetchAutomaticRetryStatus(status);
+}
+
+export function isPrefetchFailureStatus(status: EdgeOnePrefetchStatus) {
+  return isEdgeOnePrefetchFailureStatus(status);
 }
 
 export function parseEdgeOnePrefetchStatus(value: string): EdgeOnePrefetchStatus {
@@ -57,3 +65,6 @@ export function parseEdgeOnePrefetchStatus(value: string): EdgeOnePrefetchStatus
   }
   throw new Error("Unknown EdgeOne prefetch status");
 }
+
+export const edgeOnePrefetchFailureStatuses = edgeOnePrefetchFailureStatusValues;
+export const edgeOnePrefetchAutomaticRetryStatuses = edgeOnePrefetchAutomaticRetryStatusValues;

@@ -30,6 +30,7 @@
 
 - v1 仅支持一个 Zone 和一组 CAM 子账号凭证；预热为默认关闭的显式后台流程，仍不包含缓存刷新、配置修改、多 Zone 或全量 EdgeOne 管理。
 - CAM 最小权限是 `teo:DescribePlans` 对 `*`，以及 `teo:DescribeBillingData`、`teo:CreatePrefetchTask`、`teo:DescribePrefetchTasks` 对目标 Zone。最终资源表达式以腾讯云 CAM 文档为准。
+- EdgeOne 预热手动 POST 与自动对账是独立策略：管理员显式提交会重试 `failed/timeout/canceled/invalid`，且不受旧 JobId、退避时间或自动最大尝试次数阻止；自动对账只为 `failed/timeout` 在最大次数、退避和租约边界内创建下一次自动尝试，`canceled/invalid` 不自动重试。所有列表和操作响应保持安全投影，不暴露目标 URL、内容版本、JobId、租约、凭证、SDK 原始数据或上游请求 ID。
 - 保存前先验证唯一有效套餐，再验证 `acc_flux`、`smt_flux`、`sec_request_clean` 查询；全部成功后才原子写入配置密文和不含凭证的操作记录。
 - `PayMode=1` 为预付费、`PayMode=0` 为后付费；预付费周期按 `EnabledTime` 的月序号锚定，下月不存在同一日期时按官方规则补齐 31 天，企业后付费仅接受企业套餐并按北京时间自然月。
 - 数据库备份只包含密文，不包含主密钥。恢复必须同时从独立 secret 管理恢复原主密钥；错误密钥会因 GCM 认证失败而拒绝解密。

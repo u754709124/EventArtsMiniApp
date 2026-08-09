@@ -1654,8 +1654,6 @@ test("EdgeOne 预热仅提交一次并在窄屏显示可恢复状态", async ({ 
           items: [{
             id: 1,
             mediaAssetId: asset.id,
-            contentVersion: asset.md5,
-            targetUrl: "https://media.example.com/uploads/edgeone-prefetch.jpg",
             mode: "default",
             status,
             attemptCount: 1,
